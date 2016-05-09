@@ -155,19 +155,22 @@ class SIR;
 namespace llvm {
 class SIRBitMask {
 private:
-  APInt KnownZeros, KnownOnes;
+  APInt KnownZeros, KnownOnes, KnownSames;
 
 public:
   SIRBitMask() : KnownZeros(APInt::getNullValue(1)),
-                 KnownOnes(APInt::getNullValue(1)) {}
+                 KnownOnes(APInt::getNullValue(1)),
+                 KnownSames(APInt::getNullValue(1)) {}
 
   SIRBitMask(unsigned BitWidth)
     : KnownZeros(APInt::getNullValue(BitWidth)),
-      KnownOnes(APInt::getNullValue(BitWidth)) {}
+      KnownOnes(APInt::getNullValue(BitWidth)),
+      KnownSames(APInt::getNullValue(BitWidth)) {}
 
   SIRBitMask(Value *V, unsigned BitWidth)
     : KnownZeros(APInt::getNullValue(BitWidth)),
-      KnownOnes(APInt::getNullValue(BitWidth)) {
+      KnownOnes(APInt::getNullValue(BitWidth)),
+      KnownSames(APInt::getNullValue(BitWidth)) {
     // Construct the mask from the constant directly.
     if (ConstantInt *CI = dyn_cast<ConstantInt>(V)) {
       APInt BitValue = CI->getValue();
@@ -177,10 +180,10 @@ public:
     }
   }
 
-  SIRBitMask(APInt KnownZeros, APInt KnownOnes)
-    : KnownZeros(KnownZeros), KnownOnes(KnownOnes) {
-    assert(KnownZeros.getBitWidth() == KnownOnes.getBitWidth()
-           && "BitWidth not matches!");
+  SIRBitMask(APInt KnownZeros, APInt KnownOnes, APInt KnownSames)
+    : KnownZeros(KnownZeros), KnownOnes(KnownOnes), KnownSames(KnownSames) {
+    assert(KnownZeros.getBitWidth() == KnownOnes.getBitWidth() &&
+           KnownZeros.getBitWidth() == KnownSames.getBitWidth() && "BitWidth not matches!");
 
     verify();
   }
@@ -194,24 +197,31 @@ public:
 
   // Verify the correctness of KnownZeros and KnownOnes
   void verify() const {
-    assert(KnownZeros.getBitWidth() == KnownOnes.getBitWidth() && "BitWidth not matches!");
-    assert(!(KnownZeros & KnownOnes) && "BitMasks conflicts!");
+    assert(KnownZeros.getBitWidth() == KnownOnes.getBitWidth() &&
+           KnownZeros.getBitWidth() == KnownSames.getBitWidth()
+           && "BitWidth not matches!");
+    assert(!(KnownZeros & KnownOnes) && !(KnownZeros & KnownSames) &&
+           !(KnownOnes & KnownSames) && "BitMasks conflicts!");
   }
 
   bool isCompatibleWith(const SIRBitMask &Mask) {
     return getMaskWidth() == Mask.getMaskWidth() &&
-           !(KnownOnes & Mask.KnownZeros) && !(KnownZeros & Mask.KnownOnes);
+           !(KnownOnes & Mask.KnownZeros) && !(KnownZeros & Mask.KnownOnes) &&
+           !(KnownSames & Mask.KnownZeros) && !(KnownSames & Mask.KnownOnes) &&
+           !(Mask.KnownSames & KnownZeros) && !(Mask.KnownSames & KnownOnes);
   }
 
   // Set bit of KnownZeros and KnownOnes
   void setKnownZeroAt(unsigned i) {
     KnownZeros.setBit(i);
     KnownOnes.clearBit(i);
+    KnownSames.clearBit(i);
     verify();
   }
   void setKnownOneAt(unsigned i) {
     KnownOnes.setBit(i);
     KnownZeros.clearBit(i);
+    KnownSames.clearBit(i);
     verify();
   }
 
@@ -220,6 +230,7 @@ public:
 
     KnownZeros |= Mask.KnownZeros;
     KnownOnes |= Mask.KnownOnes;
+    KnownSames |= Mask.KnownSames;
     verify();
   }
   void mergeKnownByAnd(const SIRBitMask &Mask) {
@@ -227,6 +238,7 @@ public:
 
     KnownZeros &= Mask.KnownZeros;
     KnownOnes &= Mask.KnownOnes;
+    KnownSames &= Mask.KnownSames;
     verify();
   }
 
@@ -243,22 +255,22 @@ public:
   SIRBitMask shl(unsigned i) {
     APInt PaddingZeros = APInt::getLowBitsSet(getMaskWidth(), i);
 
-    return SIRBitMask(KnownZeros.shl(i) | PaddingZeros, KnownOnes.shl(i));
+    return SIRBitMask(KnownZeros.shl(i) | PaddingZeros, KnownOnes.shl(i), KnownSames.shl(i));
   }
   // Logic shift right and fill the higher bits with zeros.
   SIRBitMask lshr(unsigned i) {
     APInt PaddingZeros = APInt::getHighBitsSet(getMaskWidth(), i);
 
-    return SIRBitMask(KnownZeros.lshr(i) | PaddingZeros, KnownOnes.lshr(i));
+    return SIRBitMask(KnownZeros.lshr(i) | PaddingZeros, KnownOnes.lshr(i), KnownSames.lshr(i));
   }
   // Arithmetic shift right and fill the higher bits with sign bit. However,
   // this can only be down when it is known.
   SIRBitMask ashr(unsigned i) {
-    return SIRBitMask(KnownZeros.ashr(i), KnownOnes.ashr(i));
+    return SIRBitMask(KnownZeros.ashr(i), KnownOnes.ashr(i), KnownSames.ashr(i));
   }
   // Extend the width of mask
   SIRBitMask extend(unsigned BitWidth) {
-    return SIRBitMask(KnownZeros.zextOrSelf(BitWidth), KnownOnes.zextOrSelf(BitWidth));
+    return SIRBitMask(KnownZeros.zextOrSelf(BitWidth), KnownOnes.zextOrSelf(BitWidth), KnownSames.zextOrSelf(BitWidth));
   }
 
 #define CREATEBITACCESSORS(WHAT, VALUE) \
@@ -290,6 +302,7 @@ public:
 
   CREATEBITACCESSORS(One, KnownOnes)
   CREATEBITACCESSORS(Zero, KnownZeros)
+  CREATEBITACCESSORS(Same, KnownSames)
   CREATEBITACCESSORS(Bit, KnownOnes | KnownZeros)
   CREATEBITACCESSORS(Value, (KnownOnes & ~KnownZeros))
 
@@ -345,27 +358,19 @@ public:
 
     return TrailingOnes;
   }
+  unsigned countLeadingSigns() {
+    unsigned LeadingSigns = 0;
+    unsigned MaskWidth = getMaskWidth();
 
-  // Mask evaluation function.
-  SIRBitMask evaluateAnd(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateOr(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateNot(SIRBitMask Mask);
-  SIRBitMask evaluateXor(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateRand(SIRBitMask Mask);
-  SIRBitMask evaluateRxor(SIRBitMask Mask);
-  SIRBitMask evaluateBitCat(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateBitExtract(SIRBitMask Mask, unsigned UB, unsigned LB);
-  SIRBitMask evaluateBitRepeat(SIRBitMask Mask, unsigned RepeatTimes);
-  SIRBitMask evaluateAdd(SIRBitMask LHS, SIRBitMask RHS, unsigned ResultBitWidth);
-  SIRBitMask evaluateAddc(SIRBitMask LHS, SIRBitMask RHS, SIRBitMask Carry);
-  SIRBitMask evaluateMul(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateShl(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateLshr(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateAshr(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateUgt(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateSgt(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateUDiv(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateSDiv(SIRBitMask LHS, SIRBitMask RHS);
+    for (unsigned i = 0; i < MaskWidth; ++i) {
+      if (isSameKnownAt(MaskWidth - 1 - i))
+        ++LeadingSigns;
+      else
+        break;
+    }
+
+    return LeadingSigns;
+  }
 
   bool updateMask(Instruction *Inst, SIR *SM, DataLayout *TD);
 
@@ -378,6 +383,8 @@ public:
         Output << 0;
       else if (KnownOnes[BitWidth - 1 - i] == 1)
         Output << 1;
+      else if (KnownSames[BitWidth - 1 -i] == 1)
+        Output << 's';
       else
         Output << 'x';
     }

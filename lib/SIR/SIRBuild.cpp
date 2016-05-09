@@ -2305,7 +2305,7 @@ Value *SIRDatapathBuilder::createIntegerValue(unsigned BitWidth, unsigned Val) {
   APInt V = CI->getValue();
 
   // The mask of constant value is itself.
-  SIRBitMask Mask(~V, V);
+  SIRBitMask Mask(~V, V, V.getNullValue(BitWidth));
   SM->IndexVal2BitMask(CI, Mask);
 
   return CI;
@@ -2315,7 +2315,7 @@ Value *SIRDatapathBuilder::createIntegerValue(APInt Val) {
   Value *V = ConstantInt::get(SM->getContext(), Val);
 
   // The mask of constant value is itself.
-  SIRBitMask Mask(~Val, Val);
+  SIRBitMask Mask(~Val, Val, Val.getNullValue(Val.getBitWidth()));
   SM->IndexVal2BitMask(V, Mask);
 
   return V;

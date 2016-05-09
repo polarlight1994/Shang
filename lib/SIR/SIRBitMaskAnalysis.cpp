@@ -109,7 +109,9 @@ SIRBitMask SIRBitMaskAnalysis::computeAnd(SIRBitMask LHS, SIRBitMask RHS) {
     // If any zero in some bits of one of operands, then these bits of result will be zero
     LHS.getKnownZeros() | RHS.getKnownZeros(),
     // If any one in some bits of both two operands, then these bits of result will be one
-    LHS.getKnownOnes() & RHS.getKnownOnes());
+    LHS.getKnownOnes() & RHS.getKnownOnes(),
+    // Sign bits will be And,
+    LHS.getKnownSames() & RHS.getKnownSames());
 }
 
 SIRBitMask SIRBitMaskAnalysis::computeOr(SIRBitMask LHS, SIRBitMask RHS) {
@@ -117,11 +119,13 @@ SIRBitMask SIRBitMaskAnalysis::computeOr(SIRBitMask LHS, SIRBitMask RHS) {
     // If any zero in some bits of both two operands, then these bits of result will be zero
     LHS.getKnownZeros() & RHS.getKnownZeros(),
     // If any one in some bits of one of operands, then these bits of result will be one
-    LHS.getKnownOnes() | RHS.getKnownOnes());
+    LHS.getKnownOnes() | RHS.getKnownOnes(),
+    // Sign bits will be And,
+    LHS.getKnownSames() & RHS.getKnownSames());
 }
 
 SIRBitMask SIRBitMaskAnalysis::computeNot(SIRBitMask Mask) {
-  return SIRBitMask(Mask.getKnownOnes(), Mask.getKnownZeros());
+  return SIRBitMask(Mask.getKnownOnes(), Mask.getKnownZeros(), Mask.getKnownSames());
 }
 
 SIRBitMask SIRBitMaskAnalysis::computeXor(SIRBitMask LHS, SIRBitMask RHS) {
@@ -129,21 +133,23 @@ SIRBitMask SIRBitMaskAnalysis::computeXor(SIRBitMask LHS, SIRBitMask RHS) {
     // If some bits of both two operands are known to be same, then these bits of result will be zero
     (LHS.getKnownZeros() & RHS.getKnownZeros()) | (LHS.getKnownOnes() & RHS.getKnownOnes()),
     // If some bits of both two operands are known to be different, then these bits of result will be one
-    (LHS.getKnownZeros() & RHS.getKnownOnes()) | (LHS.getKnownOnes() & RHS.getKnownZeros()));
+    (LHS.getKnownZeros() & RHS.getKnownOnes()) | (LHS.getKnownOnes() & RHS.getKnownZeros()),
+    // Sign bits will be And,
+    LHS.getKnownSames() & RHS.getKnownSames());
 }
 
 SIRBitMask SIRBitMaskAnalysis::computeRand(SIRBitMask Mask) {
-  return Mask.isAllOneKnown() ? SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1)) :
-                                (Mask.hasAnyZeroKnown() ? SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1)) : SIRBitMask(APInt::getNullValue(1), APInt::getNullValue(1)));
+  return Mask.isAllOneKnown() ? SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1)) :
+                                (Mask.hasAnyZeroKnown() ? SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1)) : SIRBitMask(APInt::getNullValue(1), APInt::getNullValue(1), APInt::getNullValue(1)));
 }
 
 SIRBitMask SIRBitMaskAnalysis::computeRxor(SIRBitMask Mask) {
   if (Mask.hasAnyOneKnown() && Mask.hasAnyZeroKnown())
-    return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1));
+    return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
   else if (Mask.isAllOneKnown() || Mask.isAllZeroKnown())
-    return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1));
+    return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
   else
-    return SIRBitMask(APInt::getNullValue(1), APInt::getNullValue(1));
+    return SIRBitMask(APInt::getNullValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
 }
 
 SIRBitMask SIRBitMaskAnalysis::computeBitCat(SIRBitMask LHS, SIRBitMask RHS) {
@@ -152,12 +158,13 @@ SIRBitMask SIRBitMaskAnalysis::computeBitCat(SIRBitMask LHS, SIRBitMask RHS) {
   APInt KnownZeros = LHS.getKnownZeros().zextOrSelf(MaskWidth).shl(RHS.getMaskWidth()) | RHS.getKnownZeros().zextOrSelf(MaskWidth);
   APInt KnownOnes = LHS.getKnownOnes().zextOrSelf(MaskWidth).shl(RHS.getMaskWidth()) | RHS.getKnownOnes().zextOrSelf(MaskWidth);
 
-  return SIRBitMask(KnownZeros, KnownOnes);;
+  return SIRBitMask(KnownZeros, KnownOnes, LHS.getKnownSames().zextOrSelf(MaskWidth).shl(RHS.getMaskWidth()));;
 }
 
 SIRBitMask SIRBitMaskAnalysis::computeBitExtract(SIRBitMask Mask, unsigned UB, unsigned LB) {
   return SIRBitMask(getBitExtraction(Mask.getKnownZeros(), UB, LB),
-                    getBitExtraction(Mask.getKnownOnes(), UB, LB));
+                    getBitExtraction(Mask.getKnownOnes(), UB, LB),
+                    getBitExtraction(Mask.getKnownSames(), UB, LB));
 }
 
 SIRBitMask SIRBitMaskAnalysis::computeBitRepeat(SIRBitMask Mask, unsigned RepeatTimes) {
@@ -166,6 +173,9 @@ SIRBitMask SIRBitMaskAnalysis::computeBitRepeat(SIRBitMask Mask, unsigned Repeat
   for (unsigned i = 2; i < RepeatTimes; ++i) {
     NewMask = computeBitCat(NewMask, Mask);
   }
+
+  if (!Mask.isAllBitKnown())
+    NewMask = SIRBitMask(NewMask.getKnownZeros(), NewMask.getKnownOnes(), APInt::getAllOnesValue(RepeatTimes));
 
   return NewMask;
 }
@@ -204,7 +214,9 @@ SIRBitMask SIRBitMaskAnalysis::computeAdd(SIRBitMask LHS, SIRBitMask RHS, unsign
   SIRBitMask MaskWithCarry =  computeBitCat(Carry, S);
 
   if (ResultBitWidth >= MaskWithCarry.getMaskWidth())
-    return SIRBitMask(MaskWithCarry.getKnownZeros().zextOrSelf(ResultBitWidth), MaskWithCarry.getKnownOnes().zextOrSelf(ResultBitWidth));
+    return SIRBitMask(MaskWithCarry.getKnownZeros().zextOrSelf(ResultBitWidth),
+                      MaskWithCarry.getKnownOnes().zextOrSelf(ResultBitWidth),
+                      MaskWithCarry.getKnownSames().zextOrSelf(ResultBitWidth));
   else
     return computeBitExtract(MaskWithCarry, ResultBitWidth, 0);
 }
@@ -250,7 +262,8 @@ SIRBitMask SIRBitMaskAnalysis::computeMul(SIRBitMask LHS, SIRBitMask RHS) {
   unsigned BitWidth = LHS.getMaskWidth() + RHS.getMaskWidth();
 
   SIRBitMask R(APInt::getAllOnesValue(BitWidth),
-    APInt::getNullValue(BitWidth));
+               APInt::getNullValue(BitWidth),
+               APInt::getNullValue(BitWidth));
 
   for (unsigned i = 0; i < BitWidth; ++i) {
     // If any operand is all known zero bits or there is not any
@@ -262,11 +275,13 @@ SIRBitMask SIRBitMaskAnalysis::computeMul(SIRBitMask LHS, SIRBitMask RHS) {
     // to the result in this case.
     if (RHS.isOneKnownAt(i))
       R = computeAdd(R, SIRBitMask(LHS.getKnownZeros().zextOrSelf(BitWidth),
-      LHS.getKnownOnes().zextOrSelf(BitWidth)), BitWidth);
+                                   LHS.getKnownOnes().zextOrSelf(BitWidth),
+                                   LHS.getKnownSames().zextOrSelf(BitWidth)),
+                     BitWidth);
     // If the current bit is unknown, then we must make sure the known
     // zero bits of LHS is passed to the partial product.
     else if (!RHS.isZeroKnownAt(i)) {
-      SIRBitMask Mask(LHS.getKnownZeros().zextOrSelf(BitWidth), APInt::getNullValue(BitWidth));
+      SIRBitMask Mask(LHS.getKnownZeros().zextOrSelf(BitWidth), APInt::getNullValue(BitWidth), LHS.getKnownSames().zextOrSelf(BitWidth));
       R = computeAdd(R, Mask, BitWidth);
     }
 
@@ -350,9 +365,9 @@ SIRBitMask SIRBitMaskAnalysis::computeUgt(SIRBitMask LHS, SIRBitMask RHS) {
       (LHS.isOneKnownAt(BitWidth - 1 - i) && RHS.isOneKnownAt(BitWidth - 1 - i)))
       continue;
     else if (LHS.isOneKnownAt(BitWidth - 1 - i) && RHS.isZeroKnownAt(BitWidth - 1 - i))
-      return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1));
+      return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
     else if (LHS.isZeroKnownAt(BitWidth - 1 - i) && RHS.isOneKnownAt(BitWidth - 1 - i))
-      return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1));
+      return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
     else
       return SIRBitMask(1);
   }
@@ -363,18 +378,18 @@ SIRBitMask SIRBitMaskAnalysis::computeSgt(SIRBitMask LHS, SIRBitMask RHS) {
   assert(BitWidth == RHS.getMaskWidth() && "Mask width not matches!");
 
   if (LHS.isZeroKnownAt(BitWidth - 1) && RHS.isOneKnownAt(BitWidth - 1))
-    return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1));
+    return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
   else if (LHS.isOneKnownAt(BitWidth - 1) && RHS.isZeroKnownAt(BitWidth - 1))
-    return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1));
+    return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
   else if (LHS.isZeroKnownAt(BitWidth - 1) && RHS.isZeroKnownAt(BitWidth - 1)) {
     for (unsigned i = 0; i < BitWidth - 1; ++i) {
       if ((LHS.isZeroKnownAt(BitWidth - 2 - i) && RHS.isZeroKnownAt(BitWidth - 2 - i)) ||
         (LHS.isOneKnownAt(BitWidth - 2 - i) && RHS.isOneKnownAt(BitWidth - 2 - i)))
         continue;
       else if (LHS.isOneKnownAt(BitWidth - 2 - i) && RHS.isZeroKnownAt(BitWidth - 2 - i))
-        return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1));
+        return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
       else if (LHS.isZeroKnownAt(BitWidth - 2 - i) && RHS.isOneKnownAt(BitWidth - 2 - i))
-        return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1));
+        return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
       else
         return SIRBitMask(1);
     }
@@ -384,9 +399,9 @@ SIRBitMask SIRBitMaskAnalysis::computeSgt(SIRBitMask LHS, SIRBitMask RHS) {
         (LHS.isOneKnownAt(BitWidth - 2 - i) && RHS.isOneKnownAt(BitWidth - 2 - i)))
         continue;
       else if (LHS.isOneKnownAt(BitWidth - 2 - i) && RHS.isZeroKnownAt(BitWidth - 2 - i))
-        return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1));       
+        return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));       
       else if (LHS.isZeroKnownAt(BitWidth - 2 - i) && RHS.isOneKnownAt(BitWidth - 2 - i))
-        return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1));
+        return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
       else
         return SIRBitMask(1);
     }
@@ -451,7 +466,8 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
       assert(isa<Argument>(Op) || isa<ConstantInt>(Op) || isa<UndefValue>(Op) && "Unexpected Value Type!");
 
       if (ConstantInt *CI = dyn_cast<ConstantInt>(Op)) {
-        Masks.push_back(SIRBitMask(~(CI->getValue()), CI->getValue()));
+        APInt CIAPInt = CI->getValue();
+        Masks.push_back(SIRBitMask(~CIAPInt, CIAPInt, CIAPInt.getNullValue(CIAPInt.getBitWidth())));
         continue;
       }
 
@@ -591,14 +607,17 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
       return SIRBitMask(Masks[0].getMaskWidth());
     }
 
-    return SIRBitMask(Masks[0].getKnownZeros(), APInt::getNullValue(Masks[0].getMaskWidth()));
+    return SIRBitMask(Masks[0].getKnownZeros(),
+                      APInt::getNullValue(Masks[0].getMaskWidth()),
+                      APInt::getNullValue(Masks[0].getMaskWidth()));
   }
   }
 }
 
 bool isDifferentMask(SIRBitMask NewMask, SIRBitMask OldMask) {
   return ((NewMask.getKnownOnes() != OldMask.getKnownOnes()) ||
-          (NewMask.getKnownZeros() != OldMask.getKnownZeros()));
+          (NewMask.getKnownZeros() != OldMask.getKnownZeros()) ||
+          (NewMask.getKnownSames() != OldMask.getKnownSames()));
 }
 
 bool SIRBitMaskAnalysis::computeAndUpdateMask(Instruction *Inst) {
@@ -706,60 +725,21 @@ void SIRBitMaskAnalysis::printMask(raw_fd_ostream &Output) {
       Instruction *Inst = II;
 
       if (!SM->hasBitMask(Inst)) {
-        //assert(!isa<IntrinsicInst>(Inst) && "Unexpected instruction type!");
         continue;
       }
       SIRBitMask Mask = SM->getBitMask(Inst);
 
       Value *KnownZeros = Builder.createIntegerValue(Mask.getKnownZeros());
-      Value *KnownOnes = Builder.createIntegerValue(Mask.getKnownOnes());        
-
-      //if (!SM.lookupSIRReg(Inst)) {
-//         unsigned BitWidth = Mask.getMaskWidth();
-//         Value *MaskedVal = Builder.createSOrInst(Builder.createIntegerValue(BitWidth, 1), Builder.createIntegerValue(BitWidth, 1), Inst->getType(), Inst, true);
-// 
-//         Inst->replaceAllUsesWith(MaskedVal);
-//         Instruction *MaskedInst = dyn_cast<Instruction>(MaskedVal);
-//         MaskedInst->setOperand(0, Builder.createSAndInst(Inst, Builder.createSNotInst(KnownZeros, KnownZeros->getType(), Inst, true), Inst->getType(), Inst, true));
-//         MaskedInst->setOperand(1, KnownOnes);
-
-        //errs() << "optimize " << Inst->getName() << "\n";
-        //Num++;
-      //}      
+      Value *KnownOnes = Builder.createIntegerValue(Mask.getKnownOnes());         
  
       Output << Inst->getName() << "\t";
       Mask.print(Output);
       Output << "\n";
-
-//       if (IntrinsicInst *InstII = dyn_cast<IntrinsicInst>(Inst))
-//         if (isUserElement(InstII, ChainOutput))
-//           ChainOutput << "\n";
     }
   }
 
   Output << "Total useful mask numbers is " << MaskNum;
   Output << "\n\n\n";
-
-  int element_num = 0;
-
-  typedef Function::iterator bb_iterator;
-  typedef BasicBlock::iterator inst_iterator;
-  for (bb_iterator BI = F->begin(), BE = F->end(); BI != BE; ++BI) {
-    BasicBlock *BB = BI;
-
-    for (inst_iterator II = BB->begin(), IE = BB->end(); II != IE; ++II) {
-      Instruction *Inst = II;
-
-      if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst)) {
-        if (II->getIntrinsicID() == Intrinsic::shang_mul || II->getIntrinsicID() == Intrinsic::shang_add || II->getIntrinsicID() == Intrinsic::shang_addc) {
-          typedef Value::use_iterator iterator;
-          for (iterator I = II->use_begin(), E = II->use_end(); I != E; ++I) {
-
-          }
-        }
-      }
-    }
-  }
 }
 
 void SIRBitMaskAnalysis::verifyMaskCorrectness() {
