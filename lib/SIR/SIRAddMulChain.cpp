@@ -218,97 +218,6 @@ void SIRAddMulChain::collect(IntrinsicInst *ChainRoot) {
   }
 }
 
-std::vector<Value *> SIRAddMulChain::OptimizeOperands(std::vector<Value *> Operands,
-                                                      Value *ChainRoot, unsigned BitWidth) {
-  SIRDatapathBuilder Builder(SM, *TD);
-  std::vector<Value *> OptOperands;
-
-  std::vector<Value *> OpWithSignBits;
-  unsigned LeadingSignsWidth = UINT16_MAX;
-  for (unsigned i = 0; i < Operands.size(); ++i) {
-    Value *Op = Operands[i];
-
-    if (SM->hasBitMask(Op)) {
-      SIRBitMask OpMask = SM->getBitMask(Op);
-
-      unsigned LeadingSigns = OpMask.countLeadingSigns();
-      if (LeadingSigns != 0) {
-        LeadingSignsWidth = std::min(LeadingSignsWidth, LeadingSigns);
-        OpWithSignBits.push_back(Op);
-      } else {
-        OptOperands.push_back(Op);
-        SM->indexKeepVal(Op);
-      }
-    } else {
-      OptOperands.push_back(Op);
-      SM->indexKeepVal(Op);
-    }
-  }
-
-  // Only if we collect two or more operands with known sign bits and the width is
-  // greater than one can the optimization be done.
-  if (LeadingSignsWidth > 1 && LeadingSignsWidth != UINT16_MAX && OpWithSignBits.size() > 1) {
-    errs() << "Sign BitMask optimize start!\n";
-
-    // Extract all SignBits of operands and LeftBehinds.
-    std::vector<Value *> SignBits;
-    for (unsigned i = 0; i < OpWithSignBits.size(); ++i) {
-      Value *Op = OpWithSignBits[i];
-      SIRBitMask OpMask = SM->getBitMask(Op);
-      unsigned OpBitWidth = Builder.getBitWidth(Op);
-
-      Value *SignBit = Builder.createSBitExtractInst(Op, OpBitWidth, OpBitWidth - LeadingSignsWidth,
-                                                     Builder.createIntegerType(LeadingSignsWidth), ChainRoot, true);
-      SignBits.push_back(SignBit);
-
-      Value *LeftBehind = Builder.createSBitExtractInst(Op, OpBitWidth - LeadingSignsWidth, 0,
-                                                        Builder.createIntegerType(OpBitWidth - LeadingSignsWidth), ChainRoot, true);
-      Value *ExtendLeftBehind = Builder.createSBitCatInst(Builder.createIntegerValue(BitWidth - OpBitWidth + LeadingSignsWidth, 0),
-                                                          LeftBehind, Op->getType(), ChainRoot, true);
-
-      APInt KnownZero = APInt::getNullValue(OpBitWidth);
-      for (unsigned j = OpBitWidth - LeadingSignsWidth; j < OpBitWidth; ++j)
-        KnownZero.setBit(j);
-      SIRBitMask ExtendLBMask = SIRBitMask(KnownZero, APInt::getNullValue(OpBitWidth), APInt::getNullValue(OpBitWidth));
-      SM->IndexVal2BitMask(ExtendLeftBehind, ExtendLBMask);
-
-      OptOperands.push_back(ExtendLeftBehind);
-      SM->indexKeepVal(ExtendLeftBehind);
-    }
-
-    // Add all sign bit to take advantage of the built-in optimization in Logic Synthesis tool.
-    Value *SignBitAddResult;
-    // If there are more than two operands, transform it into mutil-SAddInst.
-    if (SignBits.size() > 2) {
-      Value *TempSAddInst = Builder.createSAddInst(SignBits[0], SignBits[1], Builder.createIntegerType(LeadingSignsWidth), ChainRoot, true);
-      for (unsigned i = 0; i < SignBits.size() - 3; i++) {
-        TempSAddInst = Builder.createSAddInst(TempSAddInst, SignBits[i + 2], Builder.createIntegerType(LeadingSignsWidth), ChainRoot, true);
-      }
-
-      unsigned num = SignBits.size();
-      SignBitAddResult = Builder.createSAddInst(TempSAddInst, SignBits[num - 1], Builder.createIntegerType(LeadingSignsWidth), ChainRoot, true);
-    } else {
-      assert(SignBits.size() == 2 && "Unexpected Operand Size!");
-      SignBitAddResult = Builder.createSAddInst(SignBits[0], SignBits[1], Builder.createIntegerType(LeadingSignsWidth), ChainRoot, true);
-    }
-
-    // Feedback the add result to matrix.
-    Value *ExtendSignBitAddResult = Builder.createSBitCatInst(SignBitAddResult, Builder.createIntegerValue(BitWidth - LeadingSignsWidth, 0),
-                                                              Builder.createIntegerType(BitWidth), ChainRoot, true);
-    OptOperands.push_back(ExtendSignBitAddResult);
-    SM->indexKeepVal(ExtendSignBitAddResult);
-  } else {
-    for (unsigned i = 0; i < OpWithSignBits.size(); ++i) {
-      Value *OpWithSignBit = OpWithSignBits[i];
-
-      OptOperands.push_back(OpWithSignBit);
-      SM->indexKeepVal(OpWithSignBit);
-    }
-  }
-
-  return OptOperands;
-}
-
 void SIRAddMulChain::generateDotMatrix() {
   // Print the Dot Matrix
   std::string DotMatrixOutputPath = LuaI::GetString("DotMatrix");
@@ -336,6 +245,7 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
 
   // Extract all operands added by the Chain.
   std::vector<Value *> Operands;
+  std::set<Value *> OpSets;
   typedef std::set<IntrinsicInst *>::iterator iterator;
   for (iterator I = Chain.begin(), E = Chain.end(); I != E; ++I) {
     IntrinsicInst *ChainInst = *I;
@@ -386,6 +296,10 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
 //         }
       }
 
+      if (OpSets.count(Operand))
+        errs() << "Same operand found!\n";
+      else
+        OpSets.insert(Operand);
       Operands.push_back(Operand);
       SM->indexKeepVal(Operand);
     }
