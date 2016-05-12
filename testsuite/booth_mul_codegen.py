@@ -549,7 +549,10 @@ def compressor_generator(triple_elements, sum_name, carry_name):
   compressor_no += 1
 
 def generateCompressorForMatrix(FileName):  
-  matrix = initMatrix(FileName)  
+  matrix = initMatrix(FileName)
+
+  matrix = eliminateOneInMatrix(matrix)
+
   compress(matrix)
 
   WTAFilePath = os.path.join(BASE_DIR, VerilogFile + '.sv')
