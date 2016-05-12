@@ -289,4 +289,85 @@ macro(add_cosimulation_test test_name)
 				${TEST_BINARY_ROOT}/obj_dir/V${DUT_NAME}_RTL ${TEST}_origin)
 endmacro(add_cosimulation_test)
 
+macro(add_high_level_synthesis test_name)
+	set(TEST "${test_name}")
+	set(TEST_RTL_ENTITY		"main")
+
+	set(TEST_SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+	set(TEST_BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR})
+	set(TEST_RTL_OBJ_ROOT "${TEST_BINARY_ROOT}/obj_dir")
+
+	set(SIR_MemIntrinsic_BC "${SIR_SOURCE_ROOT}/sir_mem.bc")
+
+	set(TEST_SRC       		"${TEST_SOURCE_ROOT}/${TEST}.cpp")
+	set(TEST_BC        		"${TEST_BINARY_ROOT}/${TEST}.bc")
+	set(TEST_LL        		"${TEST_BINARY_ROOT}/${TEST}.ll")
+
+	set(TEST_RTL_SRC   		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sv")
+	set(TEST_SDC     		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sdc")
+
+	set(TEST_CompressorInfo	"${TEST_BINARY_ROOT}/CompressorInfo.txt")
+	set(TEST_CompressorName	"${TEST_RTL_ENTITY}")
+	set(TEST_CompressorPath	"${TEST_BINARY_ROOT}")
+
+	set(CycleCounter		"${TEST_BINARY_ROOT}/${test_name}_DUT_RTL.txt")
+
+	set(DEBUG_FINAL_IR		"${TEST_BINARY_ROOT}/${TEST}.finalir")
+	set(DEBUG_SDC_RESULT	"${TEST_BINARY_ROOT}/${TEST}.sdcresult")
+	set(DEBUG_LS_RESULT		"${TEST_BINARY_ROOT}/${TEST}.lsresult")
+	set(DEBUG_IMS_RESULT  	"${TEST_BINARY_ROOT}/${TEST}.imsresult")
+	set(DEBUG_SchedGraph	"${TEST_BINARY_ROOT}/${TEST}.schedgraph")
+	set(DEBUG_MaskOutput	"${TEST_BINARY_ROOT}/${TEST}.maskoutput")
+	set(DEBUG_MulMaskOutput	"${TEST_BINARY_ROOT}/${TEST}.mulmaskoutput")
+	set(DEBUG_Chain			"${TEST_BINARY_ROOT}/${TEST}.chain")
+	set(DEBUG_DotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.dotmatrix")
+
+	set(enableCoSimulation false)
+
+	configure_file(
+		"${SIR_SOURCE_ROOT}/common_config.lua.in"
+		"${TEST_BINARY_ROOT}/common_config.lua"
+	)
+	configure_file(
+		"${SIR_SOURCE_ROOT}/test_config_main.lua.in"
+		"${TEST_BINARY_ROOT}/test_config_main.lua"
+	)
+	configure_file(
+		"${SIR_SOURCE_ROOT}/EP2C70F896C6.lua"
+		"${TEST_BINARY_ROOT}/EP2C70F896C6.lua"
+	)
+	configure_file(
+		"${SIR_SOURCE_ROOT}/verilog_synthesis_altera.tcl.in"
+		"${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl"
+	)
+	configure_file(
+		"${SIR_SOURCE_ROOT}/booth_mul_codegen.py"
+		"${TEST_BINARY_ROOT}/booth_mul_codegen.py"
+	)
+
+	#Compile the source file to IR.
+  add_custom_command(OUTPUT ${TEST_BC} ${TEST_LL}
+		#Use Clang to compile to BC.
+    COMMAND ${CLANG} ${TEST_SRC}
+            -O0 -c -emit-llvm
+            -o ${TEST_BC}
+		#Use LLVMDIS to compile to IR.
+    COMMAND ${LLVM_DIS} ${TEST_BC} -o ${TEST_LL}
+    DEPENDS ${TEST_SRC} ${LLVM_LINK} ${CLANG} ${LLVM_DIS}
+    WORKING_DIRECTORY ${TEST_BINARY_ROOT}
+    COMMENT "Compiling ${TEST_SRC} to ${TEST_BC}"
+  )
+
+	#Run the Shang.exe to compile cpp into verilog and software part.
+	add_custom_command(OUTPUT ${TEST_RTL_SRC} ${TEST_SDC}
+		COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} ${TEST_BINARY_ROOT}/test_config_main.lua"
+		DEPENDS ${TMIEOUT} ${TEST_BC} ${SHANG} "${TEST_BINARY_ROOT}/test_config_main.lua"
+		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
+		COMMENT "Run ${SHANG} to get verilog and software part"
+	)
+
+	add_custom_target(${TEST}_hls DEPENDS ${TEST_RTL_SRC} ${TEST_SDC})
+
+endmacro(add_high_level_synthesis)
+
 add_subdirectory(benchmark)

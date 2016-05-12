@@ -159,8 +159,6 @@ def initMatrix(FileName):
   return matrix
 
 def eliminateOneInMatrix(matrix):
-  global append_partial_product_num
-  
   one_number_in_matrix = [0 for col in range(partial_product_bits_num)]
   
   for row_no in range(0, len(matrix)):
@@ -168,7 +166,7 @@ def eliminateOneInMatrix(matrix):
 
     for col_no in range(0, len(row)):
       if (matrix[row_no][col_no] == '1\'b1'):
-        one_number_in_matrix[col_no] += 1
+        one_number_in_matrix[row_no] += 1
 
   final_one_number_in_matrix = ['1\'b0' for col in range(len(one_number_in_matrix))]
   for i in range(0, len(one_number_in_matrix)):
@@ -179,7 +177,7 @@ def eliminateOneInMatrix(matrix):
 
     if (remain_one_no == 1):
       final_one_number_in_matrix[i] = '1\'b1'
-    
+
     if (i != len(one_number_in_matrix) - 1):
       one_number_in_matrix[i + 1] += carry_one_no
 
@@ -193,64 +191,14 @@ def eliminateOneInMatrix(matrix):
       else:
         new_matrix[row_no][col_no] = matrix[row_no][col_no]
 
-  new_matrix.append(final_one_number_in_matrix)
-  append_partial_product_num += 1
+  for row_no in range(0, len(new_matrix)):
+    row = new_matrix[row_no]
+	
+    final_one_no = final_one_number_in_matrix[row_no]
+    if (final_one_no != 0):
+      row.append('1\'b1')
 
   return new_matrix
-
-def eliminateAppendInMatrix(matrix):
-  global append_partial_product_num
-  need_to_iteration = True
-  
-  while(need_to_iteration):
-    need_to_iteration = False
-    
-    append_in_matrix = []
-    for row_no in range(0, len(matrix)):
-      row = matrix[row_no]
-
-      for col_no in range(0, len(row)):
-        if (re.match(r'^~booth_encoder_', matrix[row_no][col_no])):
-          append_in_matrix.append([row_no, col_no, matrix[row_no][col_no].replace('~', '')])
-
-    for position in append_in_matrix:
-      append_row = ['1\'b0' for col in range(partial_product_bits_num)]
-      
-      append_row_no = position[0]
-      append_col_no = position[1]
-      append_element = position[2]
-
-      found = False
-      for row_no in range(0, len(matrix)):
-        if (found):
-          break
-        
-        row = matrix[row_no]
-
-        for col_no in range(0, len(row)):
-          if (col_no != append_col_no):
-            continue
-          
-          if (matrix[row_no][col_no] == '1\'b1'):
-            matrix[row_no][col_no] = '1\'b0'
-            matrix[append_row_no][append_col_no] = '1\'b0'
-            
-            append_row[col_no] = append_element
-            append_row[col_no + 1] = '~' + append_element
-
-            need_to_iteration = True
-            found = True
-
-      need_to_append_row = False
-      for element in append_row:
-        if (element != '1\'b0'):
-          need_to_append_row = True
-
-      if (need_to_append_row):
-        matrix.append(append_row)
-        append_partial_product_num += 1
-
-  return matrix
 
 def shrinkMatrix(dot_matrix):
   global append_partial_product_num
