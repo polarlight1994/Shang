@@ -247,12 +247,12 @@ def shrinkMatrix(dot_matrix):
   return new_dot_matrix
 
 def sortMatrix(matrix):
-  new_matrix = matrix
-  for row_no in range(0, len(new_matrix)):
-    row = new_matrix[row_no]
+  max_col_no = 0
+  for row_no in range(0, len(matrix)):
+    row = matrix[row_no]
+    max_col_no = max(max_col_no, len(row))
 
-    for col_no in range(0, len(row)):
-      new_matrix[row_no][col_no] = '1\'b0'
+  new_matrix = [['1\'b0' for col in range(max_col_no)] for row in range(len(matrix))]
 
   for row_no in range(0, len(matrix)):
     row = matrix[row_no]
