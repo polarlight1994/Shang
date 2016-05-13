@@ -247,7 +247,12 @@ def shrinkMatrix(dot_matrix):
   return new_dot_matrix
 
 def sortMatrix(matrix):
-  new_matrix = [['1\'b0' for col in range(append_partial_product_num + partial_product_num)] for row in range(partial_product_bits_num)]
+  new_matrix = matrix
+  for row_no in range(0, len(new_matrix)):
+    row = new_matrix[row_no]
+
+    for col_no in range(0, len(row)):
+      new_matrix[row_no][col_no] = '1\'b0'
 
   for row_no in range(0, len(matrix)):
     row = matrix[row_no]
@@ -323,7 +328,6 @@ def compressTripleLines(matrix, stage):
 
         IdenticalCompressor = checkIdenticalCompressor(triple_elements)
         if (IdenticalCompressor != None):
-          print(str(IdenticalCompressor))
           sum_name = IdenticalCompressor[0]
           carry_name = IdenticalCompressor[1]
         else:
@@ -347,7 +351,6 @@ def compressTripleLines(matrix, stage):
 
         IdenticalCompressor = checkIdenticalCompressor(triple_elements)
         if (IdenticalCompressor != None):
-          print(str(IdenticalCompressor))
           sum_name = IdenticalCompressor[0]
           carry_name = IdenticalCompressor[1]
         else:
@@ -380,7 +383,6 @@ def compressTripleLines(matrix, stage):
 
         IdenticalCompressor = checkIdenticalCompressor(triple_elements)
         if (IdenticalCompressor != None):
-          print(str(IdenticalCompressor))
           sum_name = IdenticalCompressor[0]
           carry_name = IdenticalCompressor[1]
         else:

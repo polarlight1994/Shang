@@ -41,6 +41,9 @@ add_custom_target(benchmark_cosimulation
 add_custom_target(benchmark_synthesis
 									COMMENT "Run the synthesis of whole benchmark")
 
+add_custom_target(benchmark_hls
+									COMMENT "Run the hls of whole benchmark")
+
 macro(add_synthesis_test test_name)
 	set(TEST "${test_name}")
 	set(TEST_RTL_ENTITY		"main")
