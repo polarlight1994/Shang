@@ -671,7 +671,7 @@ struct SingleFULinearOrder
 
   SingleFULinearOrder(VASTNode *FU, unsigned Parallelism, SchedulerBase &G,
                       IR2SUMapTy &IR2SUMap)
-    : GlobalDependenciesBuilderBase(IR2SUMap, *G),
+    : GlobalDependenciesBuilderBase<SingleFULinearOrder>(IR2SUMap, *G),
       FU(FU), Parallelism(Parallelism), G(G) {}
 
   void buildLinearOrder(ArrayRef<VASTSchedUnit*> Returns, LoopInfo &LI,
@@ -824,7 +824,7 @@ struct AliasRegionDepBuilder
 
   AliasRegionDepBuilder(VASTSchedGraph &G, AliasAnalysis &AA,
                         IR2SUMapTy &IR2SUMap)
-    : GlobalDependenciesBuilderBase(IR2SUMap, G), AA(AA) {}
+    : GlobalDependenciesBuilderBase<AliasRegionDepBuilder>(IR2SUMap, G), AA(AA) {}
 
   void initializeRegion(AliasSet &AS);
 
