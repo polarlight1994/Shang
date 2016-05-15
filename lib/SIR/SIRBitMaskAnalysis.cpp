@@ -298,10 +298,10 @@ SIRBitMask SIRBitMaskAnalysis::computeMul(SIRBitMask LHS, SIRBitMask RHS) {
 
 SIRBitMask SIRBitMaskAnalysis::computeShl(SIRBitMask LHS, SIRBitMask RHS) {
   unsigned RHSMaxWidth = std::min(Log2_32_Ceil(LHS.getMaskWidth()),
-    RHS.getMaskWidth());
+                                  RHS.getMaskWidth());
 
   SIRBitMask R = LHS;
-  for (unsigned i = 0; i < RHSMaxWidth && R.hasAnyBitKnown(); ++i) {
+  for (unsigned i = 0; i < RHSMaxWidth; ++i) {
     // If the i-th bit is known one in RHS, we always add the shifted
     // LHS to the result in this case.
     if (RHS.isOneKnownAt(i))
