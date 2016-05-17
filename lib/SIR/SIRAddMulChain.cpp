@@ -46,6 +46,7 @@ struct SIRAddMulChain : public SIRPass {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
     AU.addRequiredID(SIRBitMaskAnalysisID);
+    AU.addRequiredID(SIRFindCriticalPathID);
     AU.setPreservesAll();
   }
 };
@@ -58,6 +59,7 @@ INITIALIZE_PASS_BEGIN(SIRAddMulChain, "sir-add-mul-chain",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(SIRBitMaskAnalysis)
+  INITIALIZE_PASS_DEPENDENCY(SIRFindCriticalPath)
 INITIALIZE_PASS_END(SIRAddMulChain, "sir-add-mul-chain",
                     "Perform the add-mul chain optimization",
                     false, true)
@@ -105,7 +107,6 @@ void SIRAddMulChain::visit(Value *Root) {
       VisitStack.pop_back();
 
       if (CurNode->getIntrinsicID() == Intrinsic::shang_add || CurNode->getIntrinsicID() == Intrinsic::shang_addc) {
-
         unsigned UsedByChainNum = 0;
         unsigned UserNum = 0;
         typedef Value::use_iterator use_iterator;
@@ -218,6 +219,60 @@ void SIRAddMulChain::collect(IntrinsicInst *ChainRoot) {
   }
 }
 
+std::vector<Value *> SIRAddMulChain::OptimizeOperands(std::vector<Value *> Operands, Value *ChainRoot, unsigned BitWidth) {
+  std::vector<Value *> FinalOperands;
+
+  std::map<Value *, unsigned> Op2Nums;
+
+  for (unsigned i = 0; i < Operands.size(); ++i) {
+    Value *Op = Operands[i];
+
+    if (isa<ConstantInt>(Op)) {
+      SM->indexKeepVal(Op);
+      FinalOperands.push_back(Op);
+      continue;
+    }
+
+    if (!Op2Nums.count(Op))
+      Op2Nums.insert(std::make_pair(Op, 1));
+    else
+      Op2Nums[Op]++;
+  }
+
+  SIRDatapathBuilder Builder(SM, *TD);
+
+  typedef std::map<Value *, unsigned>::iterator iterator;
+  for (iterator I = Op2Nums.begin(), E = Op2Nums.end(); I != E; ++I) {
+    Value *Op = I->first;
+    unsigned OpBitWidth = Builder.getBitWidth(Op);
+    unsigned Num = I->second;
+
+    if (Num == 1) {
+      SM->indexKeepVal(Op);
+      FinalOperands.push_back(Op);
+      continue;
+    }
+
+    errs() << Op->getName() << "Repeated times " << Num << "\n";
+
+    if (Num == 2) {
+      Value *ExtractResult = Builder.createSBitExtractInst(Op, OpBitWidth - 1, 0, Builder.createIntegerType(OpBitWidth - 1), ChainRoot, true);
+      Value *ShiftResult = Builder.createSBitCatInst(ExtractResult, Builder.createIntegerValue(1, 0), Op->getType(), ChainRoot, true);
+
+      SIRBitMask OpMask = SM->getBitMask(Op);
+      OpMask = OpMask.shl(1);
+
+      SM->IndexVal2BitMask(ShiftResult, OpMask);
+      SM->indexKeepVal(ShiftResult);
+      FinalOperands.push_back(ShiftResult);
+    } else {
+      llvm_unreachable("Not handled yet!");
+    }
+  }
+
+  return FinalOperands;
+}
+
 void SIRAddMulChain::generateDotMatrix() {
   // Print the Dot Matrix
   std::string DotMatrixOutputPath = LuaI::GetString("DotMatrix");
@@ -241,14 +296,16 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
   assert(ChainMap.count(ChainRoot) && "Not a chain rooted on ChainRoot!");
   std::set<IntrinsicInst *> &Chain = ChainMap[ChainRoot];
 
-/*  unsigned TotalPartialProductNum = 0;*/
-
   // Extract all operands added by the Chain.
   std::vector<Value *> Operands;
-  std::set<Value *> OpSets;
   typedef std::set<IntrinsicInst *>::iterator iterator;
   for (iterator I = Chain.begin(), E = Chain.end(); I != E; ++I) {
     IntrinsicInst *ChainInst = *I;
+
+//     if (SM->inCriticalPath(ChainInst))
+//       errs() << "Located in critical Path!\n";
+//     else
+//       errs() << "Not Located in critical Path!\n";
 
     for (unsigned i = 0; i < ChainInst->getNumOperands() - 1; ++i) {
       Value *Operand = ChainInst->getOperand(i);
@@ -296,18 +353,14 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
 //         }
       }
 
-      if (OpSets.count(Operand))
-        errs() << "Same operand found!\n";
-      else
-        OpSets.insert(Operand);
       Operands.push_back(Operand);
-      SM->indexKeepVal(Operand);
+      //SM->indexKeepVal(Operand);
     }
   }
 
   // Optimize operands if there are known same sign bits in two or more operands.
   std::vector<Value *> OptOperands = Operands;
-  //OptOperands = OptimizeOperands(Operands, ChainRoot, TD->getTypeSizeInBits(ChainRoot->getType()));
+  OptOperands = OptimizeOperands(Operands, ChainRoot, TD->getTypeSizeInBits(ChainRoot->getType()));
 
   IntrinsicInst *Compressor = ChainRoot2Compressor[ChainRoot];
   SM->IndexOps2AdderChain(Compressor, OptOperands);
@@ -365,18 +418,18 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
             SIRBitMask Mask = SM->getBitMask(RowVal);
 
             if (Mask.isOneKnownAt(j)) {
-              errs() << "Mask set to One!\n";
+              //errs() << "Mask set to One!\n";
 
               Matrix[i][j] = "1\'b1";
               continue;
             }
             else if (Mask.isZeroKnownAt(j)) {
-              errs() << "Mask set to Zero!\n";
+              //errs() << "Mask set to Zero!\n";
 
               Matrix[i][j] = "1\'b0";
               continue;
             } else if (Mask.isSameKnownAt(j)) {
-              errs() << "Same bit!\n";
+              //errs() << "Same bit!\n";
 
               if (SameBit.size() != 0)
                 Matrix[i][j] = SameBit;

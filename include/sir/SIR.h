@@ -393,6 +393,99 @@ public:
   }
 };
 
+struct SMGNode : public ilist_node<SMGNode> {
+public:
+  struct EdgePtr {
+  private:
+    SMGNode *Node;
+    float Distance;
+
+  public:
+    EdgePtr(SMGNode *Node, float Distance) : Node(Node), Distance(Distance) {}
+
+    operator SMGNode *() const { return Node; }
+    SMGNode *operator->() const { return Node; }
+
+    float getDistance() const { return Distance; }
+  };
+
+  typedef SmallVector<EdgePtr, 4> ChildVecTy;
+  typedef ChildVecTy::iterator child_iterator;
+  typedef ChildVecTy::const_iterator const_child_iterator;
+
+  typedef SmallVector<EdgePtr, 4> ParentVecTy;
+  typedef ParentVecTy::iterator parent_iterator;
+  typedef ParentVecTy::const_iterator const_parent_iterator;
+
+private:
+  Value *Node;
+
+  ChildVecTy Childs;
+  ParentVecTy Parents;
+
+public:
+  // Construction for ilist node.
+  SMGNode() : Node(0) {}
+  // Construction for normal node.
+  SMGNode(Value *V) : Node(V) {}
+
+  Value *getValue() const { return Node; }
+
+  // Childs.
+  child_iterator child_begin() { return Childs.begin(); }
+  const_child_iterator child_begin() const { return Childs.begin(); }
+  child_iterator child_end() { return Childs.end(); }
+  const_child_iterator child_end() const { return Childs.end(); }
+  bool child_empty() const { return Childs.empty(); }
+  unsigned child_size() const { return Childs.size(); }
+
+  // Parents.
+  parent_iterator parent_begin() { return Parents.begin(); }
+  parent_iterator parent_end() { return Parents.end(); }
+  const_parent_iterator parent_begin() const { return Parents.begin(); }
+  const_parent_iterator parent_end() const { return Parents.end(); }
+  unsigned parent_size() const { return Parents.size(); }
+
+  bool hasChildNode(SMGNode *ChildNode) {
+    for (const_child_iterator I = child_begin(), E = child_end(); I != E; ++I)
+      if (ChildNode == EdgePtr(*I))
+        return true;
+
+    return false;
+  }
+
+  void addChildNode(SMGNode *ChildNode, float delay) {
+    assert(!hasChildNode(ChildNode) && "Add same child twice!");
+
+    ChildNode->Parents.push_back(EdgePtr(this, delay));
+    Childs.push_back(EdgePtr(ChildNode, delay));
+  }
+};
+
+template<> struct GraphTraits<SMGNode *> {
+  typedef SMGNode NodeType;
+  typedef NodeType::child_iterator ChildIteratorType;
+  static NodeType *getEntryNode(NodeType* N) { return N; }
+  static inline ChildIteratorType child_begin(NodeType *N) {
+    return N->child_begin();
+  }
+  static inline ChildIteratorType child_end(NodeType *N) {
+    return N->child_end();
+  }
+};
+
+template<> struct GraphTraits<const SMGNode *> {
+  typedef SMGNode NodeType;
+  typedef NodeType::const_child_iterator ChildIteratorType;
+  static NodeType *getEntryNode(NodeType* N) { return N; }
+  static inline ChildIteratorType child_begin(NodeType *N) {
+    return N->child_begin();
+  }
+  static inline ChildIteratorType child_end(NodeType *N) {
+    return N->child_end();
+  }
+};
+
 // Represent the registers in the Verilog.
 class SIRRegister : public ilist_node<SIRRegister> {
 public:
@@ -1026,6 +1119,8 @@ public:
   typedef Reg2SlotMapTy::iterator reg2slot_iterator;
   typedef Reg2SlotMapTy::const_iterator const_reg2slot_iterator;
 
+  typedef std::vector<std::vector<Value *> > CriticalPathsTy;
+
 private:
   // Input/Output ports of the module
   SIRPortVector Ports;
@@ -1051,6 +1146,8 @@ private:
   SeqVal2RegMapTy SeqVal2Reg;
   // The map between Reg and SIRSlot
   Reg2SlotMapTy Reg2Slot;
+
+  CriticalPathsTy CriticalPaths;
 
   // Registers that should be kept.
   std::set<SIRRegister *> KeepRegs;
@@ -1096,6 +1193,25 @@ public:
   void indexKeepVal(Value *Val) {
     if (!KeepVals.count(Val))
       KeepVals.insert(Val);
+  }
+
+  void indexCriticalPath(std::vector<Value *> Path) {
+    CriticalPaths.push_back(Path);
+    assert(CriticalPaths.size() && "Unexpected Empty Path!");
+  }
+  bool inCriticalPath(Value *Node) {
+    for (unsigned i = 0; i < CriticalPaths.size(); ++i) {
+      std::vector<Value *> CriticalPath = CriticalPaths[i];
+
+      for (unsigned j = 0; j < CriticalPath.size(); ++j) {
+        Value *N = CriticalPath[j];
+
+        if (Node == N)
+          return true;
+      }
+    }
+
+    return false;
   }
 
   Function *getFunction() const { return F; }
