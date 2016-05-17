@@ -99,7 +99,7 @@ INITIALIZE_PASS_BEGIN(SIRBitMaskAnalysis, "sir-bit-mask-analysis",
                       "Perform the bit-level optimization",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
-  INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForAnnotation)
+  INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForCodeGen)
 INITIALIZE_PASS_END(SIRBitMaskAnalysis, "sir-bit-mask-analysis",
                     "Perform the bit-level optimization",
                     false, true)
