@@ -340,61 +340,6 @@ def compressTripleLines(matrix, stage):
         if (row_no <= partial_product_bits_num - 2):
           matrix[row_no+1].append(carry_name)
 
-      reminder = compress_status[row_no] % 3
-      if (reminder == 2):
-        triple_elements = [matrix[row_no][3*num], matrix[row_no][3*num+1], '1\'b0']
-
-        matrix[row_no][3*num] = '1\'b0'
-        matrix[row_no][3*num+1] = '1\'b0'
-
-        sum_name = 'NULL'
-        carry_name = 'NULL'
-
-        IdenticalCompressor = checkIdenticalCompressor(triple_elements)
-        if (IdenticalCompressor != None):
-          sum_name = IdenticalCompressor[0]
-          carry_name = IdenticalCompressor[1]
-        else:
-          sum_name = 'sum_' + str(row_no) + '_' + str(num) + '_' + str(stage)
-          carry_name = 'carry_' + str(row_no) + '_' + str(num) + '_' + str(stage)
-          compressor_generator(triple_elements, sum_name, carry_name)
-
-        matrix[row_no].append(sum_name)
-        if (row_no <= partial_product_bits_num - 2):
-          matrix[row_no+1].append(carry_name)
-
-    if (compress_status[row_no] == 2):
-      need_to_compress = False
-      for no in range(0, row_no):
-        if (compress_status[row_no - 1 - no] >= 3):
-          need_to_compress = True
-        elif (compress_status[row_no - 1 - no] == 2):
-          continue
-        else:
-          break
-
-      if (need_to_compress):
-        triple_elements = [matrix[row_no][0], matrix[row_no][1], '1\'b0']
-
-        matrix[row_no][0] = '1\'b0'
-        matrix[row_no][1] = '1\'b0'
-
-        sum_name = 'NULL'
-        carry_name = 'NULL'
-
-        IdenticalCompressor = checkIdenticalCompressor(triple_elements)
-        if (IdenticalCompressor != None):
-          sum_name = IdenticalCompressor[0]
-          carry_name = IdenticalCompressor[1]
-        else:
-          sum_name = 'sum_' + str(row_no) + '_' + str(no) + '_' + str(stage)
-          carry_name = 'carry_' + str(row_no) + '_' + str(no) + '_' + str(stage)
-          compressor_generator(triple_elements, sum_name, carry_name)
-
-        matrix[row_no].append(sum_name)
-        if (row_no <= partial_product_bits_num - 2):
-          matrix[row_no+1].append(carry_name)
-
   if (compress_status[partial_product_bits_num-1] >= 2):
     WTAFilePath = os.path.join(BASE_DIR, VerilogFile + '.sv')
     WTA_file = open(WTAFilePath, 'a')
