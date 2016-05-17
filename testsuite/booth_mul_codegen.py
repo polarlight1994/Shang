@@ -168,15 +168,15 @@ def eliminateOneInMatrix(matrix):
       if (matrix[row_no][col_no] == '1\'b1'):
         one_number_in_matrix[row_no] += 1
 
-  final_one_number_in_matrix = ['1\'b0' for col in range(len(one_number_in_matrix))]
+  final_one_number_in_matrix = [0 for col in range(len(one_number_in_matrix))]
   for i in range(0, len(one_number_in_matrix)):
     one_no = one_number_in_matrix[i]
 
     remain_one_no = one_no % 2
-    carry_one_no = one_no / 2
+    carry_one_no = one_no // 2
 
     if (remain_one_no == 1):
-      final_one_number_in_matrix[i] = '1\'b1'
+      final_one_number_in_matrix[i] = 1
 
     if (i != len(one_number_in_matrix) - 1):
       one_number_in_matrix[i + 1] += carry_one_no
@@ -198,6 +198,7 @@ def eliminateOneInMatrix(matrix):
     if (final_one_no != 0):
       row.append('1\'b1')
 
+  printMatrix(new_matrix)
   return new_matrix
 
 def shrinkMatrix(dot_matrix):
