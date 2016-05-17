@@ -126,7 +126,7 @@ int main()
     //    printf("%d\n", main_result);
     //    return main_result;
 
-  //    printf("return return_value != %d\n", return_value);
+  printf("return return_value != %d\n", return_value);
   //  return return_value; 
 return return_value != 138852;
 }

@@ -118,7 +118,7 @@ result_out[idx] =  honda(x01, x02,
 //    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
     //    return main_result;
-  //              printf("return return_value != %d", return_value);
+  printf("return return_value != %d", return_value);
   //return return_value;
     //  return 0;
 	  return return_value != -49639 ;

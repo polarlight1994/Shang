@@ -107,7 +107,7 @@ int main()
     }
   //    printf("benchmark_result = %d\n",result_out);
   //    main_result = (result_out != exp_res);
-  //              printf("%d\n", return_value);
+                printf("%d\n", return_value);
     //    return main_result;
      //      return 0;
 	    return return_value != -220316;
