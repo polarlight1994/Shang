@@ -168,6 +168,9 @@ void SIRBuilder::buildInterface(Function *F) {
       ArgVal = D_Builder.createPtrToIntInst(Arg, ArgReg->getLLVMValue()->getType(), InsertPosition, true);
 
     C_Builder.assignToReg(IdleStartSlot, Start, ArgVal, ArgReg);
+
+    // Index all argument registers.
+    SM->indexArgReg(ArgReg);
   }
 
   // If the Start signal is true, then slot will jump to the slot of first BB.

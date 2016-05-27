@@ -444,6 +444,7 @@ public:
   parent_iterator parent_end() { return Parents.end(); }
   const_parent_iterator parent_begin() const { return Parents.begin(); }
   const_parent_iterator parent_end() const { return Parents.end(); }
+  bool parent_empty() const { return Parents.empty(); }
   unsigned parent_size() const { return Parents.size(); }
 
   bool hasChildNode(SMGNode *ChildNode) {
@@ -1120,6 +1121,7 @@ public:
   typedef Reg2SlotMapTy::const_iterator const_reg2slot_iterator;
 
   typedef std::vector<std::vector<Value *> > CriticalPathsTy;
+  typedef std::set<SIRRegister *> ArgRegsTy;
 
 private:
   // Input/Output ports of the module
@@ -1148,6 +1150,7 @@ private:
   Reg2SlotMapTy Reg2Slot;
 
   CriticalPathsTy CriticalPaths;
+  ArgRegsTy ArgRegs;
 
   // Registers that should be kept.
   std::set<SIRRegister *> KeepRegs;
@@ -1212,6 +1215,22 @@ public:
     }
 
     return false;
+  }
+
+  void indexArgReg(SIRRegister *Reg) {
+    ArgRegs.insert(Reg);
+  }
+  bool isArgReg(Value *Val) {
+    SIRRegister *Reg = lookupSIRReg(Val);
+
+    if (Reg) {
+      return ArgRegs.count(Reg);
+    }
+
+    return false;
+  }
+  std::set<SIRRegister *> getArgRegs() {
+    return ArgRegs;
   }
 
   Function *getFunction() const { return F; }
