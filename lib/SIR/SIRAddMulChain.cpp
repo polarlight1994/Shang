@@ -7,6 +7,8 @@
 
 #include "llvm/ADT/Statistic.h"
 
+#include <sstream>
+
 using namespace llvm;
 using namespace vast;
 
@@ -34,10 +36,16 @@ struct SIRAddMulChain : public SIRPass {
   void visit(Value *Root);
   void collect(IntrinsicInst *ChainRoot);
   void collectAddShiftChain(IntrinsicInst *ChainRoot);
-  std::vector<Value *> OptimizeOperands(std::vector<Value *> Operands,
-                                        Value *ChainRoot, unsigned BitWidth);
+
+  std::vector<Value *> eliminateIdenticalOperands(std::vector<Value *> Operands, Value *ChainRoot, unsigned BitWidth);
+  std::vector<Value *> OptimizeOperands(std::vector<Value *> Operands, Value *ChainRoot, unsigned BitWidth);
+
+  void AnalysisPossiblePatterns(unsigned OperandSize, std::vector<std::vector<unsigned> > &Patterns, std::vector<unsigned> &Pattern);
+  std::vector<std::vector<Value *> > PartitionOperands(std::vector<Value *> Operands);
+  void PartitionOperands(std::vector<Value *> Operands, unsigned PartitionNum);
+
   void generateDotMatrix();
-  void generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_ostream &Output);
+  void generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_ostream &Output, raw_fd_ostream &DSOutput);
   void replaceWithCompressor();
 
   void printAllChain();
@@ -219,11 +227,11 @@ void SIRAddMulChain::collect(IntrinsicInst *ChainRoot) {
   }
 }
 
-std::vector<Value *> SIRAddMulChain::OptimizeOperands(std::vector<Value *> Operands, Value *ChainRoot, unsigned BitWidth) {
+std::vector<Value *> SIRAddMulChain::eliminateIdenticalOperands(std::vector<Value *> Operands, Value *ChainRoot, unsigned BitWidth) {
   std::vector<Value *> FinalOperands;
 
+  // Eliminate the same operands.
   std::map<Value *, unsigned> Op2Nums;
-
   for (unsigned i = 0; i < Operands.size(); ++i) {
     Value *Op = Operands[i];
 
@@ -253,8 +261,6 @@ std::vector<Value *> SIRAddMulChain::OptimizeOperands(std::vector<Value *> Opera
       continue;
     }
 
-    errs() << Op->getName() << "Repeated times " << Num << "\n";
-
     if (Num == 2) {
       Value *ExtractResult = Builder.createSBitExtractInst(Op, OpBitWidth - 1, 0, Builder.createIntegerType(OpBitWidth - 1), ChainRoot, true);
       Value *ShiftResult = Builder.createSBitCatInst(ExtractResult, Builder.createIntegerValue(1, 0), Op->getType(), ChainRoot, true);
@@ -264,6 +270,7 @@ std::vector<Value *> SIRAddMulChain::OptimizeOperands(std::vector<Value *> Opera
 
       SM->IndexVal2BitMask(ShiftResult, OpMask);
       SM->indexKeepVal(ShiftResult);
+      SM->indexValidTime(ShiftResult, SM->getValidTime(Op));
       FinalOperands.push_back(ShiftResult);
     } else {
       llvm_unreachable("Not handled yet!");
@@ -273,15 +280,66 @@ std::vector<Value *> SIRAddMulChain::OptimizeOperands(std::vector<Value *> Opera
   return FinalOperands;
 }
 
+bool MyCompare(std::pair<Value *, float> A, std::pair<Value *, float> B) {
+  return A.second < B.second;
+}
+
+std::vector<Value *> SIRAddMulChain::OptimizeOperands(std::vector<Value *> Operands, Value *ChainRoot, unsigned BitWidth) {
+  // Eliminate the identical operands in add chain.
+  std::vector<Value *> OptOperands = eliminateIdenticalOperands(Operands, ChainRoot, BitWidth);
+
+  return OptOperands;
+}
+
+void SIRAddMulChain::AnalysisPossiblePatterns(unsigned OperandSize, std::vector<std::vector<unsigned> > &Patterns, std::vector<unsigned> &Pattern) {
+  for (unsigned i = OperandSize; i >= 1; --i) {
+    if (Pattern.size() != 0)
+      if (i > Pattern.back())
+        continue;
+
+    std::vector<unsigned> LocalPattern = Pattern;
+
+    LocalPattern.push_back(i);
+
+    if (i == OperandSize)
+      Patterns.push_back(LocalPattern);
+
+    AnalysisPossiblePatterns(OperandSize - i, Patterns, LocalPattern);
+  }
+}
+
+void SIRAddMulChain::PartitionOperands(std::vector<Value *> Operands, unsigned PartitionNum) {
+  std::vector<std::vector<unsigned> > PossiblePatterns;
+  std::vector<unsigned> InitPattern;
+
+  AnalysisPossiblePatterns(Operands.size(), PossiblePatterns, InitPattern);
+
+  for (unsigned i = 0; i < PossiblePatterns.size(); ++i) {
+    std::vector<unsigned> Pattern = PossiblePatterns[i];
+
+    for (unsigned j = 0; j < Pattern.size(); ++j) {
+      errs() << "\n" << Pattern[j] << "-";
+    }
+
+    errs() << "\n";
+  }
+
+
+}
+
 void SIRAddMulChain::generateDotMatrix() {
   // Print the Dot Matrix
   std::string DotMatrixOutputPath = LuaI::GetString("DotMatrix");
   std::string Error;
   raw_fd_ostream DotMatrixOutput(DotMatrixOutputPath.c_str(), Error);
 
+  std::string DSDotMatrixOutputPath = LuaI::GetString("DSDotMatrix");
+  std::string DSError;
+  raw_fd_ostream DSDotMatrixOutput(DSDotMatrixOutputPath.c_str(), DSError);
+
   typedef std::map<IntrinsicInst *, std::set<IntrinsicInst *> >::iterator iterator;
   for (iterator I = ChainMap.begin(), E = ChainMap.end(); I != E; ++I) {
-    generateDotmatrixForChain(I->first, DotMatrixOutput);
+    generateDotmatrixForChain(I->first, DotMatrixOutput, DSDotMatrixOutput);
   }
 
   std::string CompressorName = LuaI::GetString("CompressorName");
@@ -292,7 +350,7 @@ void SIRAddMulChain::generateDotMatrix() {
   CompressorInfo << CompressorName << "," << CompressorPath << ",";
 }
 
-void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_ostream &Output) {
+void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_ostream &Output, raw_fd_ostream &DSOutput) {
   assert(ChainMap.count(ChainRoot) && "Not a chain rooted on ChainRoot!");
   std::set<IntrinsicInst *> &Chain = ChainMap[ChainRoot];
 
@@ -302,11 +360,6 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
   for (iterator I = Chain.begin(), E = Chain.end(); I != E; ++I) {
     IntrinsicInst *ChainInst = *I;
 
-//     if (SM->inCriticalPath(ChainInst))
-//       errs() << "Located in critical Path!\n";
-//     else
-//       errs() << "Not Located in critical Path!\n";
-
     for (unsigned i = 0; i < ChainInst->getNumOperands() - 1; ++i) {
       Value *Operand = ChainInst->getOperand(i);
 
@@ -314,47 +367,9 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
       if (IntrinsicInst *OperandInst = dyn_cast<IntrinsicInst>(Operand)) {
         if (Chain.count(OperandInst))
           continue;
-
-//         if (OperandInst->getIntrinsicID() == Intrinsic::shang_mul) {
-//           Value *RHS = OperandInst->getOperand(1);
-//           unsigned RHSBitWidth = TD->getTypeSizeInBits(RHS->getType());
-//           unsigned PartialProductNum = (RHSBitWidth / 2) + 1;
-// 
-//           FlattenMul2PPNum.insert(std::make_pair(OperandInst, PartialProductNum));
-//           TotalPartialProductNum += PartialProductNum;
-//         }
-
-//         Intrinsic::ID ID = OperandInst->getIntrinsicID();
-//         // To check if there are add/mul--bit_extract--add chains exists.
-//         if (ID == Intrinsic::shang_shl || ID == Intrinsic::shang_lshr) {
-//           if (isa<ConstantInt>(OperandInst->getOperand(1))) {
-//             if (IntrinsicInst *Op = dyn_cast<IntrinsicInst>(OperandInst->getOperand(0))) {
-//               Intrinsic::ID OpID = Op->getIntrinsicID();
-// 
-//               if (OpID == Intrinsic::shang_add || OpID == Intrinsic::shang_addc)
-//                 errs() << "Found one add--bit_extract--add chain\n";
-//               if (OpID == Intrinsic::shang_mul)
-//                 errs() << "Found one mul--bit_extract--add chain\n";
-//             }
-//           }
-//         }
-
-//         if (ID == Intrinsic::shang_bit_extract) {
-//           if (isa<ConstantInt>(OperandInst->getOperand(1)) && isa<ConstantInt>(OperandInst->getOperand(2))) {
-//             if (IntrinsicInst *Op = dyn_cast<IntrinsicInst>(OperandInst->getOperand(0))) {
-//               Intrinsic::ID OpID = Op->getIntrinsicID();
-// 
-//               if (OpID == Intrinsic::shang_add || OpID == Intrinsic::shang_addc)
-//                 errs() << "Found one add--bit_extract--add chain\n";
-//               if (OpID == Intrinsic::shang_mul)
-//                 errs() << "Found one mul--bit_extract--add chain\n";
-//             }
-//           }
-//         }
       }
 
       Operands.push_back(Operand);
-      //SM->indexKeepVal(Operand);
     }
   }
 
@@ -370,20 +385,21 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
   unsigned MatrixColNum = TD->getTypeSizeInBits(ChainRoot->getType());
 
   std::vector<std::vector<std::string> > Matrix;
+  std::vector<std::vector<std::string> > DSMatrix;
   for (unsigned i = 0; i < MatrixRowNum; ++i) {
     std::vector<std::string> Row;
-    for (unsigned j = 0; j < MatrixColNum; ++j)
+    std::vector<std::string> DSRow;
+    for (unsigned j = 0; j < MatrixColNum; ++j) {
       Row.push_back("1\'b0");
+      DSRow.push_back("NULL");
+    }      
 
     Matrix.push_back(Row);
+    DSMatrix.push_back(DSRow);
   }
 
   for (unsigned i = 0; i < MatrixRowNum; ++i) {
     Value *RowVal = OptOperands[i];
-
-//     // Ignore the Multiplier value which is to be flattened.
-//     if (FlattenMul2PPNum.count(RowVal))
-//       continue;
 
     unsigned RowValBitWidth = TD->getTypeSizeInBits(RowVal->getType());
     std::string RowValName = RowVal->getName();
@@ -403,14 +419,30 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
           Matrix[i][MatrixColNum - 1 - j] = "1\'b1";
         else
           Matrix[i][MatrixColNum - 1 - j] = "1\'b0";
+
+        DSMatrix[i][MatrixColNum - 1 - j] = "0.0-0";
       }
     } else {
+      float delay;
+      if (SM->isArgReg(RowVal))
+        delay = 0.0f;
+      else
+        delay = SM->getValidTime(RowVal);
+
       std::string LeftBracket = "[", RightBracket = "]";
 
       RowValName = "operand_" + utostr_32(i);
 
       std::string SameBit;
       for (unsigned j = 0; j < MatrixColNum; ++j) {
+        std::stringstream ss;
+        ss << delay;
+
+        std::string delay_string;
+        ss >> delay_string;
+        ss.clear();
+        DSMatrix[i][j] = delay_string + "-0";
+
         std::string string_j = utostr_32(j);
 
         if (j < RowValBitWidth) {
@@ -418,19 +450,13 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
             SIRBitMask Mask = SM->getBitMask(RowVal);
 
             if (Mask.isOneKnownAt(j)) {
-              //errs() << "Mask set to One!\n";
-
               Matrix[i][j] = "1\'b1";
               continue;
             }
             else if (Mask.isZeroKnownAt(j)) {
-              //errs() << "Mask set to Zero!\n";
-
               Matrix[i][j] = "1\'b0";
               continue;
             } else if (Mask.isSameKnownAt(j)) {
-              //errs() << "Same bit!\n";
-
               if (SameBit.size() != 0)
                 Matrix[i][j] = SameBit;
               else {
@@ -444,33 +470,12 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
 
           Matrix[i][j] = Mangle(RowValName) + LeftBracket + string_j + RightBracket;
         }
-        else
+        else {
           Matrix[i][j] = "1\'b0";
+        }
       }
     }    
   }
-
-//   // Append the flatten multiplier operands to the Matrix.
-//   typedef std::map<Value *, unsigned>::iterator map_iterator;
-//   for (map_iterator I = FlattenMul2PPNum.begin(), E = FlattenMul2PPNum.end(); I != E; ++I) {
-//     Value *MulVal = I->first;
-//     unsigned MulValBitWidth = TD->getTypeSizeInBits(MulVal->getType());
-// 
-//     unsigned PPNum = I->second;
-//     std::string MulValName = MulVal->getName();    
-//     for (unsigned i = 0; i < PPNum; ++i) {
-//       std::vector<std::string> PartialProduct;
-// 
-//       for (unsigned j = 0; j < MulValBitWidth; ++j) {
-//         std::string PartialProductBit = MulValName + "_PP_" + utostr_32(i) + "[" + utostr_32(j) +"]";
-//         PartialProduct.push_back(PartialProductBit);
-//       }
-// 
-//       assert(PartialProduct.size() == MatrixColNum && "Unexpected Column number!");
-//       Matrix.push_back(PartialProduct);
-//     }
-//   }
-
 
   Output << "compressor_" + Mangle(Compressor->getName()) << "-" << MatrixRowNum << "-" << MatrixColNum << "\n";
   for (unsigned i = 0; i < Matrix.size(); ++i) {
@@ -479,6 +484,17 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
     }
 
     Output << "\n";
+  }
+
+  DSOutput << "compressor_" + Mangle(Compressor->getName()) << "-" << MatrixRowNum << "-" << MatrixColNum << "\n";
+
+  for (unsigned i = 0; i < DSMatrix.size(); ++i) {
+    for (unsigned j = 0; j < MatrixColNum; ++j) {
+      std::string element = DSMatrix[i][MatrixColNum - 1 - j];
+      DSOutput << DSMatrix[i][MatrixColNum - 1 - j] << ",";
+    }
+
+    DSOutput << "\n";
   }
 
   errs() << "compressor_" + Mangle(Compressor->getName()) << "-" << MatrixRowNum << "-" << MatrixColNum << "\n";

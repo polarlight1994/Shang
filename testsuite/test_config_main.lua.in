@@ -19,6 +19,8 @@ MaskOutput = [[@DEBUG_MaskOutput@]]
 MulMaskOutput = [[@DEBUG_MulMaskOutput@]]
 Chain = [[@DEBUG_Chain@]]
 DotMatrix = [[@DEBUG_DotMatrix@]]
+DSDotMatrix = [[@DEBUG_DSDotMatrix@]]
+ValValidTime = [[@DEBUG_ValidTime@]]
 
 CounterFile = [[@CycleCounter@]]
 

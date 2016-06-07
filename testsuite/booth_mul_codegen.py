@@ -184,19 +184,20 @@ def eliminateOneInMatrix(matrix):
   new_matrix = matrix
   for row_no in range(0, len(matrix)):
     row = matrix[row_no]
+    
+    new_col_no = 0
+    
+    final_one_no = final_one_number_in_matrix[row_no]
+    if (final_one_no != 0):
+      new_matrix[row_no][0] = '1\'b1'
+      new_col_no = new_col_no + 1
 
     for col_no in range(0, len(row)):
       if (matrix[row_no][col_no] == '1\'b1'):
-        new_matrix[row_no][col_no] = '1\'b0'
+        continue
       else:
-        new_matrix[row_no][col_no] = matrix[row_no][col_no]
-
-  for row_no in range(0, len(new_matrix)):
-    row = new_matrix[row_no]
-	
-    final_one_no = final_one_number_in_matrix[row_no]
-    if (final_one_no != 0):
-      row.append('1\'b1')
+        new_matrix[row_no][new_col_no] = matrix[row_no][col_no]
+        new_col_no = new_col_no + 1
 
   printMatrix(new_matrix)
   return new_matrix

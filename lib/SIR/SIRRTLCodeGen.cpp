@@ -890,12 +890,17 @@ bool SIRDatapathPrinter::printCompressor(IntrinsicInst &I) {
     Value *Op = Ops[i];
     std::string OpName = Op->getName();
 
-    if (isa<ConstantInt>(Op))
-      continue;
-    else if (SIRRegister *Reg = SM->lookupSIRReg(Op))
+    if (isa<ConstantInt>(Op)) {
+      OS.indent(2) << ".operand_" << utostr_32(i) << "(";
+      printAsOperand(OS, Op, TD.getTypeSizeInBits(Op->getType()));
+      OS << "),\n";
+    }
+    else if (SIRRegister *Reg = SM->lookupSIRReg(Op)) {
       OpName = Reg->getName();
-
-    OS.indent(2) << ".operand_" << utostr_32(i) << "(" << Mangle(OpName) << "),\n";
+      OS.indent(2) << ".operand_" << utostr_32(i) << "(" << Mangle(OpName) << "),\n";
+    } else {
+      OS.indent(2) << ".operand_" << utostr_32(i) << "(" << Mangle(Op->getName()) << "),\n";
+    }
   }
   OS.indent(2) << ".result(" << Mangle(I.getName()) << ")\n";
   OS << ");\n";
@@ -1480,13 +1485,13 @@ void SIR2RTL::generateCodeForCompressor(SIR &SM, DataLayout &TD) {
   assert(Py_IsInitialized() && "Python module not initialized!");
 
   FILE *fp = NULL;
-  std::string CompressorPath = LuaI::GetString("CompressorPath") + "/booth_mul_codegen.py";
+  std::string CompressorPath = LuaI::GetString("CompressorPath") + "/hybrid_tree_codegen.py";
 
   fp = fopen(CompressorPath.c_str(), "rb");
 
   assert(fp && "Python file not found!");
 
-  PyRun_SimpleFile(fp, "booth_mul_codegen.py");
+  PyRun_SimpleFile(fp, "hybrid_tree_codegen.py");
   
   Py_Finalize();
 }

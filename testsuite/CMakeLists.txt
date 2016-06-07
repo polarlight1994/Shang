@@ -76,6 +76,7 @@ macro(add_synthesis_test test_name)
 	set(DEBUG_MulMaskOutput	"${TEST_BINARY_ROOT}/${TEST}.mulmaskoutput")
 	set(DEBUG_Chain			"${TEST_BINARY_ROOT}/${TEST}.chain")
 	set(DEBUG_DotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.dotmatrix")
+	set(DEBUG_ValidTime		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.validtime")
 	
 	set(enableCoSimulation false)
 
@@ -96,8 +97,8 @@ macro(add_synthesis_test test_name)
 		"${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl"
 	)
 	configure_file(
-		"${SIR_SOURCE_ROOT}/booth_mul_codegen.py"
-		"${TEST_BINARY_ROOT}/booth_mul_codegen.py"
+		"${SIR_SOURCE_ROOT}/hybrid_tree_codegen.py"
+		"${TEST_BINARY_ROOT}/hybrid_tree_codegen.py"
 	)
 
 	#Compile the source file to IR.
@@ -175,7 +176,9 @@ macro(add_cosimulation_test test_name)
 	set(DEBUG_MaskOutput	"${TEST_BINARY_ROOT}/${TEST}.maskoutput")
 	set(DEBUG_MulMaskOutput	"${TEST_BINARY_ROOT}/${TEST}.mulmaskoutput")
 	set(DEBUG_Chain			"${TEST_BINARY_ROOT}/${TEST}.chain")
-	set(DEBUG_DotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.dotmatrix")
+	set(DEBUG_DotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.dotmatrixs")
+	set(DEBUG_DSDotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}_delay_stage.dotmatrixs")
+	set(DEBUG_ValidTime		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.validtime")
 	
 	set(enableCoSimulation true)
 
@@ -192,8 +195,8 @@ macro(add_cosimulation_test test_name)
 		"${TEST_BINARY_ROOT}/EP2C70F896C6.lua"
 	)
 	configure_file(
-		"${SIR_SOURCE_ROOT}/booth_mul_codegen.py"
-		"${TEST_BINARY_ROOT}/booth_mul_codegen.py"
+		"${SIR_SOURCE_ROOT}/hybrid_tree_codegen.py"
+		"${TEST_BINARY_ROOT}/hybrid_tree_codegen.py"
 	)
 
 	#Compile the source file to IR.
@@ -323,7 +326,9 @@ macro(add_high_level_synthesis test_name)
 	set(DEBUG_MaskOutput	"${TEST_BINARY_ROOT}/${TEST}.maskoutput")
 	set(DEBUG_MulMaskOutput	"${TEST_BINARY_ROOT}/${TEST}.mulmaskoutput")
 	set(DEBUG_Chain			"${TEST_BINARY_ROOT}/${TEST}.chain")
-	set(DEBUG_DotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.dotmatrix")
+	set(DEBUG_DotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.dotmatrixs")
+	set(DEBUG_DSDotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}_delay_stage.dotmatrixs")
+	set(DEBUG_ValidTime		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.validtime")
 
 	set(enableCoSimulation false)
 

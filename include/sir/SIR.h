@@ -1120,7 +1120,10 @@ public:
   typedef Reg2SlotMapTy::iterator reg2slot_iterator;
   typedef Reg2SlotMapTy::const_iterator const_reg2slot_iterator;
 
-  typedef std::vector<std::vector<Value *> > CriticalPathsTy;
+  typedef DenseMap<Value *, float> Val2ValidTimeMapTy;
+  typedef Val2ValidTimeMapTy::iterator val2validtime_iterator;
+  typedef Val2ValidTimeMapTy::const_iterator const_val2validtime_iterator;
+
   typedef std::set<SIRRegister *> ArgRegsTy;
 
 private:
@@ -1142,14 +1145,15 @@ private:
   Val2SeqValMapTy Val2SeqVal;
   // The map between Value in SIR and BitMask.
   Val2BitMaskMapTy Val2BitMask;
-  // The map between ChainRoot and its operands.
+  // The map between ChainRoot and its operands
   Ops2AdderChainTy Ops2AdderChain;
   // The map between SeqVal in SIR and Reg in SIR
   SeqVal2RegMapTy SeqVal2Reg;
   // The map between Reg and SIRSlot
   Reg2SlotMapTy Reg2Slot;
-
-  CriticalPathsTy CriticalPaths;
+  // The map between Value and its valid time
+  Val2ValidTimeMapTy Val2ValidTimeMap;
+  // The registers created for Arguments of the module
   ArgRegsTy ArgRegs;
 
   // Registers that should be kept.
@@ -1198,23 +1202,15 @@ public:
       KeepVals.insert(Val);
   }
 
-  void indexCriticalPath(std::vector<Value *> Path) {
-    CriticalPaths.push_back(Path);
-    assert(CriticalPaths.size() && "Unexpected Empty Path!");
+  void indexValidTime(Value *Val, float ValidTime) {
+    assert(!Val2ValidTimeMap.count(Val) && "Already existed!");
+
+    Val2ValidTimeMap.insert(std::make_pair(Val, ValidTime));
   }
-  bool inCriticalPath(Value *Node) {
-    for (unsigned i = 0; i < CriticalPaths.size(); ++i) {
-      std::vector<Value *> CriticalPath = CriticalPaths[i];
+  float getValidTime(Value *Val) {
+    assert(Val2ValidTimeMap.count(Val) && "Not existed!");
 
-      for (unsigned j = 0; j < CriticalPath.size(); ++j) {
-        Value *N = CriticalPath[j];
-
-        if (Node == N)
-          return true;
-      }
-    }
-
-    return false;
+    return Val2ValidTimeMap[Val];
   }
 
   void indexArgReg(SIRRegister *Reg) {
