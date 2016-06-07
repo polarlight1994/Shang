@@ -178,19 +178,19 @@ def printDotMatrixForMatrix(Matrix, Dot_Matrix_Name, Operand_num, Operand_BitWdi
   DotMatrixFile.close()
 
 def printMatrixForDebug(Matrix):
-  # global DEBUG_FILE_NO
+  global DEBUG_FILE_NO
   
-  # Matrix_file_name = DOT_MATRIX_NAME + '_matrix_%d.txt' % DEBUG_FILE_NO
-  # Matrix_file = open(Matrix_file_name, 'w')
+  Matrix_file_name = DOT_MATRIX_NAME + '_matrix_%d.txt' % DEBUG_FILE_NO
+  Matrix_file = open(Matrix_file_name, 'w')
   
-  # for row in Matrix:
-    # for col in row:
-      # Matrix_file.write(str(col) + '\t')
+  for row in Matrix:
+    for col in row:
+      Matrix_file.write(str(col) + '\t')
 
-    # Matrix_file.write('\n')
+    Matrix_file.write('\n')
 
-  # DEBUG_FILE_NO += 1
-  # Matrix_file.close()
+  DEBUG_FILE_NO += 1
+  Matrix_file.close()
   
   return
 
@@ -764,6 +764,118 @@ def insertOperand(List, Operand):
   List.append(Operand)
   return sorted(List, key = itemgetter(1))
   
+def loadBalance(FastOne, SlotOne, Final_group_start_time):
+  FastOne_time = FastOne[1]
+  SlotOne_time = SlotOne[1]
+  TimeDifference = abs(float(SlotOne_time) - float(FastOne_time))
+  
+  FaseOneList = FastOne[0][0]
+  SlotOneList = SlotOne[0][0]
+  
+  # balance tragedy No.1
+  PotentialBalancedFastOneList_0 = FaseOneList[0:] + [SlotOneList[len(SlotOneList) - 1]]
+  PotentialBalancedSlotOneList_0 = SlotOneList[0:-1]
+  Potential_0_correctness = False
+  if (getAddChainResultTime(PotentialBalancedFastOneList_0) < Final_group_start_time):
+    Potential_0_correctness = True
+  
+  # balance tragedy No.2
+  PotentialBalancedFastOneList_1 = FaseOneList[0:] + [SlotOneList[0]]
+  PotentialBalancedSlotOneList_1 = SlotOneList[1:]
+  Potential_1_correctness = False
+  if (getAddChainResultTime(PotentialBalancedFastOneList_1) < Final_group_start_time):
+    Potential_1_correctness = True
+  
+  if (Potential_0_correctness and Potential_1_correctness):
+    PotentialBalancedSlotOneListResultTime_0 = getAddChainResultTime(PotentialBalancedSlotOneList_0)
+    PotentialBalancedFastOneListResultTime_0 = getAddChainResultTime(PotentialBalancedFastOneList_0)
+    
+    PotentialBalancedSlotOneListResultTime_1 = getAddChainResultTime(PotentialBalancedSlotOneList_1)
+    PotentialBalancedFastOneListResultTime_1 = getAddChainResultTime(PotentialBalancedFastOneList_1)
+    
+    PotentialTimeDifference_0 = abs(PotentialBalancedSlotOneListResultTime_0 - PotentialBalancedFastOneListResultTime_0)
+    PotentialTimeDifference_1 = abs(PotentialBalancedSlotOneListResultTime_1 - PotentialBalancedFastOneListResultTime_1)
+    
+    if (PotentialTimeDifference_0 < TimeDifference and PotentialTimeDifference_1 < TimeDifference):
+      if (PotentialTimeDifference_0 <= PotentialTimeDifference_1):
+        return [[[PotentialBalancedFastOneList_0, FastOne[0][1]], PotentialBalancedFastOneListResultTime_0], [[PotentialBalancedSlotOneList_0, SlotOne[0][1]], PotentialBalancedSlotOneListResultTime_0]]
+      else:
+        return [[[PotentialBalancedFastOneList_1, FastOne[0][1]], PotentialBalancedFastOneListResultTime_1], [[PotentialBalancedSlotOneList_1, SlotOne[0][1]], PotentialBalancedSlotOneListResultTime_1]]
+    elif (PotentialTimeDifference_0 < TimeDifference):
+      return [[[PotentialBalancedFastOneList_0, FastOne[0][1]], PotentialBalancedFastOneListResultTime_0], [[PotentialBalancedSlotOneList_0, SlotOne[0][1]], PotentialBalancedSlotOneListResultTime_0]]
+    elif (PotentialTimeDifference_1 < TimeDifference):
+      return [[[PotentialBalancedFastOneList_1, FastOne[0][1]], PotentialBalancedFastOneListResultTime_1], [[PotentialBalancedSlotOneList_1, SlotOne[0][1]], PotentialBalancedSlotOneListResultTime_1]]
+    else:
+      return [FastOne, SlotOne]
+      
+  elif (Potential_0_correctness):
+    PotentialTimeDifference_0 = abs(getAddChainResultTime(PotentialBalancedSlotOneList_0) - getAddChainResultTime(PotentialBalancedFastOneList_0))
+    
+    if (PotentialTimeDifference_0 < TimeDifference):
+      return [[[PotentialBalancedFastOneList_0, FastOne[0][1]], PotentialBalancedFastOneListResultTime_0], [[PotentialBalancedSlotOneList_0, SlotOne[0][1]], PotentialBalancedSlotOneListResultTime_0]]
+    else:
+      return [FastOne, SlotOne]
+      
+  elif (Potential_1_correctness):
+    PotentialTimeDifference_1 = abs(getAddChainResultTime(PotentialBalancedSlotOneList_1) - getAddChainResultTime(PotentialBalancedFastOneList_1))
+    
+    if (PotentialTimeDifference_1 < TimeDifference):
+      return [[[PotentialBalancedFastOneList_1, FastOne[0][1]], PotentialBalancedFastOneListResultTime_1], [[PotentialBalancedSlotOneList_1, SlotOne[0][1]], PotentialBalancedSlotOneListResultTime_1]]
+    else:
+      return [FastOne, SlotOne]
+      
+  else:
+    return [FastOne, SlotOne]  
+
+def balanceAddChainPair(Add_chain_with_result_fast, Add_chain_with_result_slow, Final_group_start_time):
+  LoadResult = []
+  
+  Continue = True
+  while(Continue):
+    Continue = False
+    LoadResult = loadBalance(Add_chain_with_result_fast, Add_chain_with_result_slow, Final_group_start_time)
+    
+    #print('Result is ' + str(LoadResult[0]) + '-' + str(LoadResult[1]))
+    #print('Origin is ' + str(Add_chain_with_result_fast) + '-' + str(Add_chain_with_result_slow))
+    
+    if (LoadResult[0] != Add_chain_with_result_fast or LoadResult[1] != Add_chain_with_result_slow):
+      Continue = True
+      Add_chain_with_result_fast = LoadResult[0]
+      Add_chain_with_result_slow = LoadResult[1]
+
+  return LoadResult
+    
+def balanceAddChain(Final_group_start_time):
+  global DOT_MATRIX_ADD_CHAIN_GROUP
+
+  Add_chain_group_with_time = []
+  for i in range(0, len(DOT_MATRIX_ADD_CHAIN_GROUP)):
+    Add_chain_with_result = DOT_MATRIX_ADD_CHAIN_GROUP[i]    
+    Add_chain_result_time = getAddChainResultTime(Add_chain_with_result[0])
+    Add_chain_group_with_time.append([Add_chain_with_result, Add_chain_result_time])
+  
+  Add_chain_group_with_time = sortOperands(Add_chain_group_with_time)
+  
+  Balanced_add_chain_group_with_time = []
+  for i in range(0, len(Add_chain_group_with_time) // 2):
+    Add_chain_with_result_fast = Add_chain_group_with_time[i]
+    Add_chain_with_result_slow = Add_chain_group_with_time[len(Add_chain_group_with_time) - 1 - i]
+    
+    Balanced_result = balanceAddChainPair(Add_chain_with_result_fast, Add_chain_with_result_slow, Final_group_start_time)
+    Balanced_add_chain_group_with_time.append(Balanced_result[0])
+    Balanced_add_chain_group_with_time.append(Balanced_result[1])
+  
+  #print('After balanced the add chain group is ' + str(Balanced_add_chain_group_with_time))
+  
+  # re-generate the add chain group
+  DOT_MATRIX_ADD_CHAIN_GROUP = []
+  
+  for i in range(0, len(Balanced_add_chain_group_with_time)):
+    DOT_MATRIX_ADD_CHAIN_GROUP.append(Balanced_add_chain_group_with_time[i][0])
+    
+  if (len(Add_chain_group_with_time) % 2 == 1):
+    DOT_MATRIX_ADD_CHAIN_GROUP.append(Add_chain_group_with_time[(len(Add_chain_group_with_time) // 2)][0])
+
 def buildAddTree():
   global DOT_MATRIX_OPERAND_LIST
   global DOT_MATRIX_ADD_CHAIN_GROUP
@@ -808,6 +920,8 @@ def buildAddTree():
   
   for i in range(0, len(Add_chain_result_list)):
     DOT_MATRIX_OPERAND_LIST = insertOperand(DOT_MATRIX_OPERAND_LIST, Add_chain_result_list[i])
+    
+  balanceAddChain(Final_group_start_time)
 
 def groupPartition():
   global DOT_MATRIX_OPERAND_LIST
