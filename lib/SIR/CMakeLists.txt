@@ -3,7 +3,6 @@ SIR.cpp
 SIRBuild.cpp
 SIRBitMaskAnalysis.cpp
 SIRAddMulChain.cpp
-SIRFindCriticalPath.cpp
 SIRLowerIntrinsic.cpp
 SIRAllocation.cpp
 SIRTimingAnalysis.cpp

@@ -804,9 +804,7 @@ bool SIRBitMaskAnalysis::runOnSIR(SIR &SM) {
 
   unsigned num_iterations = 0;
 
-  while(runIteration()) {
-    errs() << "run iteration #" << num_iterations++ << "\n";
-  }
+  while(runIteration());
 
   //verifyMaskCorrectness();
   printMask(Output);

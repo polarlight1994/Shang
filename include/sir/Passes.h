@@ -26,7 +26,6 @@ namespace llvm {
 extern char &SIRBitMaskAnalysisID;
 extern char &SIRDatapathOptID;
 extern char &SIRAddMulChainID;
-extern char &SIRFindCriticalPathID;
 extern char &SIRRegisterSynthesisForAnnotationID;
 extern char &SIRRegisterSynthesisForCodeGenID;
 extern char &SIRSchedulingID;
@@ -44,7 +43,6 @@ void initializeSIRMemoryPartitionPass(PassRegistry &Registry);
 void initializeSIRBitMaskAnalysisPass(PassRegistry &Registry);
 void initializeSIRDatapathOptPass(PassRegistry &Registry);
 void initializeSIRAddMulChainPass(PassRegistry &Registry);
-void initializeSIRFindCriticalPathPass(PassRegistry &Registry);
 void initializeSIRSchedulingPass(PassRegistry &Registry);
 void initializeSIRTimingAnalysisPass(PassRegistry &Registry);
 void initializeSIRFSMSynthesisPass(PassRegistry &Registry);
