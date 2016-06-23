@@ -123,13 +123,12 @@ macro(add_synthesis_test test_name)
 	)
 
 	#Run the quartus to compile the verilog and get report.
-	add_custom_command(OUTPUT ${BenchmarkSummaryTmp}
+	add_custom_target(${TEST}_synthesis
 		COMMAND ${QUARTUS_BIN_DIR}/quartus_sh -t "${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl" > /dev/null
-		DEPENDS ${TEST_RTL_SRC} ${TEST_SDC} "${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl" ${CycleCounter}
+		DEPENDS ${TEST_RTL_SRC} ${TEST_SDC} "${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl" ${CycleCounter} ${BenchmarkSummaryTmp}
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
 		COMMENT "Compile the verilog and get report"
 	)
-	add_custom_target(${TEST}_synthesis	DEPENDS ${BenchmarkSummaryTmp})
 
 endmacro(add_synthesis_test)
 
@@ -188,7 +187,7 @@ macro(add_cosimulation_test test_name)
 	)
 	configure_file(
 		"${SIR_SOURCE_ROOT}/test_config.lua.in"
-		"${TEST_BINARY_ROOT}/test_config.lua"
+		"${TEST_BINARY_ROOT}/${TEST}_test_config.lua"
 	)
 	configure_file(
 		"${SIR_SOURCE_ROOT}/EP2C70F896C6.lua"
@@ -213,18 +212,18 @@ macro(add_cosimulation_test test_name)
   )
 
 	#Run the IR to get expected output.
-	add_custom_command(OUTPUT ${TEST_BINARY_ROOT}/Expected.output
-		COMMAND ${LLI} ${TEST_BC} > "${TEST_BINARY_ROOT}/Expected.output"
+	add_custom_command(OUTPUT ${TEST_BINARY_ROOT}/${TEST}_Expected.output
+		COMMAND ${LLI} ${TEST_BC} > "${TEST_BINARY_ROOT}/${TEST}_Expected.output"
 		DEPENDS ${LLI} ${TEST_BC}
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
 		COMMENT "Run ${TEST_BC} to get expected output"
 	)
-	add_custom_target(${TEST}_expected_output DEPENDS "${TEST_BINARY_ROOT}/Expected.output")
+	add_custom_target(${TEST}_expected_output DEPENDS "${TEST_BINARY_ROOT}/${TEST}_Expected.output")
 
 	#Run the Shang.exe to compile cpp into verilog and software part.
 	add_custom_command(OUTPUT ${TEST_RTL_SRC} ${TEST_SDC} ${TEST_SW_LL}
-		COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} ${TEST_BINARY_ROOT}/test_config.lua"
-		DEPENDS ${TMIEOUT} ${TEST_BC} ${SHANG} "${TEST_BINARY_ROOT}/test_config.lua"
+		COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} ${TEST_BINARY_ROOT}/${TEST}_test_config.lua"
+		DEPENDS ${TMIEOUT} ${TEST_BC} ${SHANG} "${TEST_BINARY_ROOT}/${TEST}_test_config.lua"
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
 		COMMENT "Run ${SHANG} to get verilog and software part"
 	)
@@ -269,19 +268,19 @@ macro(add_cosimulation_test test_name)
 	)
 
 	#Run the exe to get test output.
-	add_custom_command(OUTPUT ${TEST_BINARY_ROOT}/Test.output ${CycleCounter}
-		COMMAND	rm -rf "${TEST_BINARY_ROOT}/Test.output"
-		COMMAND "${TEST_SC_EXE}" > "${TEST_BINARY_ROOT}/Test.output"
+	add_custom_command(OUTPUT ${TEST_BINARY_ROOT}/${TEST}_Test.output ${CycleCounter}
+		COMMAND	rm -rf "${TEST_BINARY_ROOT}/${TEST}_Test.output"
+		COMMAND "${TEST_SC_EXE}" > "${TEST_BINARY_ROOT}/${TEST}_Test.output"
 		DEPENDS ${TEST_SC_EXE}
 		WORKING_DIRECTORY ${TEST_RTL_OBJ_ROOT}
 		COMMENT "Run ${TEST_SC_EXE} to get test output"
 	)
-	add_custom_target(${TEST}_test_output DEPENDS "${TEST_BINARY_ROOT}/Test.output" ${CycleCounter})
+	add_custom_target(${TEST}_test_output DEPENDS "${TEST_BINARY_ROOT}/${TEST}_Test.output" ${CycleCounter})
 
 	#Compare the output.
 	add_custom_target(${TEST}_cosimulation
-		COMMAND [ -f "${TEST_BINARY_ROOT}/Test.output" ] && diff "${TEST_BINARY_ROOT}/Expected.output" "${TEST_BINARY_ROOT}/Test.output"
-		DEPENDS "${TEST_BINARY_ROOT}/Test.output" "${TEST_BINARY_ROOT}/Expected.output"
+		COMMAND [ -f "${TEST_BINARY_ROOT}/${TEST}_Test.output" ] && diff "${TEST_BINARY_ROOT}/${TEST}_Expected.output" "${TEST_BINARY_ROOT}/${TEST}_Test.output"
+		DEPENDS "${TEST_BINARY_ROOT}/${TEST}_Test.output" "${TEST_BINARY_ROOT}/${TEST}_Expected.output"
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
 		COMMENT "Compare the output"
 	)
@@ -291,7 +290,7 @@ macro(add_cosimulation_test test_name)
 	set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
 				${MAIN_RTL_SRC}
                 ${CycleCounter}
-				${TEST_BINARY_ROOT}/Expected.output ${TEST_BINARY_ROOT}/Test.output
+				${TEST_BINARY_ROOT}/${TEST}_Expected.output ${TEST_BINARY_ROOT}/${TEST}_Test.output
 				${TEST_BINARY_ROOT}/obj_dir/V${DUT_NAME}_RTL ${TEST}_origin)
 endmacro(add_cosimulation_test)
 
