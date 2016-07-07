@@ -1534,7 +1534,7 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
   // Generate the code for testsuite.
   generateCodeForTestsuite(SM, TD);
 
-  generateCodeForCompressor(SM, TD);
+  //generateCodeForCompressor(SM, TD);
 
   return false;
 }

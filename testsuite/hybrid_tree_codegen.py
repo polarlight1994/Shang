@@ -41,6 +41,34 @@ def isConstantInt(Matrix_row):
   
   return IsConstantInt
 
+def createNormalOperand(Name, BitWidth, Delay, Stage):
+  Operand_for_matrix = []
+  Operand_for_dsmatrix = []
+  for i in range(0, BitWidth):
+    Operand_for_matrix.append(Name + '[%d]' %i)
+    Operand_for_dsmatrix.append(str(Delay) + '-' + str(Stage))
+
+  return [Operand_for_matrix, Operand_for_dsmatrix]
+  
+def createIntegerOperand(Value, BitWidth):
+  Operand_for_matrix = []
+  Operand_for_dsmatrix = []
+  for i in range(0, BitWidth):
+    Bit = Value // (2 ** (BitWidth - 1 - i))
+    Value = Value % (2 ** (BitWidth - 1 - i))
+    
+    if (Bit == 1):
+      Operand_for_matrix.append('1\'b1')
+    else:
+      Operand_for_matrix.append('1\'b0')   
+    
+    Operand_for_dsmatrix.append('0.0-0')
+
+  # remember to reverse the bit to fit the order
+  Operand_for_matrix.reverse()
+  
+  return [Operand_for_matrix, Operand_for_dsmatrix]
+  
 def parseProjectInfo():
   Info_group = []
   
@@ -178,19 +206,19 @@ def printDotMatrixForMatrix(Matrix, Dot_Matrix_Name, Operand_num, Operand_BitWdi
   DotMatrixFile.close()
 
 def printMatrixForDebug(Matrix):
-  global DEBUG_FILE_NO
+  # global DEBUG_FILE_NO
   
-  Matrix_file_name = DOT_MATRIX_NAME + '_matrix_%d.txt' % DEBUG_FILE_NO
-  Matrix_file = open(Matrix_file_name, 'w')
+  # Matrix_file_name = DOT_MATRIX_NAME + '_matrix_%d.txt' % DEBUG_FILE_NO
+  # Matrix_file = open(Matrix_file_name, 'w')
   
-  for row in Matrix:
-    for col in row:
-      Matrix_file.write(str(col) + '\t')
+  # for row in Matrix:
+    # for col in row:
+      # Matrix_file.write(str(col) + '\t')
 
-    Matrix_file.write('\n')
+    # Matrix_file.write('\n')
 
-  DEBUG_FILE_NO += 1
-  Matrix_file.close()
+  # DEBUG_FILE_NO += 1
+  # Matrix_file.close()
   
   return
 
@@ -209,18 +237,11 @@ def transportMatrix(Matrix, Row_num, Col_num, IsDSMatrix):
       
   return T_Matrix
 
-def eliminateOneInTMatrix(T_Matrix, T_DSMatrix):
+def eliminateOneInTMatrix(T_Matrix, T_DSMatrix, Aggressive):
   # count the number of 1'b1 in each row
-  One_number_in_t_matrix = [0 for col in range(BITWIDTH)]
-  
-  for row_no in range(0, len(T_Matrix)):
-    Row = T_Matrix[row_no]
+  One_number_in_t_matrix = getNumOfOneBit(T_Matrix)
 
-    for col_no in range(0, len(Row)):
-      if (T_Matrix[row_no][col_no] == '1\'b1'):
-        One_number_in_t_matrix[row_no] += 1
-
-  # caculate the final number of 1'b1 after optimize
+  # first eliminate the 1'b1 using the equation 1 + 1 = 10
   Final_one_number_in_t_matrix = [0 for col in range(len(One_number_in_t_matrix))]
   for i in range(0, len(One_number_in_t_matrix)):
     One_no = One_number_in_t_matrix[i]
@@ -233,7 +254,7 @@ def eliminateOneInTMatrix(T_Matrix, T_DSMatrix):
   
     if (i != len(One_number_in_t_matrix) - 1):
       One_number_in_t_matrix[i + 1] += Carry_one_no
-  
+
   # insert the final 1'b1 into T_Matrix and eliminate all origin 1'b1
   New_t_matrix = []
   New_t_dsmatrix = []  
@@ -282,10 +303,53 @@ def eliminateOneInTMatrix(T_Matrix, T_DSMatrix):
           New_t_matrix[row_no].append(T_Matrix[row_no][col_no])
           New_t_dsmatrix[row_no].append(T_DSMatrix[row_no][col_no])
       
-      New_col_no += 1      
-        
+      New_col_no += 1
+  
   printMatrixForDebug(New_t_matrix)
-  printMatrixForDebug(New_t_dsmatrix)
+  #printMatrixForDebug(New_t_dsmatrix)
+  
+  if (not Aggressive):
+    return [New_t_matrix, New_t_dsmatrix]
+
+  # sort the matrix
+  SortResult = sortTMatrix(New_t_matrix, New_t_dsmatrix)
+  New_t_matrix = SortResult[0]
+  New_t_dsmatrix = SortResult[1]
+	
+  # then eliminate the 1'b1 using the equation: 1 + s = s~s
+  One_number_in_t_matrix = getNumOfOneBit(New_t_matrix)
+  
+  for row_no in range(0, len(New_t_matrix)):
+    Row = New_t_matrix[row_no]
+    DSRow = New_t_dsmatrix[row_no]
+    
+    One_num = One_number_in_t_matrix[row_no]
+    if (One_num == 0 or len(Row) <= 1):
+      continue
+
+    assert Row[0] == '1\'b1'
+    assert (Row[1] != '1\'b1' and Row[1] != '1\'b0')
+    
+    New_t_matrix[row_no][0] = '1\'b0'
+    New_t_dsmatrix[row_no][0] = '0.0-0'
+    
+    New_t_matrix[row_no].append('~' + New_t_matrix[row_no][1])
+    New_t_dsmatrix[row_no].append(New_t_dsmatrix[row_no][1])
+    
+    if (row_no + 1 < BITWIDTH-1):
+      New_t_matrix[row_no + 1].append(New_t_matrix[row_no][1])
+      New_t_dsmatrix[row_no + 1].append(New_t_dsmatrix[row_no][1])
+    
+    New_t_matrix[row_no][1] = '1\'b0'
+    New_t_dsmatrix[row_no][1] = '0.0-0'
+  
+  #printMatrixForDebug(New_t_matrix)
+  #printMatrixForDebug(New_t_dsmatrix)
+  
+  # sort the matrix
+  SortResult = sortTMatrix(New_t_matrix, New_t_dsmatrix)
+  New_t_matrix = SortResult[0]
+  New_t_dsmatrix = SortResult[1]
   
   return [New_t_matrix, New_t_dsmatrix]
 
@@ -356,8 +420,8 @@ def sortTMatrix(T_Matrix, T_DSMatrix):
     New_t_matrix.append(New_row)
     New_t_dsmatrix.append(New_dsrow)
 
-  printMatrixForDebug(New_t_matrix)
-  printMatrixForDebug(New_t_dsmatrix)
+  #printMatrixForDebug(New_t_matrix)
+  #printMatrixForDebug(New_t_dsmatrix)
   
   return sortTMatrixInOrderOfDelayStage(New_t_matrix, New_t_dsmatrix)
 
@@ -396,49 +460,60 @@ def getNumofElementsCanBeCompressed(T_DSMatrix):
     NumOfElements[row_no] = Element_no
 
   return NumOfElements
+
+def getNumOfOneBit(T_Matrix):
+  One_number_in_t_matrix = [0 for col in range(BITWIDTH)]
   
-def checkIdenticalCompressor(Triple_elements):
-  Key_1 = Triple_elements[0] + Triple_elements[1] + Triple_elements[2]
-  if (COMPRESSOR_LIST.get(Key_1)):
-    return COMPRESSOR_LIST.get(Key_1)
+  for row_no in range(0, len(T_Matrix)):
+    Row = T_Matrix[row_no]
 
-  Key_2 = Triple_elements[0] + Triple_elements[2] + Triple_elements[1]
-  if (COMPRESSOR_LIST.get(Key_2)):
-    return COMPRESSOR_LIST.get(Key_2)
+    for col_no in range(0, len(Row)):
+      if (T_Matrix[row_no][col_no] == '1\'b1'):
+        One_number_in_t_matrix[row_no] += 1
+        
+  return One_number_in_t_matrix
 
-  Key_3 = Triple_elements[1] + Triple_elements[0] + Triple_elements[2]
-  if (COMPRESSOR_LIST.get(Key_3)):
-    return COMPRESSOR_LIST.get(Key_3)
-
-  Key_4 = Triple_elements[1] + Triple_elements[2] + Triple_elements[0]
-  if (COMPRESSOR_LIST.get(Key_4)):
-    return COMPRESSOR_LIST.get(Key_4)
-
-  Key_5 = Triple_elements[2] + Triple_elements[0] + Triple_elements[1]
-  if (COMPRESSOR_LIST.get(Key_5)):
-    return COMPRESSOR_LIST.get(Key_5)
-
-  Key_6 = Triple_elements[2] + Triple_elements[1] + Triple_elements[0]
-  if (COMPRESSOR_LIST.get(Key_6)):
-    return COMPRESSOR_LIST.get(Key_6)
-
-  return None
-
-def predictCompressStage(Operand_num):
-  Stage = 0
+def getNumOfSignBit(Matrix):
+  NumOfSignBits = [0 for row in range(len(Matrix))]
   
-  while(Operand_num > 2):
-    Compressed_Operand_num = (Operand_num // 3) * 3
-    LeftBehind_Operand_num = Operand_num % 3
-  
-    Result_Operand_num = Compressed_Operand_num * 2 // 3 + LeftBehind_Operand_num
-    Operand_num = Result_Operand_num
+  for row_no in range(0, len(Matrix)):
+    Row = Matrix[row_no]
     
-    Stage += 1
+    if (isConstantInt(Row)):
+      NumOfSignBits[row_no] = 1
+      continue
+    
+    # extract the sign bit in current row
+    SignBit = Row[len(Row) - 1]
+    
+    # calculate the number of sign bits in current row
+    SignBitNum = 0
+    for i in range(0, len(Row)):
+      if (Row[len(Row) - 1 - i] == SignBit):
+        SignBitNum += 1
+      else:
+        break
+        
+    NumOfSignBits[row_no] = SignBitNum
+    
+  return NumOfSignBits    
+
+def getNumOfSignBitInAddChainResult(AddChain, Matrix):
+  NumOfSignBits = getNumOfSignBit(Matrix)
   
-  return Stage
+  SignBitWidth = BITWIDTH
+  for i in range(0, len(AddChain)):
+    OperandIdx = AddChain[i][0]
+    OperandSignBitWidth = NumOfSignBits[OperandIdx]
+    
+    SignBitWidth = min(SignBitWidth, OperandSignBitWidth)
   
-def compressFirstTripleColumns(T_Matrix, T_DSMatrix, Stage, CompressPattern):
+  if (SignBitWidth != 1):
+    return (SignBitWidth - len(AddChain) + 1)
+  else:
+    return 1
+
+def compress(T_Matrix, T_DSMatrix, Stage):
   NumOfElements = getNumOfElementsToBeCompressed(T_Matrix)
   NumOfReadyElements = getNumofElementsCanBeCompressed(T_DSMatrix)
 
@@ -476,19 +551,9 @@ def compressFirstTripleColumns(T_Matrix, T_DSMatrix, Stage, CompressPattern):
         Sum_name = 'NULL'
         Carry_name = 'NULL'
 
-        IdenticalCompressor = checkIdenticalCompressor(Triple_elements)
-        if (IdenticalCompressor != None):
-          Sum_name = IdenticalCompressor[0]
-          Carry_name = IdenticalCompressor[1]
-        else:
-          if (CompressPattern == 0):
-            Sum_name = 'final_group_sum_' + str(row_no) + '_' + str(no) + '_' + str(Stage)
-            Carry_name = 'final_group_carry_' + str(row_no) + '_' + str(no) + '_' + str(Stage)
-            Compressor_generator(Triple_elements, Sum_name, Carry_name)
-          elif (CompressPattern == 1):
-            Sum_name = 'pred_group_sum_' + str(row_no) + '_' + str(no) + '_' + str(Stage)
-            Carry_name = 'pred_group_carry_' + str(row_no) + '_' + str(no) + '_' + str(Stage)
-            Compressor_generator(Triple_elements, Sum_name, Carry_name)
+        Sum_name = 'final_group_sum_' + str(row_no) + '_' + str(no) + '_' + str(Stage)
+        Carry_name = 'final_group_carry_' + str(row_no) + '_' + str(no) + '_' + str(Stage)
+        Compressor_generator(Triple_elements, Sum_name, Carry_name)
 
         T_Matrix[row_no].append(Sum_name)
         T_DSMatrix[row_no].append('%f' %OutputDelay + '-%d' %(ElementStage + 1))
@@ -503,13 +568,14 @@ def compressFirstTripleColumns(T_Matrix, T_DSMatrix, Stage, CompressPattern):
         
         T_DSMatrix[row_no][no] = str(OriginDelay) + '-' + str(OriginStage + 1)
 
+    EliminateOneResult = eliminateOneInTMatrix(T_Matrix, T_DSMatrix, True)
+    T_Matrix = EliminateOneResult[0]
+    T_DSMatrix = EliminateOneResult[1]
+        
   if (NumOfElements[BITWIDTH-1] >= 2):
     VerilogFilePath = os.path.join(BASE_DIR, PROJECT_NAME + '.sv')
     VerilogFile = open(VerilogFilePath, 'a')
-    if (CompressPattern == 0):
-      VerilogFile.write('wire final_group_result_MSB_%d' %Stage + ' = ' + T_Matrix[BITWIDTH-1][0])
-    elif (CompressPattern == 1):
-      VerilogFile.write('wire pred_group_result_MSB_%d' %Stage + ' = ' + T_Matrix[BITWIDTH-1][0])
+    VerilogFile.write('wire final_group_result_MSB_%d' %Stage + ' = ' + T_Matrix[BITWIDTH-1][0])
     
     T_Matrix[BITWIDTH-1][0] = '1\'b0'
     T_DSMatrix[BITWIDTH-1][0] = 'NULL'
@@ -518,14 +584,9 @@ def compressFirstTripleColumns(T_Matrix, T_DSMatrix, Stage, CompressPattern):
       T_Matrix[BITWIDTH-1][no] = '1\'b0'
       T_DSMatrix[BITWIDTH-1][no] = 'NULL'
     VerilogFile.write(';\n\n')
-    if (CompressPattern == 0):
-      T_Matrix[BITWIDTH-1].append('final_group_result_MSB_%d' %Stage)
-      # actually we do not care the output delay of the MSB since it is not caculate by compressor
-      T_DSMatrix[BITWIDTH-1].append('0.0-%d' %(Stage + 1))
-    elif (CompressPattern == 1):
-      T_Matrix[BITWIDTH-1].append('pred_group_result_MSB_%d' %Stage)
-      # actually we do not care the output delay of the MSB since it is not caculate by compressor
-      T_DSMatrix[BITWIDTH-1].append('0.0-%d' %(Stage + 1))
+    T_Matrix[BITWIDTH-1].append('final_group_result_MSB_%d' %Stage)
+    # actually we do not care the output delay of the MSB since it is not caculate by compressor
+    T_DSMatrix[BITWIDTH-1].append('0.0-%d' %(Stage + 1))
 
     VerilogFile.close()
 
@@ -535,26 +596,31 @@ def compressFirstTripleColumns(T_Matrix, T_DSMatrix, Stage, CompressPattern):
   
   return [T_Matrix, T_DSMatrix]
  
-def compressTMatrix(T_Matrix, T_DSMatrix, CompressPattern):
+def compressTMatrix(T_Matrix, T_DSMatrix):
   # sort the T_Matrix
   SortResult = sortTMatrix(T_Matrix, T_DSMatrix)
   T_Matrix = SortResult[0]
   T_DSMatrix = SortResult[1]
   
+  # eliminate one in T_Matrix
+  EliminateOneResult = eliminateOneInTMatrix(T_Matrix, T_DSMatrix, True)
+  T_Matrix = EliminateOneResult[0]
+  T_DSMatrix = EliminateOneResult[1]
+  
   printMatrixForDebug(T_Matrix)
-  printMatrixForDebug(T_DSMatrix)
+  #printMatrixForDebug(T_DSMatrix)
   
   # start to compress the T_Matrix
   Need_to_compress = True
   Stage = 0
   while(Need_to_compress):
     # compress the first three columns in T_Matrix
-    CompressResult = compressFirstTripleColumns(T_Matrix, T_DSMatrix, Stage, CompressPattern)
+    CompressResult = compress(T_Matrix, T_DSMatrix, Stage)
     T_Matrix = CompressResult[0]
     T_DSMatrix = CompressResult[1]
     
     printMatrixForDebug(T_Matrix)
-    printMatrixForDebug(T_DSMatrix)
+    #printMatrixForDebug(T_DSMatrix)
 
     # get the compress status to decide when to stop compressing
     NumOfElements = getNumOfElementsToBeCompressed(T_Matrix)
@@ -565,10 +631,14 @@ def compressTMatrix(T_Matrix, T_DSMatrix, CompressPattern):
 
     Stage += 1
     
-    # sort the matrix to prepare for next compressing
+    # sort the matrix and eliminate one to prepare for next compressing
     SortResult = sortTMatrix(T_Matrix, T_DSMatrix)
     T_Matrix = SortResult[0]
     T_DSMatrix = SortResult[1]
+    
+    EliminateOneResult = eliminateOneInTMatrix(T_Matrix, T_DSMatrix, True)
+    T_Matrix = EliminateOneResult[0]
+    T_DSMatrix = EliminateOneResult[1]
   
   # finish compressing process by padding needed bits to prepare for final adder
   for row_no in range(0, len(T_Matrix)):
@@ -585,54 +655,61 @@ def compressTMatrix(T_Matrix, T_DSMatrix, CompressPattern):
   Datab = []
   
   # the MSB can be ignored since it can be handled with a Xor gate
-  for row_no in range(0, len(T_Matrix) - 1):
+  for row_no in range(0, len(T_Matrix)):
     Dataa.append(T_Matrix[row_no][0])
     Datab.append(T_Matrix[row_no][1])
 
+  LeadingIntegerInDataa = []
+  for i in range(0, len(T_Matrix)):
+    if ((Dataa[len(T_Matrix) - 1 - i] == '1\'b1' or Dataa[len(T_Matrix) - 1 - i] == '1\'b0') and (Datab[len(T_Matrix) - 1 - i] == '1\'b0')):
+      LeadingIntegerInDataa.append(Dataa[len(T_Matrix) - 1 - i])
+    else:
+      break
+  
   VerilogFilePath = os.path.join(BASE_DIR, PROJECT_NAME + '.sv')
   VerilogFile = open(VerilogFilePath, 'a')
   
-  if (CompressPattern == 0):
-    VerilogFile.write('wire[%d-2:0] final_group_dataa = {' %BITWIDTH)
-  elif (CompressPattern == 1):
-    VerilogFile.write('wire[%d-2:0] pred_group_dataa = {' %BITWIDTH)
+  VerilogFile.write('wire[%d:0] final_group_dataa = {' %(BITWIDTH - len(LeadingIntegerInDataa) - 1))
 
-  VerilogFile.write(str(Dataa[BITWIDTH - 2]))
-  for row_no in range(0, len(Dataa) - 1):
-    VerilogFile.write(', ' + str(Dataa[len(Dataa) - 2 - row_no]))
+  VerilogFile.write(str(Dataa[BITWIDTH - 1 - len(LeadingIntegerInDataa)]))
+  for row_no in range(0, len(Dataa) - len(LeadingIntegerInDataa)):
+    VerilogFile.write(', ' + str(Dataa[len(Dataa) - 1 - len(LeadingIntegerInDataa) - row_no]))
   VerilogFile.write('};\n')
 
-  if (CompressPattern == 0):
-    VerilogFile.write('wire[%d-2:0] final_group_datab = {' %BITWIDTH)
-  elif (CompressPattern == 1):
-    VerilogFile.write('wire[%d-2:0] pred_group_datab = {' %BITWIDTH)
+  VerilogFile.write('wire[%d:0] final_group_datab = {' %(BITWIDTH - len(LeadingIntegerInDataa) - 1))
 
-  VerilogFile.write(str(Datab[BITWIDTH - 2]))
-  for row_no in range(0, len(Datab) - 1):
-    VerilogFile.write(', ' + str(Datab[len(Datab) - 2 - row_no]))
+  VerilogFile.write(str(Datab[BITWIDTH - 1 - len(LeadingIntegerInDataa)]))
+  for row_no in range(0, len(Datab) - len(LeadingIntegerInDataa)):
+    VerilogFile.write(', ' + str(Datab[len(Datab) - 1 - len(LeadingIntegerInDataa) - row_no]))
   VerilogFile.write('};\n\n')
   
-  if (CompressPattern == 0):
-    VerilogFile.write('wire[%d-1:0] ' %BITWIDTH + 'final_group_add_result = final_group_dataa + final_group_datab;\n')
-    VerilogFile.write('wire[%d-1:0] final_group_result;\n' %BITWIDTH)
-    VerilogFile.write('assign final_group_result[%d-1] = ' %BITWIDTH + T_Matrix[BITWIDTH - 1][0])
-  elif (CompressPattern == 1):
-    VerilogFile.write('wire[%d-1:0] ' %BITWIDTH + 'pred_group_add_result = pred_group_dataa + pred_group_datab;\n')
-    VerilogFile.write('wire[%d-1:0] pred_group_result;\n' %BITWIDTH)
-    VerilogFile.write('assign pred_group_result[%d-1] = ' %BITWIDTH + T_Matrix[BITWIDTH - 1][0])
+  VerilogFile.write('wire[%d:0] ' %(BITWIDTH - len(LeadingIntegerInDataa)) + 'final_group_add_result = final_group_dataa + final_group_datab;\n')
   
-  for i in range(1, len(T_Matrix[BITWIDTH - 1])):
-    MSB = T_Matrix[BITWIDTH - 1][i]
-    if (MSB != '1\'b0'):
-      VerilogFile.write(' ^ ' + MSB)
-  
-  if (CompressPattern == 0):
-    VerilogFile.write(' ^ final_group_add_result[%d];\n' %(BITWIDTH - 1))
-    VerilogFile.write('assign final_group_result[%d-2:0] = ' %BITWIDTH + 'final_group_add_result[%d:0]' %(BITWIDTH - 2) + ';\n\n')
-    VerilogFile.write('assign result[%d-1:0] = ' %BITWIDTH + 'final_group_result[%d-1:0]' %BITWIDTH + ';\n\n')
-  elif (CompressPattern == 1):
-    VerilogFile.write(' ^ pred_group_add_result[%d];\n' %(BITWIDTH - 1))
-    VerilogFile.write('assign pred_group_result[%d-2:0] = ' %BITWIDTH + 'pred_group_add_result[%d:0]' %(BITWIDTH - 2) + ';\n\n')
+  print(LeadingIntegerInDataa)
+  if (len(LeadingIntegerInDataa) != 0):
+    CarryBit = 'final_group_add_result[%d]' %(BITWIDTH - len(LeadingIntegerInDataa))
+    LeadingResult = []
+    for i in range(0, len(LeadingIntegerInDataa)):
+      LeadingInteger = LeadingIntegerInDataa[len(LeadingIntegerInDataa) - 1 - i]
+      
+      if (CarryBit != '1\'b0'):
+        if (LeadingInteger == '1\'b0'):
+          LeadingResult.append(CarryBit)
+          CarryBit = '1\'b0'
+        elif (LeadingInteger == '1\'b1'):
+          LeadingResult.append('~' + CarryBit)
+      elif (CarryBit == '1\'b0'):
+        LeadingResult.append(LeadingInteger)
+        
+    print(LeadingResult)
+    
+    VerilogFile.write('assign result[%d:0] = ' %(BITWIDTH-1) + '{')
+    for i in range(0, len(LeadingResult)):
+      VerilogFile.write(LeadingResult[i])
+      VerilogFile.write(', ')
+    VerilogFile.write('final_group_add_result[%d:0]};\n\n' %(BITWIDTH - len(LeadingIntegerInDataa) - 1))
+  else:
+    VerilogFile.write('assign result[%d:0] = ' %(BITWIDTH-1) + 'final_group_add_result[%d:0];\n\n' %(BITWIDTH - len(LeadingIntegerInDataa) - 1))
   
   VerilogFile.close()
 
@@ -658,8 +735,56 @@ def Compressor_generator(Triple_elements, Sum_name, Carry_name):
   COMPRESSOR_LIST.setdefault(Key, Value)
   
   COMPRESSOR_NO += 1
+
+def extractSignBitPattern(Matrix, DSMatrix):
+  global OPERAND_NUM
+
+  NumOfSignBits = getNumOfSignBit(Matrix)
   
-def generateCompressorTreeInNormalPattern():  
+  # the sign bit pattern width is depends on the row which
+  # has the smallest number of sign bits.
+  SignBitPatternWidth = BITWIDTH
+  for i in range(0, len(NumOfSignBits)):
+    if (NumOfSignBits[i] != 1):
+      SignBitPatternWidth = min(SignBitPatternWidth, NumOfSignBits[i])
+  
+  if (SignBitPatternWidth == BITWIDTH):
+    return [Matrix, DSMatrix]
+  
+  # extract the sign bits from the matrix and make them from
+  # sssssssss******* into (1111111111***** + 00000000~s*****)
+  SignBitList = []
+  SignBitDSList = []
+  PaddingList = []
+  for i in range(0, len(Matrix)):
+    if (NumOfSignBits[i] >= SignBitPatternWidth):
+      SignBit = Matrix[i][len(Matrix[i]) - 1]
+      SignBitList.append(SignBit)
+      
+      SignBitDS = DSMatrix[i][len(DSMatrix[i]) - 1]
+      SignBitDSList.append(SignBitDS)
+      
+      # set the sign bits in matrix to 1'b1
+      for j in range(0, SignBitPatternWidth):
+        Matrix[i][len(Matrix[i]) - 1 - j] = '1\'b1'
+        DSMatrix[i][len(DSMatrix[i]) - 1 - j] = '0.0-0'
+  
+      # remember to pad a ~s bit
+      PaddingOperand = createIntegerOperand(0, BITWIDTH)
+      PaddingOperand[0][BITWIDTH - SignBitPatternWidth] = '~' + SignBit
+      PaddingOperand[1][BITWIDTH - SignBitPatternWidth] = SignBitDS
+      
+      PaddingList.append(PaddingOperand)
+  
+  ###### insert the padding operands into origin matrix as operand
+  for i in range(0, len(PaddingList)):
+    Matrix.append(PaddingList[i][0])
+    DSMatrix.append(PaddingList[i][1])  
+    OPERAND_NUM += 1
+  
+  return [Matrix, DSMatrix]
+  
+def generateCompressorTree():  
   ###### generate add chain for the AddChainGroup
   VerilogFilePath = os.path.join(BASE_DIR, PROJECT_NAME + '.sv')
   VerilogFile = open(VerilogFilePath, 'a')
@@ -698,20 +823,19 @@ def generateCompressorTreeInNormalPattern():
   # also get the corresponding delay_stage matrix from the dot matrix file
   FinalCompressor_DSMatrix = getMatrixFromDotMatrixFile(DOT_MATRIX_NAME + '_delay_stage_for_finalcompressor', len(DOT_MATRIX_FINAL_GROUP), BITWIDTH, True)
   
+  SignBitPattern_result = extractSignBitPattern(FinalCompressor_Matrix, FinalCompressor_DSMatrix)
+  FinalCompressor_Matrix = SignBitPattern_result[0]
+  FinalCompressor_DSMatrix = SignBitPattern_result[1]
+  
   # transport the matrix to prepare for the compressing process
-  FinalCompressor_T_Matrix = transportMatrix(FinalCompressor_Matrix, len(DOT_MATRIX_FINAL_GROUP), BITWIDTH, False)
-  FinalCompressor_T_DSMatrix = transportMatrix(FinalCompressor_DSMatrix, len(DOT_MATRIX_FINAL_GROUP), BITWIDTH, True)
+  FinalCompressor_T_Matrix = transportMatrix(FinalCompressor_Matrix, len(FinalCompressor_Matrix), BITWIDTH, False)
+  FinalCompressor_T_DSMatrix = transportMatrix(FinalCompressor_DSMatrix, len(FinalCompressor_DSMatrix), BITWIDTH, True)
   
   printMatrixForDebug(FinalCompressor_T_Matrix)
-  printMatrixForDebug(FinalCompressor_T_DSMatrix)
-  
-  # eliminate the 1'b1 in T_Matrix
-  FinalCompressor_eliminateOneResult = eliminateOneInTMatrix(FinalCompressor_T_Matrix, FinalCompressor_T_DSMatrix)
-  FinalCompressor_T_Matrix = FinalCompressor_eliminateOneResult[0]
-  FinalCompressor_T_DSMatrix = FinalCompressor_eliminateOneResult[1]
+  #printMatrixForDebug(FinalCompressor_T_DSMatrix)
   
   # compressor the T_Matrix
-  compressTMatrix(FinalCompressor_T_Matrix, FinalCompressor_T_DSMatrix, 0)
+  compressTMatrix(FinalCompressor_T_Matrix, FinalCompressor_T_DSMatrix)
   
   # finish module
   VerilogFilePath = os.path.join(BASE_DIR, PROJECT_NAME + '.sv')
@@ -740,12 +864,17 @@ def getAddChainResultTime(List):
     
     return min(Max_delay_0, Max_delay_1)
 
-def createOperand(Name, BitWidth, Delay, Stage):
+def createOperand(Name, BitWidth, SignBitWidth, Delay, Stage):
   Operand_for_matrix = []
   Operand_for_dsmatrix = []
   for i in range(0, BitWidth):
-    Operand_for_matrix.append(Name + '[%d]' %i)
-    Operand_for_dsmatrix.append(str(Delay) + '-' + str(Stage))
+    # the sign bit pattern
+    if (i >= BitWidth - SignBitWidth):
+      Operand_for_matrix.append(Name + '[%d]' %(BitWidth - 1))
+      Operand_for_dsmatrix.append(str(Delay) + '-' + str(Stage))
+    else:
+      Operand_for_matrix.append(Name + '[%d]' %i)
+      Operand_for_dsmatrix.append(str(Delay) + '-' + str(Stage))
 
   return [Operand_for_matrix, Operand_for_dsmatrix]
   
@@ -881,7 +1010,7 @@ def buildAddTree():
   global DOT_MATRIX_ADD_CHAIN_GROUP
 
   # get the start time of last group
-  Final_group_start_time = DOT_MATRIX_FINAL_GROUP[len(DOT_MATRIX_FINAL_GROUP) - 1][1]
+  Final_group_start_time = DOT_MATRIX_OPERAND_LIST[len(DOT_MATRIX_OPERAND_LIST) - 1][1]
 
   # visit the operand_validtime_list to build add chain as many as possible
   # in constraint of finish_time mentioned above
@@ -930,15 +1059,9 @@ def groupPartition():
   # sort the operands
   DOT_MATRIX_OPERAND_LIST = sortOperands(DOT_MATRIX_OPERAND_LIST)
   
-  # the last operand is to be compressed definitly
-  Erase_list = [len(DOT_MATRIX_OPERAND_LIST) - 1]
-  DOT_MATRIX_FINAL_GROUP.append(DOT_MATRIX_OPERAND_LIST[len(DOT_MATRIX_OPERAND_LIST) - 1])
-  
   # also the constants will be compressed
   for i in range(0, len(DOT_MATRIX_CONSTANT_LIST)):
     DOT_MATRIX_FINAL_GROUP.append(DOT_MATRIX_CONSTANT_LIST[i])
-  
-  DOT_MATRIX_OPERAND_LIST = eraseOperands(DOT_MATRIX_OPERAND_LIST, Erase_list)
   
   DOT_MATRIX_FINAL_GROUP = sortOperands(DOT_MATRIX_FINAL_GROUP)
   DOT_MATRIX_OPERAND_LIST = sortOperands(DOT_MATRIX_OPERAND_LIST)
@@ -967,11 +1090,23 @@ def buildHybridTree():
   for i in range(0, len(DOT_MATRIX_FINAL_GROUP)):
     Operand_no = DOT_MATRIX_FINAL_GROUP[i][0]
     
+    # if this is a number. then it is the index of the origin operand in matrix
     if (isinstance(Operand_no, int)):
       FinalCompressor_Matrix.append(Matrix[Operand_no])
       FinalCompressor_DSMatrix.append(DSMatrix[Operand_no])
+    # or it is the add chain result
     else:
-      Operand_created = createOperand(Operand_no, BITWIDTH, DOT_MATRIX_FINAL_GROUP[i][1], 0)
+      # first we need to calculate the sign bit width in the add chain result
+      SignBitWidth = 1
+      AddChainName = Operand_no
+      for j in range(0, len(DOT_MATRIX_ADD_CHAIN_GROUP)):
+        if (DOT_MATRIX_ADD_CHAIN_GROUP[j][1] != AddChainName):
+          continue
+          
+        AddChain = DOT_MATRIX_ADD_CHAIN_GROUP[j][0]
+        SignBitWidth = getNumOfSignBitInAddChainResult(AddChain, Matrix)
+    
+      Operand_created = createOperand(Operand_no, BITWIDTH, SignBitWidth, DOT_MATRIX_FINAL_GROUP[i][1], 0)
       FinalCompressor_Matrix.append(Operand_created[0])
       FinalCompressor_DSMatrix.append(Operand_created[1])
     
@@ -1053,7 +1188,7 @@ def codegenForDotMatrix():
   # build hybird tree
   buildHybridTree()
   
-  generateCompressorTreeInNormalPattern()
+  generateCompressorTree()
 
 def calcAllKnownBitsInDotMatrix():
   global OPERAND_NUM
@@ -1087,7 +1222,7 @@ def calcAllKnownBitsInDotMatrix():
   T_Matrix = transportMatrix(Matrix, OPERAND_NUM, BITWIDTH, False)
   T_DSMatrix = transportMatrix(DSMatrix, OPERAND_NUM, BITWIDTH, True)
   
-  EliminateResult = eliminateOneInTMatrix(T_Matrix, T_DSMatrix)
+  EliminateResult = eliminateOneInTMatrix(T_Matrix, T_DSMatrix, False)
   
   Matrix = transportMatrix(EliminateResult[0], BITWIDTH, OPERAND_NUM * 2, False)
   DSMatrix = transportMatrix(EliminateResult[1], BITWIDTH, OPERAND_NUM * 2, True)

@@ -42,8 +42,10 @@ namespace VFUs {
     Shift = 2,
     Mult = 3,
     ICmp = 4,
-    MemoryBus = 5,
-    Mux = 6,
+    Div = 5,
+    Compressor = 6,
+    MemoryBus = 7,
+    Mux = 8,
     FirstFUType = Trivial,
     FirstNonTrivialFUType = AddSub,
     LastPostBindFUType = ICmp,
@@ -279,6 +281,8 @@ typedef VSimpleFUDesc<VFUs::AddSub>  VFUAddSub;
 typedef VSimpleFUDesc<VFUs::Shift>   VFUShift;
 typedef VSimpleFUDesc<VFUs::Mult>    VFUMult;
 typedef VSimpleFUDesc<VFUs::ICmp>    VFUICmp;
+typedef VSimpleFUDesc<VFUs::Div>    VFUDiv;
+typedef VSimpleFUDesc<VFUs::Compressor>    VFUCompressor;
 
 struct CommonFUIdentityFunctor
   : public std::unary_function<enum VFUs::FUTypes, unsigned>{
