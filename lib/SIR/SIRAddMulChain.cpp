@@ -1035,6 +1035,8 @@ MatrixType SIRAddMulChain::sumAllOneBitsInTMatrix(MatrixType TMatrix) {
 }
 
 MatrixType SIRAddMulChain::eliminateOneBitInTMatrix(MatrixType TMatrix) {
+  return TMatrix;
+
   // Simplify and sort the TMatrix to prepare for the eliminating.
   TMatrix = simplifyTMatrix(TMatrix);
   TMatrix = sortTMatrix(TMatrix);
