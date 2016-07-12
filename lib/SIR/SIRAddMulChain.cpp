@@ -21,6 +21,7 @@ typedef std::vector<MatrixRowType> MatrixType;
 static unsigned COMPRESSOR_NUM = 0;
 static float ADD_16_DELAY = 0.25;
 static float ADD_32_DELAY = 0.38;
+static float ADD_64_DELAY = 0.64;
 
 namespace {
 struct SIRAddMulChain : public SIRPass {
@@ -1346,6 +1347,8 @@ float SIRAddMulChain::predictAddChainResultTime(std::vector<std::pair<unsigned, 
       AddDelay = ADD_16_DELAY;
     else if (Matrix[0].size() == 32)
       AddDelay = ADD_32_DELAY;
+    else if (Matrix[0].size() == 64)
+      AddDelay = ADD_64_DELAY;
 
     float AddResult_ArrivalTime = std::max(DataA_ArrivalTime, DataB_ArrivalTime) + AddDelay;
 
