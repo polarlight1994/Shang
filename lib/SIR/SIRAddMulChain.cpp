@@ -564,6 +564,8 @@ float SIRAddMulChain::getLatency(Instruction *Inst) {
 }
 
 float SIRAddMulChain::getOperandArrivalTime(Value *Operand) {
+  SM->indexKeepVal(Operand);
+
   if (isLeafValue(SM, Operand))
     return 0.0f;
 
@@ -598,6 +600,8 @@ float SIRAddMulChain::getOperandArrivalTime(Value *Operand) {
     ++It;
 
     if (Instruction *ChildInst = dyn_cast<Instruction>(ChildNode)) {
+      SM->indexKeepVal(ChildNode);
+
       if (SIRRegister *Reg = SM->lookupSIRReg(ChildInst)) {
         if (ArrivalTimes.count(Reg))
           ArrivalTimes[Reg] = std::max(ArrivalTimes[Reg], delay);
@@ -1720,6 +1724,8 @@ void SIRAddMulChain::replaceWithCompressor() {
   typedef std::map<IntrinsicInst *, std::set<IntrinsicInst *> >::iterator iterator;
   for (iterator I = ChainMap.begin(), E = ChainMap.end(); I != E; ++I) {
     Value *CompressorVal = Builder.createCompressorInst(I->first);
+
+    SM->indexKeepVal(CompressorVal);
 
     IntrinsicInst *Compressor = dyn_cast<IntrinsicInst>(CompressorVal);
     ChainRoot2Compressor.insert(std::make_pair(I->first, Compressor));
