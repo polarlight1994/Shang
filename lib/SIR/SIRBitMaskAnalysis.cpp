@@ -205,8 +205,8 @@ SIRBitMask SIRBitMaskAnalysis::computeAdd(SIRBitMask LHS, SIRBitMask RHS, unsign
     SIRBitMask ShiftedC = C.shl(1);
 
     // Calculate the mask bit by bit considering the cin.
-    S = computeXor(S, ShiftedC);
     C = computeAnd(S, ShiftedC);
+    S = computeXor(S, ShiftedC);
 
     Carry = computeXor(Carry, computeBitExtract(C, BitWidth, BitWidth - 1));
   }
@@ -539,7 +539,15 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
   case Intrinsic::shang_addc: {
     assert(Masks.size() == 3 && "Unexpected numbers of operands!");
 
-    return computeAddc(Masks[0], Masks[1], Masks[2]);
+    unsigned BitWidth = TD->getTypeSizeInBits(Inst->getType());
+
+    SIRBitMask UpdateMask = computeAdd(Masks[0], Masks[1], BitWidth);
+    UpdateMask = computeAdd(UpdateMask, Masks[2].extend(BitWidth), BitWidth);
+
+    if (BitWidth < UpdateMask.getMaskWidth())
+      UpdateMask = computeBitExtract(UpdateMask, BitWidth, 0);
+
+    return UpdateMask;
   }
   case Intrinsic::shang_add: {
     assert(Masks.size() == 2 && "Unexpected numbers of operands!");
