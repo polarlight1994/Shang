@@ -1080,8 +1080,12 @@ void SIRDatapathPrinter::visitBitCastInst(BitCastInst &I) {
 
 void SIRDatapathPrinter::visitBasicBlock(BasicBlock *BB) {
   typedef BasicBlock::iterator iterator;
-  for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) 
+  for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
+    if (!SM->hasKeepVal(I))
+      continue;
+
     visit(I);
+  }
 }
 
 namespace {
@@ -1188,6 +1192,9 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
        I != E; ++I) {
     SIRRegister *Reg = I;
 
+    if (!SM.hasKeepVal(Reg->getLLVMValue()))
+      continue;
+
     // Do not need to declaration registers for the output and FUInOut,
     // since we have do it in MemoryBank declaration part.
     if (Reg->isOutPort() || Reg->isFUInOut()) continue;
@@ -1200,21 +1207,21 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
 
   Out << "\n";
 
-  if (!enableCoSimulation) {
-    // If we are running the co-simulation, then all registers used in memory bank will
-    // have been declared in Ports, then we do need to re-declared it.
-    typedef SIR::const_submodulebase_iterator submod_iterator;
-    for (submod_iterator I = SM.const_submodules_begin(), E = SM.const_submodules_end();
-         I != E; ++I) {
-      if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) {
-        // Do not need to print declaration for SIRMemoryBank#0,
-        // since it is a interface in HW/SW co-simulation and
-        // have been declared in ports.
-        if (SMB->getNum() != 0)
-          SMB->printDecl(Out.indent(2));
-      }
-    }
-  }
+//   if (!enableCoSimulation) {
+//     // If we are running the co-simulation, then all registers used in memory bank will
+//     // have been declared in Ports, then we do need to re-declared it.
+//     typedef SIR::const_submodulebase_iterator submod_iterator;
+//     for (submod_iterator I = SM.const_submodules_begin(), E = SM.const_submodules_end();
+//          I != E; ++I) {
+//       if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) {
+//         // Do not need to print declaration for SIRMemoryBank#0,
+//         // since it is a interface in HW/SW co-simulation and
+//         // have been declared in ports.
+//         if (SMB->getNum() != 0)
+//           SMB->printDecl(Out.indent(2));
+//       }
+//     }
+//   }
 
   Out << "\n";
 
@@ -1226,6 +1233,9 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
     typedef BasicBlock::iterator inst_iterator;
     for (inst_iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
       Instruction *Inst = I;
+
+      if (!SM.hasKeepVal(Inst))
+        continue;
 
       if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst)) {
         if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
@@ -1521,10 +1531,10 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
   Out << "\n\n";
 
   // Generate the code for control-path.
-  generateCodeForControlpath(SM, TD);
+  //generateCodeForControlpath(SM, TD);
 
   // Generate the code for memory bank.
-  generateCodeForMemoryBank(SM, TD);
+  //generateCodeForMemoryBank(SM, TD);
 
   Out.module_end();
 
