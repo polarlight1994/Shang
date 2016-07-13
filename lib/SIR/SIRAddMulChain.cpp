@@ -70,7 +70,7 @@ struct SIRAddMulChain : public SIRPass {
   MatrixType transportMatrix(MatrixType Matrix, unsigned RowNum, unsigned ColumnNum);
 
   std::vector<unsigned> getOneBitNumListInTMatrix(MatrixType TMatrix);
-  std::vector<unsigned> getBitNumListInTMatrix(MatrixType TMatrix, bool InCurrentStage);
+  std::vector<unsigned> getBitNumListInTMatrix(MatrixType TMatrix, unsigned Stage, bool InCurrentStage);
   MatrixType simplifyTMatrix(MatrixType TMatrix);
   MatrixType sortTMatrix(MatrixType TMatrix);
   MatrixType sumAllOneBitsInTMatrix(MatrixType TMatrix);
@@ -80,6 +80,7 @@ struct SIRAddMulChain : public SIRPass {
                           std::pair<std::string, unsigned> CompressResult,
                           raw_fd_ostream &Output);
 
+  bool needToCompress(std::vector<unsigned> BitNumList, unsigned RowNo);
   MatrixType compressTMatrixInStage(MatrixType TMatrix,
                                     unsigned Stage, raw_fd_ostream &Output);
   float compressMatrix(MatrixType TMatrix, std::string MatrixName,
@@ -653,6 +654,14 @@ void SIRAddMulChain::generateDotMatrix() {
   Output << "output wire[1:0] result\n";
   Output << ");\n\n";
   Output << "assign result = col0[0] + col0[1] + col0[2];\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 2-2 compressor.
+  Output << "module compressor_2_2(\n";
+  Output << "input wire[1:0] col0,\n";
+  Output << "output wire[1:0] result\n";
+  Output << ");\n\n";
+  Output << "assign result = col0[0] + col0[1];\n\n";
   Output << "endmodule\n";
 }
 
@@ -711,7 +720,7 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
   Output << utostr_32(MatrixColNum - 1) << ":0] result\n);\n\n";
 
   MatrixType Matrix = createMatrixForOperands(OptOperands, MatrixRowNum, MatrixColNum);
-  //printTMatrixForDebug(Matrix);
+  printTMatrixForDebug(Matrix);
 
   errs() << "Operands for hybrid tree is indexed as:\n";
   for (unsigned i = 0; i < OptOperands.size(); ++i) {
@@ -722,14 +731,14 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
   // Optimize the Matrix taking advantage of the sign bits.
   Matrix = sumAllSignBitsInMatrix(Matrix, MatrixRowNum, MatrixColNum);
   MatrixRowNum = Matrix.size();
-  //printTMatrixForDebug(Matrix);
+  printTMatrixForDebug(Matrix);
 
   // Optimize the Matrix taking advantage of the known bits.
   MatrixType TMatrix = transportMatrix(Matrix, MatrixRowNum, MatrixColNum);
   //printTMatrixForDebug(TMatrix);
   TMatrix = sumAllOneBitsInTMatrix(TMatrix);
   ++MatrixRowNum;
-  //printTMatrixForDebug(TMatrix);
+  printTMatrixForDebug(TMatrix);
 
   Matrix = transportMatrix(TMatrix, MatrixColNum, MatrixRowNum);
   printTMatrixForDebug(Matrix);
@@ -784,6 +793,12 @@ std::vector<unsigned> SIRAddMulChain::getSignBitNumListInMatrix(MatrixType Matri
 
     // Extract the MSB as it is sign bit really.
     DotType SignBit = Row.back();
+
+    // Ignore the 0 sign bit.
+    if (SignBit.first == "1'b0") {
+      SignBitNumList.push_back(1);
+      continue;
+    }
 
     // Then traverse the row from MSB to LSB and these bits that same as the
     // SignBit will be counted as SignBit.
@@ -894,7 +909,8 @@ std::vector<unsigned> SIRAddMulChain::getOneBitNumListInTMatrix(MatrixType TMatr
   return OneBitNumList;
 }
 
-std::vector<unsigned> SIRAddMulChain::getBitNumListInTMatrix(MatrixType TMatrix, bool InCurrentStage) {
+std::vector<unsigned> SIRAddMulChain::getBitNumListInTMatrix(MatrixType TMatrix,
+                                                             unsigned Stage, bool InCurrentStage) {
   std::vector<unsigned> BitNumList;
 
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
@@ -918,11 +934,9 @@ std::vector<unsigned> SIRAddMulChain::getBitNumListInTMatrix(MatrixType TMatrix,
     }
     // If we are only calculate the number of bits in current stage.
     else {
-      unsigned CurrentStage = Row[0].second.second;
-
       unsigned BitNum = 0;
       for (unsigned j = 0; j < Row.size(); ++j) {
-        if (Row[j].second.second == CurrentStage)
+        if (Row[j].second.second == Stage)
           ++BitNum;
       }
 
@@ -945,7 +959,7 @@ MatrixType SIRAddMulChain::simplifyTMatrix(MatrixType TMatrix) {
     for (unsigned j = 0; j < TRow.size(); ++j) {
       DotType Dot = TRow[j];
 
-      if (Dot.first != "1'b0")
+      if (Dot.first != "1'b0" && Dot.first != "~1'b1")
         SimplifiedTRow.push_back(Dot);
     }
 
@@ -1072,43 +1086,108 @@ MatrixType SIRAddMulChain::eliminateOneBitInTMatrix(MatrixType TMatrix) {
 void SIRAddMulChain::generateCompressor(std::vector<DotType> CompressCouple,
                                         std::pair<std::string, unsigned> CompressResult,
                                         raw_fd_ostream &Output) {
-  // Print the declaration of the result.
-  Output << "wire[" << utostr_32(CompressResult.second - 1) << ":0] " << CompressResult.first << ";\n";
+  if (CompressCouple.size() == 3) {
+    // Print the declaration of the result.
+    Output << "wire[" << utostr_32(CompressResult.second - 1) << ":0] " << CompressResult.first << ";\n";
 
-  // Print the instantiation of the compressor module.
-  Output << "compressor_3_2 compressor_3_2_" << utostr_32(COMPRESSOR_NUM) << "(\n";
+    // Print the instantiation of the compressor module.
+    Output << "compressor_3_2 compressor_3_2_" << utostr_32(COMPRESSOR_NUM) << "(\n";
 
-  Output << "\t.col0(" << "{";
-  for (unsigned i = 0; i < CompressCouple.size(); ++i) {
-    Output << CompressCouple[i].first;
+    Output << "\t.col0(" << "{";
+    for (unsigned i = 0; i < CompressCouple.size(); ++i) {
+      Output << CompressCouple[i].first;
 
-    if (i != CompressCouple.size() - 1)
-      Output << ", ";
-  }
-  Output << "}),\n";
+      if (i != CompressCouple.size() - 1)
+        Output << ", ";
+    }
+    Output << "}),\n";
 
-  Output << "\t.result(" << CompressResult.first << ")\n";
+    Output << "\t.result(" << CompressResult.first << ")\n";
 
-  Output << ");\n\n";
+    Output << ");\n\n";
+  } else if (CompressCouple.size() == 2) {
+    // Print the declaration of the result.
+    Output << "wire[" << utostr_32(CompressResult.second - 1) << ":0] " << CompressResult.first << ";\n";
+
+    // Print the instantiation of the compressor module.
+    Output << "compressor_2_2 compressor_2_2_" << utostr_32(COMPRESSOR_NUM) << "(\n";
+
+    Output << "\t.col0(" << "{";
+    for (unsigned i = 0; i < CompressCouple.size(); ++i) {
+      Output << CompressCouple[i].first;
+
+      if (i != CompressCouple.size() - 1)
+        Output << ", ";
+    }
+    Output << "}),\n";
+
+    Output << "\t.result(" << CompressResult.first << ")\n";
+
+    Output << ");\n\n";
+  }  
 
   ++COMPRESSOR_NUM;
+}
+
+bool SIRAddMulChain::needToCompress(std::vector<unsigned> BitNumList, unsigned RowNo) {
+  if (BitNumList[RowNo] == 2) {
+    if (BitNumList[RowNo - 1] <= 2)
+      return false;
+
+    if (BitNumList[RowNo - 1] == 3) {
+      bool NeedToCompress = true;
+      for (int j = RowNo - 2; j >= 0; --j) {
+        if (BitNumList[j] > 3) {
+          NeedToCompress = false;
+          break;
+        }
+      }
+
+      return NeedToCompress;
+    }
+    
+    if (BitNumList[RowNo - 1] == 4) {
+      bool NeedToCompress = true;
+      for (int j = RowNo - 2; j >= 0; --j) {
+        if (BitNumList[j] >= 3) {
+          NeedToCompress = false;
+          break;
+        }
+      }
+
+      return NeedToCompress;
+    }
+
+    return false;
+  }
+
+  if (BitNumList[RowNo] == 3) {
+    bool NeedToCompress = true;
+    for (int j = RowNo - 1; j >= 0; --j) {
+      if (BitNumList[j] >= 3) {
+        NeedToCompress = false;
+        break;
+      }
+    }
+
+    return NeedToCompress;
+  }
+
+  return false;
 }
 
 MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix, unsigned Stage,
                                                   raw_fd_ostream &Output) {
   // Get the informations of the TMatrix.
-  std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix, false);
-  std::vector<unsigned> BitNumListInCurrentStage = getBitNumListInTMatrix(TMatrix, true);
+  std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix, Stage, false);
+  std::vector<unsigned> BitNumListInCurrentStage = getBitNumListInTMatrix(TMatrix, Stage, true);
 
   // Compress row by row. To be noted that, the last row is ignored since it can be
   // compressed using XOR gate.
   for (unsigned i = 0; i < TMatrix.size() - 1; ++i) {
     // Compress current row if it has more than target final bit numbers.
-    if (BitNumList[i] > 2) {
-      unsigned BitNumInCurrentStage = BitNumListInCurrentStage[i];
-      assert(BitNumInCurrentStage != 0 && "Unexpected bit stage!");
-
-      unsigned CompressCoupleNum = BitNumInCurrentStage / 3;
+    if (BitNumListInCurrentStage[i] >= 3) {
+      unsigned CompressCoupleNum = BitNumListInCurrentStage[i] / 3;
       for (unsigned j = 0; j < CompressCoupleNum; ++j) {
         assert(TMatrix[i][3 * j].second.second == Stage &&
                TMatrix[i][3 * j + 1].second.second == Stage &&
@@ -1143,30 +1222,79 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix, unsigned S
 
         // Generate the compressor.
         generateCompressor(CompressCouple, CompressResult, Output);
-      }
 
-      // Increase the stage of all remaining bits in current stage so that they can be
-      // compressed ASAP in next stage.
-      for (unsigned j = CompressCoupleNum * 3; j < BitNumInCurrentStage; ++j)
-        ++TMatrix[i][j].second.second;
-
-      // After compress this row, do some clean up and optimize work.
-      TMatrix = eliminateOneBitInTMatrix(TMatrix);
-      TMatrix = simplifyTMatrix(TMatrix);
-      TMatrix = sortTMatrix(TMatrix);
-      
-      // Update the informations of the TMatrix.
-      BitNumList = getBitNumListInTMatrix(TMatrix, false);
-      BitNumListInCurrentStage = getBitNumListInTMatrix(TMatrix, true);
-
-      //printTMatrixForDebug(TMatrix);
-    } else {
-      // If we are not to compress this row, we also need to set right the
-      // stage in case we need to compress it next stage.
-      for (unsigned j = 0; j < BitNumList[i]; ++j) {
-        TMatrix[i][j].second.second = std::max(Stage + 1, TMatrix[i][j].second.second);
+        printTMatrixForDebug(TMatrix);
       }
     }
+
+    // Do some clean up and optimize work.
+    TMatrix = eliminateOneBitInTMatrix(TMatrix);
+    TMatrix = simplifyTMatrix(TMatrix);
+    TMatrix = sortTMatrix(TMatrix);
+
+    // Update the informations of the TMatrix.
+    BitNumList = getBitNumListInTMatrix(TMatrix, Stage, false);
+    BitNumListInCurrentStage = getBitNumListInTMatrix(TMatrix, Stage, true);
+
+    if (BitNumListInCurrentStage[i] == 2 && needToCompress(BitNumList, i)) {
+      unsigned BitNumInCurrentStage = BitNumListInCurrentStage[i];
+      if (BitNumInCurrentStage == 2 && needToCompress(BitNumList, i)) {
+        assert(TMatrix[i][0].second.second == Stage &&
+               TMatrix[i][1].second.second == Stage &&
+               "Incorrect Stage!");
+
+        // The couple of bits to be compressed.
+        std::vector<DotType> CompressCouple;
+        CompressCouple.push_back(TMatrix[i][0]);
+        CompressCouple.push_back(TMatrix[i][1]);
+
+        // Clear the compressed bits in TMatrix.
+        TMatrix[i][0] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+        TMatrix[i][1] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+
+        // Get the information of the result.
+        std::string ResultName = "result_" + utostr_32(i) + "_" + utostr_32(0) + "_" + utostr_32(Stage);
+        std::pair<std::string, unsigned> CompressResult = std::make_pair(ResultName, 2);
+
+        float InpudDelay_0 = TMatrix[i][0].second.first;
+        float InpudDelay_1 = TMatrix[i][1].second.first;
+        float ResultDelay = std::max(InpudDelay_0, InpudDelay_1);
+        ResultDelay += VFUs::LUTDelay;
+
+        // Insert the result into TMatrix.
+        TMatrix[i].push_back(std::make_pair(ResultName + "[0]", std::make_pair(ResultDelay, Stage + 1)));
+        if (i + 1 < TMatrix.size())
+          TMatrix[i + 1].push_back(std::make_pair(ResultName + "[1]", std::make_pair(ResultDelay, Stage + 1)));
+
+        // Generate the compressor.
+        generateCompressor(CompressCouple, CompressResult, Output);
+
+        printTMatrixForDebug(TMatrix);
+      }
+      // Increase the stage of all remaining bits in current stage so that they can be
+      // compressed ASAP in next stage.
+      for (unsigned j = 0; j < BitNumInCurrentStage; ++j)
+        ++TMatrix[i][j].second.second;
+
+      printTMatrixForDebug(TMatrix);
+    }
+
+
+    // If there are no more bits can be compressed in this stage, we also need to set right the
+    // stage in case we need to compress it next stage.
+    for (unsigned j = 0; j < TMatrix[i].size(); ++j) {
+      if (TMatrix[i][j].second.second == Stage)
+        TMatrix[i][j].second.second = Stage + 1;
+    }
+
+    // After compress this row, do some clean up and optimize work.
+    TMatrix = eliminateOneBitInTMatrix(TMatrix);
+    TMatrix = simplifyTMatrix(TMatrix);
+    TMatrix = sortTMatrix(TMatrix);
+
+    // Update the informations of the TMatrix.
+    BitNumList = getBitNumListInTMatrix(TMatrix, Stage, false);
+    BitNumListInCurrentStage = getBitNumListInTMatrix(TMatrix, Stage, true);
   }
 
   // Compress the final row using XOR gate.
@@ -1217,6 +1345,8 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix, unsigned S
 float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
                                      unsigned OperandNum, unsigned OperandWidth,
                                      raw_fd_ostream &Output) {
+  printTMatrixForDebug(TMatrix);
+
   /// Prepare for the compress progress
   // Sum all one bits in TMatrix.
   TMatrix = sumAllOneBitsInTMatrix(TMatrix);
@@ -1227,6 +1357,8 @@ float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
   // Sort the TMatrix.
   TMatrix = sortTMatrix(TMatrix);
 
+  printTMatrixForDebug(TMatrix);
+
   /// Start to compress the TMatrix
   bool Continue = true;
   unsigned Stage = 0;
@@ -1234,7 +1366,7 @@ float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
     TMatrix = compressTMatrixInStage(TMatrix, Stage, Output);
 
     // Determine if we need to continue compressing.
-    std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix, false);
+    std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix, Stage, false);
     Continue = false;
     for (unsigned i = 0; i < TMatrix.size(); ++i) {
       if (BitNumList[i] > 2)
@@ -1298,6 +1430,8 @@ float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
     CPADelay = ADD_16_DELAY;
   else if (CPADataA.size() == 32)
     CPADelay = ADD_32_DELAY;
+  else if (CPADataA.size() == 64)
+    CPADelay = ADD_64_DELAY;
 
   float ResultArrivalTime = std::max(CPADataA_ArrivalTime, CPADataB_ArrivalTime) + CPADelay;
 
