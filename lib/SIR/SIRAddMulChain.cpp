@@ -1257,7 +1257,7 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix, unsigned S
         TMatrix[i][1] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
 
         // Get the information of the result.
-        std::string ResultName = "result_" + utostr_32(i) + "_" + utostr_32(0) + "_" + utostr_32(Stage);
+        std::string ResultName = "result_" + utostr_32(i) + "_" + utostr_32(Stage);
         std::pair<std::string, unsigned> CompressResult = std::make_pair(ResultName, 2);
 
         float InpudDelay_0 = TMatrix[i][0].second.first;
