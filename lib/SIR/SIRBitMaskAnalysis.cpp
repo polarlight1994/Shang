@@ -467,7 +467,22 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
 
       if (ConstantInt *CI = dyn_cast<ConstantInt>(Op)) {
         APInt CIAPInt = CI->getValue();
-        Masks.push_back(SIRBitMask(~CIAPInt, CIAPInt, CIAPInt.getNullValue(CIAPInt.getBitWidth())));
+        unsigned LeadingZeros = CIAPInt.countLeadingZeros();
+        unsigned LeadingOnes = CIAPInt.countLeadingOnes();
+
+        unsigned SignBits = std::max(LeadingZeros, LeadingOnes);
+        assert(SignBits > 0 && "Unexpected result!");
+
+        if (SignBits == 1)
+          Masks.push_back(SIRBitMask(~CIAPInt, CIAPInt, CIAPInt.getNullValue(CIAPInt.getBitWidth())));
+        else {
+          APInt KnownSignBits = APInt::getAllOnesValue(CIAPInt.getBitWidth());
+          KnownSignBits = KnownSignBits.lshr(CIAPInt.getBitWidth() - SignBits);
+          KnownSignBits = KnownSignBits.shl(CIAPInt.getBitWidth() - SignBits);
+
+          Masks.push_back(SIRBitMask(~CIAPInt, CIAPInt,KnownSignBits));
+        }
+
         continue;
       }
 
@@ -754,6 +769,8 @@ void SIRBitMaskAnalysis::verifyMaskCorrectness() {
   Function *F = SM->getFunction();
   SIRDatapathBuilder Builder(SM, *TD);
 
+  std::set<Value *> MaskedVals;
+
   typedef Function::iterator bb_iterator;
   typedef BasicBlock::iterator inst_iterator;
   for (bb_iterator BI = F->begin(), BE = F->end(); BI != BE; ++BI) {
@@ -766,6 +783,9 @@ void SIRBitMaskAnalysis::verifyMaskCorrectness() {
         continue;
       }
 
+      if (MaskedVals.count(Inst))
+        continue;
+
       SIRBitMask Mask = SM->getBitMask(Inst);
 
       if (!Mask.hasAnyBitKnown())
@@ -776,6 +796,9 @@ void SIRBitMaskAnalysis::verifyMaskCorrectness() {
 
       unsigned BitWidth = Mask.getMaskWidth();
       Value *MaskedVal = Builder.createSOrInst(Builder.createIntegerValue(BitWidth, 1), Builder.createIntegerValue(BitWidth, 1), Inst->getType(), Inst, true);
+
+      MaskedVals.insert(MaskedVal);
+      SM->IndexVal2BitMask(MaskedVal, Mask);
 
       if (MaskedVal->getType() != Inst->getType()) {
         Type *OriginType = Inst->getType();

@@ -502,6 +502,25 @@ float SIRAddMulChain::getLatency(Instruction *Inst) {
     // is counted in Operands, so the real numbers
     // of operands should be minus one.
     unsigned IONums = II->getNumOperands() - 1;
+    assert(IONums == 2 && "Unexpected Num!");
+
+    if (isa<ConstantInt>(II->getOperand(0)) || isa<ConstantInt>(II->getOperand(1)))
+      return 0.0f;
+
+    if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(II->getOperand(0))) {
+      if (OpII->getIntrinsicID() == Intrinsic::shang_not) {
+        if (isa<ConstantInt>(OpII->getOperand(0)))
+          return 0.0f;
+      }
+    }
+
+    if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(II->getOperand(1))) {
+      if (OpII->getIntrinsicID() == Intrinsic::shang_not) {
+        if (isa<ConstantInt>(OpII->getOperand(0)))
+          return 0.0f;
+      }
+    }
+
     unsigned LogicLevels = LogCeiling(IONums, VFUs::MaxLutSize);
     return LogicLevels * VFUs::LUTDelay;    
   }
@@ -530,6 +549,9 @@ float SIRAddMulChain::getLatency(Instruction *Inst) {
   case Intrinsic::shang_shl:
   case Intrinsic::shang_ashr:
   case Intrinsic::shang_lshr: {
+    if (isa<ConstantInt>(II->getOperand(1)))
+      return 0.0f;
+
     unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
     return LuaI::Get<VFUShift>()->lookupLatency(std::min(BitWidth, 64u));
   }
@@ -726,9 +748,15 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
   MatrixType Matrix = createMatrixForOperands(OptOperands, MatrixRowNum, MatrixColNum);
   printTMatrixForDebug(Matrix);
 
-  errs() << "Operands for hybrid tree is indexed as:\n";
+  errs() << "Operands for hybrid tree " << MatrixName << "is indexed as:\n";
   for (unsigned i = 0; i < OptOperands.size(); ++i) {
-    errs() << "[" + utostr_32(i) + "--" << getOperandArrivalTime(OptOperands[i]) << "],";
+    std::stringstream ss;
+    ss << getOperandArrivalTime(OptOperands[i]);
+
+    std::string delay_string;
+    ss >> delay_string;
+    ss.clear();
+    errs() << "[" + utostr_32(i) + "--" << delay_string << "],";
   }
   errs() << "\n";
 
@@ -1241,44 +1269,35 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix, unsigned S
     BitNumListInCurrentStage = getBitNumListInTMatrix(TMatrix, Stage, true);
 
     if (BitNumListInCurrentStage[i] == 2 && needToCompress(BitNumList, i)) {
-      unsigned BitNumInCurrentStage = BitNumListInCurrentStage[i];
-      if (BitNumInCurrentStage == 2 && needToCompress(BitNumList, i)) {
-        assert(TMatrix[i][0].second.second == Stage &&
-               TMatrix[i][1].second.second == Stage &&
-               "Incorrect Stage!");
+      assert(TMatrix[i][0].second.second == Stage &&
+             TMatrix[i][1].second.second == Stage &&
+             "Incorrect Stage!");
 
-        // The couple of bits to be compressed.
-        std::vector<DotType> CompressCouple;
-        CompressCouple.push_back(TMatrix[i][0]);
-        CompressCouple.push_back(TMatrix[i][1]);
+      // The couple of bits to be compressed.
+      std::vector<DotType> CompressCouple;
+      CompressCouple.push_back(TMatrix[i][0]);
+      CompressCouple.push_back(TMatrix[i][1]);
 
-        // Clear the compressed bits in TMatrix.
-        TMatrix[i][0] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
-        TMatrix[i][1] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+      // Clear the compressed bits in TMatrix.
+      TMatrix[i][0] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+      TMatrix[i][1] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
 
-        // Get the information of the result.
-        std::string ResultName = "result_" + utostr_32(i) + "_" + utostr_32(Stage);
-        std::pair<std::string, unsigned> CompressResult = std::make_pair(ResultName, 2);
+      // Get the information of the result.
+      std::string ResultName = "result_" + utostr_32(i) + "_" + utostr_32(Stage);
+      std::pair<std::string, unsigned> CompressResult = std::make_pair(ResultName, 2);
 
-        float InpudDelay_0 = TMatrix[i][0].second.first;
-        float InpudDelay_1 = TMatrix[i][1].second.first;
-        float ResultDelay = std::max(InpudDelay_0, InpudDelay_1);
-        ResultDelay += VFUs::LUTDelay;
+      float InpudDelay_0 = TMatrix[i][0].second.first;
+      float InpudDelay_1 = TMatrix[i][1].second.first;
+      float ResultDelay = std::max(InpudDelay_0, InpudDelay_1);
+      ResultDelay += VFUs::LUTDelay;
 
-        // Insert the result into TMatrix.
-        TMatrix[i].push_back(std::make_pair(ResultName + "[0]", std::make_pair(ResultDelay, Stage + 1)));
-        if (i + 1 < TMatrix.size())
-          TMatrix[i + 1].push_back(std::make_pair(ResultName + "[1]", std::make_pair(ResultDelay, Stage + 1)));
+      // Insert the result into TMatrix.
+      TMatrix[i].push_back(std::make_pair(ResultName + "[0]", std::make_pair(ResultDelay, Stage + 1)));
+      if (i + 1 < TMatrix.size())
+        TMatrix[i + 1].push_back(std::make_pair(ResultName + "[1]", std::make_pair(ResultDelay, Stage + 1)));
 
-        // Generate the compressor.
-        generateCompressor(CompressCouple, CompressResult, Output);
-
-        printTMatrixForDebug(TMatrix);
-      }
-      // Increase the stage of all remaining bits in current stage so that they can be
-      // compressed ASAP in next stage.
-      for (unsigned j = 0; j < BitNumInCurrentStage; ++j)
-        ++TMatrix[i][j].second.second;
+      // Generate the compressor.
+      generateCompressor(CompressCouple, CompressResult, Output);
 
       printTMatrixForDebug(TMatrix);
     }
