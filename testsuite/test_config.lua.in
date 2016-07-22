@@ -34,7 +34,7 @@ enableCoSimulation = @enableCoSimulation@
 POINTER_SIZE_IN_BITS = @POINTER_SIZE_IN_BITS@
 
 dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
-dofile('@TEST_BINARY_ROOT@/' .. 'EP2C70F896C6.lua')
+dofile('@TEST_BINARY_ROOT@/' .. 'ASIC.lua')
 
 Functions.@TEST@ = RTLModuleName
 

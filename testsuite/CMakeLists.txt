@@ -90,8 +90,8 @@ macro(add_synthesis_test test_name)
 		"${TEST_BINARY_ROOT}/test_config_main.lua"
 	)
 	configure_file(
-		"${SIR_SOURCE_ROOT}/EP2C70F896C6.lua"
-		"${TEST_BINARY_ROOT}/EP2C70F896C6.lua"
+		"${SIR_SOURCE_ROOT}/ASIC.lua"
+		"${TEST_BINARY_ROOT}/ASIC.lua"
 	)
 	configure_file(
 		"${SIR_SOURCE_ROOT}/verilog_synthesis_altera.tcl.in"
@@ -192,8 +192,8 @@ macro(add_cosimulation_test test_name)
 		"${TEST_BINARY_ROOT}/${TEST}_test_config.lua"
 	)
 	configure_file(
-		"${SIR_SOURCE_ROOT}/EP2C70F896C6.lua"
-		"${TEST_BINARY_ROOT}/EP2C70F896C6.lua"
+		"${SIR_SOURCE_ROOT}/ASIC.lua"
+		"${TEST_BINARY_ROOT}/ASIC.lua"
 	)
 	configure_file(
 		"${SIR_SOURCE_ROOT}/hybrid_tree_codegen.py"
@@ -342,8 +342,8 @@ macro(add_high_level_synthesis test_name)
 		"${TEST_BINARY_ROOT}/test_config_main.lua"
 	)
 	configure_file(
-		"${SIR_SOURCE_ROOT}/EP2C70F896C6.lua"
-		"${TEST_BINARY_ROOT}/EP2C70F896C6.lua"
+		"${SIR_SOURCE_ROOT}/ASIC.lua"
+		"${TEST_BINARY_ROOT}/ASIC.lua"
 	)
 	configure_file(
 		"${SIR_SOURCE_ROOT}/verilog_synthesis_altera.tcl.in"
