@@ -200,15 +200,12 @@ public:
     assert(KnownZeros.getBitWidth() == KnownOnes.getBitWidth() &&
            KnownZeros.getBitWidth() == KnownSames.getBitWidth()
            && "BitWidth not matches!");
-    assert(!(KnownZeros & KnownOnes) && !(KnownZeros & KnownSames) &&
-           !(KnownOnes & KnownSames) && "BitMasks conflicts!");
+    assert(!(KnownZeros & KnownOnes) && "BitMasks conflicts!");
   }
 
   bool isCompatibleWith(const SIRBitMask &Mask) {
     return getMaskWidth() == Mask.getMaskWidth() &&
-           !(KnownOnes & Mask.KnownZeros) && !(KnownZeros & Mask.KnownOnes) &&
-           !(KnownSames & Mask.KnownZeros) && !(KnownSames & Mask.KnownOnes) &&
-           !(Mask.KnownSames & KnownZeros) && !(Mask.KnownSames & KnownOnes);
+           !(KnownOnes & Mask.KnownZeros) && !(KnownZeros & Mask.KnownOnes);
   }
 
   // Set bit of KnownZeros and KnownOnes
