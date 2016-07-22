@@ -19,9 +19,9 @@ typedef std::vector<DotType> MatrixRowType;
 typedef std::vector<MatrixRowType> MatrixType;
 
 static unsigned COMPRESSOR_NUM = 0;
-static float ADD_16_DELAY = 0.25;
-static float ADD_32_DELAY = 0.38;
-static float ADD_64_DELAY = 0.64;
+static float ADD_16_DELAY = 0.30;
+static float ADD_32_DELAY = 0.57;
+static float ADD_64_DELAY = 1.13;
 
 namespace {
 struct SIRAddMulChain : public SIRPass {
@@ -492,11 +492,65 @@ float SIRAddMulChain::getLatency(Instruction *Inst) {
   case Intrinsic::shang_bit_extract:
     return 0.0f;
 
-  case Intrinsic::shang_not:
-    return 0.0f;
+  case Intrinsic::shang_not: {
+    if (isa<ConstantInt>(II->getOperand(0)))
+      return 0.0f;
 
-  case Intrinsic::shang_and:
-  case Intrinsic::shang_or:
+    return 0.00163f;
+  }  
+
+  case Intrinsic::shang_and: {
+    // To be noted that, in LLVM IR the return value
+    // is counted in Operands, so the real numbers
+    // of operands should be minus one.
+    unsigned IONums = II->getNumOperands() - 1;
+    assert(IONums == 2 && "Unexpected Num!");
+
+    if (isa<ConstantInt>(II->getOperand(0)) || isa<ConstantInt>(II->getOperand(1)))
+      return 0.0f;
+
+    if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(II->getOperand(0))) {
+      if (OpII->getIntrinsicID() == Intrinsic::shang_not) {
+        if (isa<ConstantInt>(OpII->getOperand(0)))
+          return 0.0f;
+      }
+    }
+
+    if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(II->getOperand(1))) {
+      if (OpII->getIntrinsicID() == Intrinsic::shang_not) {
+        if (isa<ConstantInt>(OpII->getOperand(0)))
+          return 0.0f;
+      }
+    }
+
+    return 0.01422f;
+  }
+  case Intrinsic::shang_or: {
+    // To be noted that, in LLVM IR the return value
+    // is counted in Operands, so the real numbers
+    // of operands should be minus one.
+    unsigned IONums = II->getNumOperands() - 1;
+    assert(IONums == 2 && "Unexpected Num!");
+
+    if (isa<ConstantInt>(II->getOperand(0)) || isa<ConstantInt>(II->getOperand(1)))
+      return 0.0f;
+
+    if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(II->getOperand(0))) {
+      if (OpII->getIntrinsicID() == Intrinsic::shang_not) {
+        if (isa<ConstantInt>(OpII->getOperand(0)))
+          return 0.0f;
+      }
+    }
+
+    if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(II->getOperand(1))) {
+      if (OpII->getIntrinsicID() == Intrinsic::shang_not) {
+        if (isa<ConstantInt>(OpII->getOperand(0)))
+          return 0.0f;
+      }
+    }
+
+    return 0.01899f;
+  }
   case Intrinsic::shang_xor: {
     // To be noted that, in LLVM IR the return value
     // is counted in Operands, so the real numbers
@@ -521,13 +575,11 @@ float SIRAddMulChain::getLatency(Instruction *Inst) {
       }
     }
 
-    unsigned LogicLevels = LogCeiling(IONums, VFUs::MaxLutSize);
-    return LogicLevels * VFUs::LUTDelay;    
+    return 0.01887f;
   }
   case Intrinsic::shang_rand: {
-    unsigned IONums = TD->getTypeSizeInBits(II->getOperand(0)->getType());
-    unsigned LogicLevels = LogCeiling(IONums, VFUs::MaxLutSize);
-    return LogicLevels * VFUs::LUTDelay;
+    unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
+    return LuaI::Get<VFURAnd>()->lookupLatency(std::min(BitWidth, 64u));
   }
 
   case Intrinsic::shang_add:
@@ -542,8 +594,8 @@ float SIRAddMulChain::getLatency(Instruction *Inst) {
 
   case Intrinsic::shang_sdiv:
   case Intrinsic::shang_udiv: {
-    // Hack: Need to add the lookUpDelay function of Div into VFUs.
-    return 345.607f;
+    unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
+    return LuaI::Get<VFUDiv>()->lookupLatency(std::min(BitWidth, 64u));
   }
 
   case Intrinsic::shang_shl:
@@ -560,24 +612,6 @@ float SIRAddMulChain::getLatency(Instruction *Inst) {
   case Intrinsic::shang_ugt: {
     unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
     return LuaI::Get<VFUICmp>()->lookupLatency(std::min(BitWidth, 64u));
-  }
-
-  case Intrinsic::shang_compressor: {
-    std::vector<Value *> Ops = SM->lookupOpsOfChain(II);
-    assert(Ops.size() && "Unexpected empty matrix!");
-
-    unsigned CompressorSize = 0;
-    for (unsigned i = 0; i < Ops.size(); ++i) {
-      Value *Op = Ops[i];
-
-      if (isa<ConstantInt>(Op))
-        continue;
-
-      ++CompressorSize;
-    }
-
-    unsigned CompressorWidth = TD->getTypeSizeInBits(II->getType());
-    return LuaI::Get<VFUCompressor>()->lookupLatency(std::min(CompressorWidth, 10u));
   }
 
   default:
@@ -675,20 +709,23 @@ void SIRAddMulChain::generateDotMatrix() {
   }
 
   // Generate the 3-2 compressor.
-  Output << "module compressor_3_2(\n";
-  Output << "input wire[2:0] col0,\n";
-  Output << "output wire[1:0] result\n";
-  Output << ");\n\n";
-  Output << "assign result = col0[0] + col0[1] + col0[2];\n\n";
+  Output << "module compressor_3_2 ( col0, result );\n";
+  Output << "input [2:0] col0;\n";
+  Output << "output [1:0] result;\n";
+  Output << "wire   n3, n4;\n";
+  Output << "AOI2BB2X1 U5 ( .B0(col0[0]), .B1(col0[2]), .A0N(col0[0]), .A1N(col0[2]), .Y(n3) );\n";
+  Output << "AOI2BB2X1 U6 ( .B0(col0[1]), .B1(n3), .A0N(col0[1]), .A1N(n3), .Y(result[0]));\n";
+  Output << "OR2X1 U7 ( .A(col0[0]), .B(col0[2]), .Y(n4) );\n";
+  Output << "AO22X1 U8 ( .A0(col0[1]), .A1(n4), .B0(col0[0]), .B1(col0[2]), .Y(result[1]));\n";
   Output << "endmodule\n\n";
 
   // Generate the 2-2 compressor.
-  Output << "module compressor_2_2(\n";
-  Output << "input wire[1:0] col0,\n";
-  Output << "output wire[1:0] result\n";
-  Output << ");\n\n";
-  Output << "assign result = col0[0] + col0[1];\n\n";
-  Output << "endmodule\n";
+  Output << "module compressor_2_2 ( col0, result );\n";
+  Output << "input [1:0] col0;\n";
+  Output << "output [1:0] result;\n";
+  Output << "AND2X1 U3 ( .A(col0[0]), .B(col0[1]), .Y(result[1]) );\n";
+  Output << "AOI2BB1X1 U4 ( .A0N(col0[0]), .A1N(col0[1]), .B0(result[1]), .Y(result[0]));\n";
+  Output << "endmodule\n\n";
 }
 
 void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_ostream &Output) {
@@ -1126,12 +1163,9 @@ void SIRAddMulChain::generateCompressor(std::vector<DotType> CompressCouple,
     Output << "compressor_3_2 compressor_3_2_" << utostr_32(COMPRESSOR_NUM) << "(\n";
 
     Output << "\t.col0(" << "{";
-    for (unsigned i = 0; i < CompressCouple.size(); ++i) {
-      Output << CompressCouple[i].first;
-
-      if (i != CompressCouple.size() - 1)
-        Output << ", ";
-    }
+    // Link the wire according to the path delay of compressor, since the delay order is listed as
+    // col[1] < col[0] < col[2].
+    Output << CompressCouple[1].first << ", " << CompressCouple[2].first << ", " << CompressCouple[0].first;
     Output << "}),\n";
 
     Output << "\t.result(" << CompressResult.first << ")\n";
@@ -1145,12 +1179,9 @@ void SIRAddMulChain::generateCompressor(std::vector<DotType> CompressCouple,
     Output << "compressor_2_2 compressor_2_2_" << utostr_32(COMPRESSOR_NUM) << "(\n";
 
     Output << "\t.col0(" << "{";
-    for (unsigned i = 0; i < CompressCouple.size(); ++i) {
-      Output << CompressCouple[i].first;
-
-      if (i != CompressCouple.size() - 1)
-        Output << ", ";
-    }
+    // Link the wire according to the path delay of compressor, since the delay order is listed as
+    // col[1] < col[0].
+    Output << CompressCouple[1].first << ", " << CompressCouple[0].first;
     Output << "}),\n";
 
     Output << "\t.result(" << CompressResult.first << ")\n";
