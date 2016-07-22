@@ -161,7 +161,7 @@ void LuaI::updateFUs() {
   initSimpleFU<VFUs::Mult>(FUs);
   initSimpleFU<VFUs::ICmp>(FUs);
   initSimpleFU<VFUs::Div>(FUs);
-  initSimpleFU<VFUs::Compressor>(FUs);
+  initSimpleFU<VFUs::RAnd>(FUs);
 
   FUSet[VFUs::Mux]
     = new VFUMux(FUs[VFUDesc::getTypeName(VFUs::Mux)]);

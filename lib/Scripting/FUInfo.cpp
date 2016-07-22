@@ -70,7 +70,7 @@ using namespace llvm;
 
   namespace VFUs {
     const char *VFUNames[] = {
-      "Trivial", "AddSub", "Shift", "Mult", "ICmp", "Div", "Compressor", "MemoryBus", "Mux"
+      "Trivial", "AddSub", "Shift", "Mult", "ICmp", "Div", "RAnd", "MemoryBus", "Mux"
     };
 
     // Default area cost parameter.
