@@ -837,7 +837,7 @@ bool SIRBitMaskAnalysis::runOnSIR(SIR &SM) {
 
   while(runIteration());
 
-  verifyMaskCorrectness();
+  //verifyMaskCorrectness();
   printMask(Output);
 
   return false;
