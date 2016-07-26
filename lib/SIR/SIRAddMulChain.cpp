@@ -80,7 +80,7 @@ struct SIRAddMulChain : public SIRPass {
   MatrixType eliminateOneBitInTMatrix(MatrixType TMatrix);
 
   std::pair<float, float> generateCompressor(std::vector<DotType> CompressCouple,
-                                             std::pair<std::string, unsigned> CompressResult,
+                                             std::string SumName, std::string CoutName,
                                              raw_fd_ostream &Output);
 
   bool needToCompress(std::vector<unsigned> BitNumList, unsigned RowNo);
@@ -709,41 +709,41 @@ void SIRAddMulChain::generateDotMatrix() {
     generateDotmatrixForChain(I->first, Output);
   }
 
-//   // Generate the 3-2 compressor.
-//   Output << "module compressor_3_2 ( a, b, cin, result, cout );\n";
-//   Output << "input a, b, cin;\n";
-//   Output << "output result, cout;\n";
-//   Output << "wire   n2, n3, n4;\n";
-//   Output << "AOI2BB2X2 U4 ( .B0(b), .B1(a), .A0N(b), .A1N(a), .Y(n4) );\n";
-//   Output << "NAND2X1 U5 ( .A(b), .B(a), .Y(n3) );\n";
-//   Output << "NAND2X1 U6 ( .A(n4), .B(cin), .Y(n2) );\n";
-//   Output << "NAND2X1 U7 ( .A(n3), .B(n2), .Y(cout) );\n";
-//   Output << "AOI2BB2X1 U8 ( .B0(n4), .B1(cin), .A0N(n4), .A1N(cin), .Y(result) );";
-//   Output << "endmodule\n\n";
-// 
-//   // Generate the 2-2 compressor.
-//   Output << "module compressor_2_2 ( a, b, result, cout );\n";
-//   Output << "input a, b;\n";
-//   Output << "output result, cout;\n";
-//   Output << "AND2X1 U3 ( .A(b), .B(a), .Y(cout) );\n";
-//   Output << "AOI2BB1X1 U4 ( .A0N(b), .A1N(a), .B0(cout), .Y(result) );\n";
-//   Output << "endmodule\n\n";
-
   // Generate the 3-2 compressor.
   Output << "module compressor_3_2 ( a, b, cin, result, cout );\n";
   Output << "input a, b, cin;\n";
   Output << "output result, cout;\n";
-  Output << "assign result = a ^ b ^ cin;\n";
-  Output << "assign cout = (a & b) | (a & cin) | (b & cin);\n";
+  Output << "wire   n2, n3, n4;\n";
+  Output << "AOI2BB2X2 U4 ( .B0(b), .B1(a), .A0N(b), .A1N(a), .Y(n4) );\n";
+  Output << "NAND2X1 U5 ( .A(b), .B(a), .Y(n3) );\n";
+  Output << "NAND2X1 U6 ( .A(n4), .B(cin), .Y(n2) );\n";
+  Output << "NAND2X1 U7 ( .A(n3), .B(n2), .Y(cout) );\n";
+  Output << "AOI2BB2X1 U8 ( .B0(n4), .B1(cin), .A0N(n4), .A1N(cin), .Y(result) );";
   Output << "endmodule\n\n";
 
   // Generate the 2-2 compressor.
   Output << "module compressor_2_2 ( a, b, result, cout );\n";
   Output << "input a, b;\n";
   Output << "output result, cout;\n";
-  Output << "assign result = a ^ b;\n";
-  Output << "assign cout = a & b;\n";
+  Output << "AND2X1 U3 ( .A(b), .B(a), .Y(cout) );\n";
+  Output << "AOI2BB1X1 U4 ( .A0N(b), .A1N(a), .B0(cout), .Y(result) );\n";
   Output << "endmodule\n\n";
+
+//   // Generate the 3-2 compressor.
+//   Output << "module compressor_3_2 ( a, b, cin, result, cout );\n";
+//   Output << "input a, b, cin;\n";
+//   Output << "output result, cout;\n";
+//   Output << "assign result = a ^ b ^ cin;\n";
+//   Output << "assign cout = (a & b) | (a & cin) | (b & cin);\n";
+//   Output << "endmodule\n\n";
+// 
+//   // Generate the 2-2 compressor.
+//   Output << "module compressor_2_2 ( a, b, result, cout );\n";
+//   Output << "input a, b;\n";
+//   Output << "output result, cout;\n";
+//   Output << "assign result = a ^ b;\n";
+//   Output << "assign cout = a & b;\n";
+//   Output << "endmodule\n\n";
 }
 
 void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_ostream &Output) {
@@ -1149,14 +1149,15 @@ MatrixType SIRAddMulChain::eliminateOneBitInTMatrix(MatrixType TMatrix) {
 
 std::pair<float, float>
   SIRAddMulChain::generateCompressor(std::vector<DotType> CompressCouple,
-                                     std::pair<std::string, unsigned> CompressResult,
+                                     std::string SumName, std::string CoutName,
                                      raw_fd_ostream &Output) {
   float SumDelay = 0.0f;
   float CoutDelay = 0.0f;
 
   if (CompressCouple.size() == 3) {
     // Print the declaration of the result.
-    Output << "wire[" << utostr_32(CompressResult.second - 1) << ":0] " << CompressResult.first << ";\n";
+    Output << "wire " << SumName << ";\n";
+    Output << "wire " << CoutName << ";\n";
 
     // Print the instantiation of the compressor module.
     Output << "compressor_3_2 compressor_3_2_" << utostr_32(COMPRESSOR_NUM) << "( ";
@@ -1164,7 +1165,7 @@ std::pair<float, float>
     // Link the wire according to the path delay of compressor, since the delay order is listed as
     // col[1] < col[0] < col[2].
     Output << ".a(" << CompressCouple[0].first << "), .b(" << CompressCouple[1].first << "), .cin("
-           << CompressCouple[2].first << "), .result(" << CompressResult.first << ") );\n\n";
+           << CompressCouple[2].first << "), .result(" << SumName << "), .cout(" << CoutName << ") );\n\n";
 
     // Calculate the output delay.
     float SumDelay_0 = CompressCouple[1].second + COMPRESSOR_3_2_DELAY[0][0];
@@ -1179,7 +1180,8 @@ std::pair<float, float>
     CoutDelay = std::max(CoutDelay_0, std::max(CoutDelay_1, CoutDelay_2));
   } else {
     // Print the declaration of the result.
-    Output << "wire[" << utostr_32(CompressResult.second - 1) << ":0] " << CompressResult.first << ";\n";
+    Output << "wire " << SumName << ";\n";
+    Output << "wire " << CoutName << ";\n";
 
     // Print the instantiation of the compressor module.
     Output << "compressor_2_2 compressor_2_2_" << utostr_32(COMPRESSOR_NUM) << "( ";
@@ -1187,7 +1189,7 @@ std::pair<float, float>
     // Link the wire according to the path delay of compressor, since the delay order is listed as
     // col[1] < col[0].
     Output << ".a(" << CompressCouple[0].first << "), .b(" << CompressCouple[1].first 
-           << "), .result(" << CompressResult.first << ") );\n\n";
+           << "), .result(" << SumName << "), .cout(" << CoutName << ") );\n\n";
 
     // Calculate the output delay.
     float SumDelay_0 = CompressCouple[1].second + COMPRESSOR_2_2_DELAY[0][0];
@@ -1313,17 +1315,17 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix, unsigned S
       TMatrix[i][2] = std::make_pair("1'b0", 0.0f);
 
       // Get the information of the result.
-      std::string ResultName = "result_3_2" + utostr_32(i) + "_" + utostr_32(Stage);
-      std::pair<std::string, unsigned> CompressResult = std::make_pair(ResultName, 2);
+      std::string SumName = "sum_3_2" + utostr_32(i) + "_" + utostr_32(Stage);
+      std::string CoutName = "cout_3_2" + utostr_32(i) + "_" + utostr_32(Stage);
 
       // Generate the compressor.
       std::pair<float, float> ResultDelay
-        = generateCompressor(CompressCouple, CompressResult, Output);
+        = generateCompressor(CompressCouple, SumName, CoutName, Output);
 
       // Insert the result into TMatrix.
-      TMatrix[i].push_back(std::make_pair(ResultName + "[0]", ResultDelay.first));
+      TMatrix[i].push_back(std::make_pair(SumName, ResultDelay.first));
       if (i + 1 < TMatrix.size())
-        TMatrix[i + 1].push_back(std::make_pair(ResultName + "[1]", ResultDelay.second));
+        TMatrix[i + 1].push_back(std::make_pair(CoutName, ResultDelay.second));
 
       printTMatrixForDebug(TMatrix);
     }
@@ -1347,17 +1349,17 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix, unsigned S
       TMatrix[i][1] = std::make_pair("1'b0", 0.0f);
 
       // Get the information of the result.
-      std::string ResultName = "result_2_2" + utostr_32(i) + "_" + utostr_32(Stage);
-      std::pair<std::string, unsigned> CompressResult = std::make_pair(ResultName, 2);
+      std::string SumName = "sum_2_2" + utostr_32(i) + "_" + utostr_32(Stage);
+      std::string CoutName = "cout_2_2" + utostr_32(i) + "_" + utostr_32(Stage);
 
       // Generate the compressor.
       std::pair<float, float> ResultDelay
-        = generateCompressor(CompressCouple, CompressResult, Output);
+        = generateCompressor(CompressCouple, SumName, CoutName, Output);
 
       // Insert the result into TMatrix.
-      TMatrix[i].push_back(std::make_pair(ResultName + "[0]", ResultDelay.first));
+      TMatrix[i].push_back(std::make_pair(SumName, ResultDelay.first));
       if (i + 1 < TMatrix.size())
-        TMatrix[i + 1].push_back(std::make_pair(ResultName + "[1]", ResultDelay.second));
+        TMatrix[i + 1].push_back(std::make_pair(CoutName, ResultDelay.second));
 
       printTMatrixForDebug(TMatrix);
     }
