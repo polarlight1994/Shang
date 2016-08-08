@@ -709,41 +709,41 @@ void SIRAddMulChain::generateDotMatrix() {
     generateDotmatrixForChain(I->first, Output);
   }
 
-  //// Generate the 3-2 compressor.
-  //Output << "module compressor_3_2 ( a, b, cin, result, cout );\n";
-  //Output << "input a, b, cin;\n";
-  //Output << "output result, cout;\n";
-  //Output << "wire   n2, n3, n4;\n";
-  //Output << "AOI2BB2X2 U4 ( .B0(b), .B1(a), .A0N(b), .A1N(a), .Y(n4) );\n";
-  //Output << "NAND2X1 U5 ( .A(b), .B(a), .Y(n3) );\n";
-  //Output << "NAND2X1 U6 ( .A(n4), .B(cin), .Y(n2) );\n";
-  //Output << "NAND2X1 U7 ( .A(n3), .B(n2), .Y(cout) );\n";
-  //Output << "AOI2BB2X1 U8 ( .B0(n4), .B1(cin), .A0N(n4), .A1N(cin), .Y(result) );";
-  //Output << "endmodule\n\n";
+  // Generate the 3-2 compressor.
+  Output << "module compressor_3_2 ( a, b, cin, result, cout );\n";
+  Output << "input a, b, cin;\n";
+  Output << "output result, cout;\n";
+  Output << "wire   n2, n3, n4;\n";
+  Output << "AOI2BB2X2 U4 ( .B0(b), .B1(a), .A0N(b), .A1N(a), .Y(n4) );\n";
+  Output << "NAND2X1 U5 ( .A(b), .B(a), .Y(n3) );\n";
+  Output << "NAND2X1 U6 ( .A(n4), .B(cin), .Y(n2) );\n";
+  Output << "NAND2X1 U7 ( .A(n3), .B(n2), .Y(cout) );\n";
+  Output << "AOI2BB2X1 U8 ( .B0(n4), .B1(cin), .A0N(n4), .A1N(cin), .Y(result) );";
+  Output << "endmodule\n\n";
 
-  //// Generate the 2-2 compressor.
-  //Output << "module compressor_2_2 ( a, b, result, cout );\n";
-  //Output << "input a, b;\n";
-  //Output << "output result, cout;\n";
-  //Output << "AND2X1 U3 ( .A(b), .B(a), .Y(cout) );\n";
-  //Output << "AOI2BB1X1 U4 ( .A0N(b), .A1N(a), .B0(cout), .Y(result) );\n";
-  //Output << "endmodule\n\n";
+  // Generate the 2-2 compressor.
+  Output << "module compressor_2_2 ( a, b, result, cout );\n";
+  Output << "input a, b;\n";
+  Output << "output result, cout;\n";
+  Output << "AND2X1 U3 ( .A(b), .B(a), .Y(cout) );\n";
+  Output << "AOI2BB1X1 U4 ( .A0N(b), .A1N(a), .B0(cout), .Y(result) );\n";
+  Output << "endmodule\n\n";
 
-   // Generate the 3-2 compressor.
-   Output << "module compressor_3_2 ( a, b, cin, result, cout );\n";
-   Output << "input a, b, cin;\n";
-   Output << "output result, cout;\n";
-   Output << "assign result = a ^ b ^ cin;\n";
-   Output << "assign cout = (a & b) | (a & cin) | (b & cin);\n";
-   Output << "endmodule\n\n";
+   //// Generate the 3-2 compressor.
+   //Output << "module compressor_3_2 ( a, b, cin, result, cout );\n";
+   //Output << "input a, b, cin;\n";
+   //Output << "output result, cout;\n";
+   //Output << "assign result = a ^ b ^ cin;\n";
+   //Output << "assign cout = (a & b) | (a & cin) | (b & cin);\n";
+   //Output << "endmodule\n\n";
  
-   // Generate the 2-2 compressor.
-   Output << "module compressor_2_2 ( a, b, result, cout );\n";
-   Output << "input a, b;\n";
-   Output << "output result, cout;\n";
-   Output << "assign result = a ^ b;\n";
-   Output << "assign cout = a & b;\n";
-   Output << "endmodule\n\n";
+   //// Generate the 2-2 compressor.
+   //Output << "module compressor_2_2 ( a, b, result, cout );\n";
+   //Output << "input a, b;\n";
+   //Output << "output result, cout;\n";
+   //Output << "assign result = a ^ b;\n";
+   //Output << "assign cout = a & b;\n";
+   //Output << "endmodule\n\n";
 }
 
 void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_ostream &Output) {
