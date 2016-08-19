@@ -492,72 +492,12 @@ float SIRAddMulChain::getLatency(Instruction *Inst) {
   case Intrinsic::shang_bit_extract:
     return 0.0f;
 
-  case Intrinsic::shang_not: {
-    if (isa<ConstantInt>(II->getOperand(0)))
-      return 0.0f;
+  case Intrinsic::shang_not:
+    return 0.0f;
 
-    return 0.00163f;
-  }  
-
-  case Intrinsic::shang_and: {
-    // To be noted that, in LLVM IR the return value
-    // is counted in Operands, so the real numbers
-    // of operands should be minus one.
-    unsigned IONums = II->getNumOperands() - 1;
-    assert(IONums == 2 && "Unexpected Num!");
-
-    if (isa<ConstantInt>(II->getOperand(0)) || isa<ConstantInt>(II->getOperand(1)))
-      return 0.0f;
-
-    if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(II->getOperand(0))) {
-      if (OpII->getIntrinsicID() == Intrinsic::shang_not) {
-        if (isa<ConstantInt>(OpII->getOperand(0)))
-          return 0.0f;
-      }
-    }
-
-    if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(II->getOperand(1))) {
-      if (OpII->getIntrinsicID() == Intrinsic::shang_not) {
-        if (isa<ConstantInt>(OpII->getOperand(0)))
-          return 0.0f;
-      }
-    }
-
-    return 0.01422f;
-  }
-  case Intrinsic::shang_or: {
-    // To be noted that, in LLVM IR the return value
-    // is counted in Operands, so the real numbers
-    // of operands should be minus one.
-    unsigned IONums = II->getNumOperands() - 1;
-    assert(IONums == 2 && "Unexpected Num!");
-
-    if (isa<ConstantInt>(II->getOperand(0)) || isa<ConstantInt>(II->getOperand(1)))
-      return 0.0f;
-
-    if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(II->getOperand(0))) {
-      if (OpII->getIntrinsicID() == Intrinsic::shang_not) {
-        if (isa<ConstantInt>(OpII->getOperand(0)))
-          return 0.0f;
-      }
-    }
-
-    if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(II->getOperand(1))) {
-      if (OpII->getIntrinsicID() == Intrinsic::shang_not) {
-        if (isa<ConstantInt>(OpII->getOperand(0)))
-          return 0.0f;
-      }
-    }
-
-    return 0.01899f;
-  }
+  case Intrinsic::shang_and:
+  case Intrinsic::shang_or:
   case Intrinsic::shang_xor: {
-    // To be noted that, in LLVM IR the return value
-    // is counted in Operands, so the real numbers
-    // of operands should be minus one.
-    unsigned IONums = II->getNumOperands() - 1;
-    assert(IONums == 2 && "Unexpected Num!");
-
     if (isa<ConstantInt>(II->getOperand(0)) || isa<ConstantInt>(II->getOperand(1)))
       return 0.0f;
 
@@ -575,8 +515,16 @@ float SIRAddMulChain::getLatency(Instruction *Inst) {
       }
     }
 
-    return 0.01887f;
+    // To be noted that, in LLVM IR the return value
+    // is counted in Operands, so the real numbers
+    // of operands should be minus one.
+    unsigned IONums = II->getNumOperands() - 1;
+    assert(IONums == 2 && "Unexpected Num!");
+
+    unsigned LogicLevels = LogCeiling(IONums, VFUs::MaxLutSize);
+    return LogicLevels * VFUs::LUTDelay;
   }
+
   case Intrinsic::shang_rand: {
     unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
     return LuaI::Get<VFURAnd>()->lookupLatency(std::min(BitWidth, 64u));
@@ -708,41 +656,21 @@ void SIRAddMulChain::generateDotMatrix() {
     generateDotmatrixForChain(I->first, Output);
   }
 
-  // Generate the 3-2 compressor.
-  Output << "module compressor_3_2 ( a, b, cin, result, cout );\n";
-  Output << "input a, b, cin;\n";
-  Output << "output result, cout;\n";
-  Output << "wire   n2, n3, n4;\n";
-  Output << "AOI2BB2X2 U4 ( .B0(b), .B1(a), .A0N(b), .A1N(a), .Y(n4) );\n";
-  Output << "NAND2X1 U5 ( .A(b), .B(a), .Y(n3) );\n";
-  Output << "NAND2X1 U6 ( .A(n4), .B(cin), .Y(n2) );\n";
-  Output << "NAND2X1 U7 ( .A(n3), .B(n2), .Y(cout) );\n";
-  Output << "AOI2BB2X1 U8 ( .B0(n4), .B1(cin), .A0N(n4), .A1N(cin), .Y(result) );";
-  Output << "endmodule\n\n";
-
-  // Generate the 2-2 compressor.
-  Output << "module compressor_2_2 ( a, b, result, cout );\n";
-  Output << "input a, b;\n";
-  Output << "output result, cout;\n";
-  Output << "AND2X1 U3 ( .A(b), .B(a), .Y(cout) );\n";
-  Output << "AOI2BB1X1 U4 ( .A0N(b), .A1N(a), .B0(cout), .Y(result) );\n";
-  Output << "endmodule\n\n";
-
-   //// Generate the 3-2 compressor.
-   //Output << "module compressor_3_2 ( a, b, cin, result, cout );\n";
-   //Output << "input a, b, cin;\n";
-   //Output << "output result, cout;\n";
-   //Output << "assign result = a ^ b ^ cin;\n";
-   //Output << "assign cout = (a & b) | (a & cin) | (b & cin);\n";
-   //Output << "endmodule\n\n";
+   // Generate the 3-2 compressor.
+   Output << "module compressor_3_2 ( a, b, cin, result, cout );\n";
+   Output << "input a, b, cin;\n";
+   Output << "output result, cout;\n";
+   Output << "assign result = a ^ b ^ cin;\n";
+   Output << "assign cout = (a & b) | (a & cin) | (b & cin);\n";
+   Output << "endmodule\n\n";
  
-   //// Generate the 2-2 compressor.
-   //Output << "module compressor_2_2 ( a, b, result, cout );\n";
-   //Output << "input a, b;\n";
-   //Output << "output result, cout;\n";
-   //Output << "assign result = a ^ b;\n";
-   //Output << "assign cout = a & b;\n";
-   //Output << "endmodule\n\n";
+   // Generate the 2-2 compressor.
+   Output << "module compressor_2_2 ( a, b, result, cout );\n";
+   Output << "input a, b;\n";
+   Output << "output result, cout;\n";
+   Output << "assign result = a ^ b;\n";
+   Output << "assign cout = a & b;\n";
+   Output << "endmodule\n\n";
 }
 
 void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_ostream &Output) {
