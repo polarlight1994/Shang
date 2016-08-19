@@ -50,7 +50,6 @@ struct SIRAddMulChain : public SIRPass {
   void collectAddMulChain();
   void visit(Value *Root);
   void collect(IntrinsicInst *ChainRoot);
-  void collectAddShiftChain(IntrinsicInst *ChainRoot);
 
   std::vector<Value *> eliminateIdenticalOperands(std::vector<Value *> Operands,
                                                   Value *ChainRoot, unsigned BitWidth);
