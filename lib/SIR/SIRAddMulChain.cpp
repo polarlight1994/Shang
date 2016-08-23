@@ -7,6 +7,8 @@
 #include "vast/LuaI.h"
 
 #include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 #include <sstream>
 
@@ -22,9 +24,9 @@ static unsigned COMPRESSOR_NUM = 0;
 static float COMPRESSOR_3_2_DELAY[2][3] = {{0.43, 0.18, 0.44}, {0.43, 0.21, 0.45}};
 static float COMPRESSOR_2_2_DELAY[2][2] = {{0.24, 0.22}, {0.17, 0.15}};
 
-static float ADD_16_DELAY = 0.30;
-static float ADD_32_DELAY = 0.57;
-static float ADD_64_DELAY = 1.13;
+static float ADD_CHAIN_DELAY[3][7] = {{1.113, 1.280, 1.489, 2.116, 2.425, 2.371, 2.676},
+                                      {1.405, 1.502, 1.804, 2.503, 2.695, 2.741, 3.059},
+                                      {1.793, 1.996, 9999.9999, 9999.9999, 9999.9999, 9999.9999, 9999.9999}};
 
 namespace {
 struct SIRAddMulChain : public SIRPass {
@@ -60,6 +62,7 @@ struct SIRAddMulChain : public SIRPass {
                                      unsigned RowNum, unsigned ColNum);
   MatrixType sumAllSignBitsInMatrix(MatrixType Matrix, unsigned RowNum, unsigned ColumnNum);
 
+  float getAddChainDelay(unsigned OpBitWidth, unsigned OpNum);
   float predictAddChainResultTime(std::vector<std::pair<unsigned, float> > AddChain,
                                   MatrixType Matrix);
 
@@ -172,78 +175,47 @@ bool SIRAddMulChain::runOnSIR(SIR &SM) {
 }
 
 void SIRAddMulChain::collectAddMulChain() {
+  std::vector<IntrinsicInst *> AddChainRootVector;
+
   Function *F = SM->getFunction();
 
-  typedef SIR::register_iterator reg_iterator;
-  for (reg_iterator RI = SM->registers_begin(), RE = SM->registers_end(); RI != RE; ++RI) {
-    SIRRegister *Reg = RI;
+  ReversePostOrderTraversal<BasicBlock *> RPO(&F->getEntryBlock());
+  typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
 
-    visit(Reg->getLLVMValue());
-  }
-}
+  for (bb_top_iterator BI = RPO.begin(), BE = RPO.end(); BI != BE; ++BI) {
+    BasicBlock *BB = *BI;
 
-void SIRAddMulChain::visit(Value *Root) {
-  IntrinsicInst *RootInst = dyn_cast<IntrinsicInst>(Root);
-  assert(RootInst && "Unexpected value type!");
+    typedef BasicBlock::iterator inst_iterator;
+    for (inst_iterator II = BB->begin(), IE = BB->end(); II != IE; ++II) {
+      Instruction *Inst = II;
 
-  typedef Instruction::op_iterator op_iterator;
-  std::vector<std::pair<IntrinsicInst *, op_iterator> > VisitStack;
-  std::vector<IntrinsicInst *> AddInstVector;
+      if (IntrinsicInst *InstII = dyn_cast<IntrinsicInst>(Inst)) {
+        if (InstII->getIntrinsicID() == Intrinsic::shang_add ||
+            InstII->getIntrinsicID() == Intrinsic::shang_addc) {
+          unsigned UserNum = 0;
+          unsigned UsedByChainNum = 0;
+          typedef Value::use_iterator use_iterator;
+          for (use_iterator UI = InstII->use_begin(), UE = InstII->use_end(); UI != UE; ++UI) {
+            Value *UserVal = *UI;
 
-  VisitStack.push_back(std::make_pair(RootInst, RootInst->op_begin()));
+            if (IntrinsicInst *UserInst = dyn_cast<IntrinsicInst>(UserVal)) {
+              ++UserNum;
 
-  while(!VisitStack.empty()) {
-    IntrinsicInst *CurNode = VisitStack.back().first;
-    op_iterator &I = VisitStack.back().second;
-
-    // All children of current node have been visited.
-    if (I == CurNode->op_end()) {
-      VisitStack.pop_back();
-
-      if (CurNode->getIntrinsicID() == Intrinsic::shang_add || CurNode->getIntrinsicID() == Intrinsic::shang_addc) {
-        unsigned UserNum = 0;
-        unsigned UsedByChainNum = 0;
-        typedef Value::use_iterator use_iterator;
-        for (use_iterator UI = CurNode->use_begin(), UE = CurNode->use_end(); UI != UE; ++UI) {
-          Value *UserVal = *UI;
-
-          if (IntrinsicInst *UserInst = dyn_cast<IntrinsicInst>(UserVal)) {
-            ++UserNum;
-
-            if (UserInst->getIntrinsicID() == Intrinsic::shang_add || UserInst->getIntrinsicID() == Intrinsic::shang_addc)
-              ++UsedByChainNum;
+              if (UserInst->getIntrinsicID() == Intrinsic::shang_add || UserInst->getIntrinsicID() == Intrinsic::shang_addc)
+                ++UsedByChainNum;
+            }
           }
+
+          if (UsedByChainNum == 0 || UserNum >= 2)
+            AddChainRootVector.push_back(InstII);
         }
-
-        if (UsedByChainNum == 0 || UserNum >= 2)
-          AddInstVector.push_back(CurNode);
       }
-
-      continue;
     }
-
-    // Otherwise, remember the node and visit its children first.
-    Value *ChildVal = *I;
-
-    ++I;
-    IntrinsicInst *ChildInst = dyn_cast<IntrinsicInst>(ChildVal);
-
-    if (!ChildInst)
-      continue;
-
-    if (Visited.count(ChildInst))
-      continue;
-
-    if (ChildInst->getIntrinsicID() == Intrinsic::shang_reg_assign)
-      continue;
-
-    VisitStack.push_back(std::make_pair(ChildInst, ChildInst->op_begin()));
-    Visited.insert(ChildInst);
   }
 
-  for (unsigned i = 0; i < AddInstVector.size(); ++i) {
-    IntrinsicInst *AddInst = AddInstVector[i];
-    collect(AddInst);
+  for (unsigned i = 0; i < AddChainRootVector.size(); ++i) {
+    IntrinsicInst *AddChainRoot = AddChainRootVector[i];
+    collect(AddChainRoot);
   }
 }
 
@@ -585,7 +557,15 @@ float SIRAddMulChain::getOperandArrivalTime(Value *Operand) {
   typedef Instruction::op_iterator iterator;
   std::vector<std::pair<Instruction *, iterator> > VisitStack;
 
-  float delay = getLatency(Root);
+  float delay = 0.0f;
+  if (IntrinsicInst *RootII = dyn_cast<IntrinsicInst>(Root)) {
+    if (RootII->getIntrinsicID() == Intrinsic::shang_compressor) {
+      delay = getOperandArrivalTime(Root);
+
+      return delay;
+    }
+  } else
+    delay = getLatency(Root);
 
   VisitStack.push_back(std::make_pair(Root, Root->op_begin()));
   while(!VisitStack.empty()) {
@@ -708,9 +688,9 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
     BitWidth = BitWidth + TD->getTypeSizeInBits(OptOperands[i]->getType());
   }
 
-  SIRDatapathBuilder Builder(SM, *TD);
-  Value *PesudoOp = Builder.createSBitCatInst(OptOperands, Builder.createIntegerType(BitWidth), ChainRoot, true);
-  Compressor->setOperand(0, PesudoOp);
+  //SIRDatapathBuilder Builder(SM, *TD);
+  //Value *PesudoOp = Builder.createSBitCatInst(OptOperands, Builder.createIntegerType(BitWidth), ChainRoot, true);
+  //Compressor->setOperand(0, PesudoOp);
 
   // Generate all elements in Dot Matrix.
   unsigned MatrixRowNum = OptOperands.size();
@@ -757,7 +737,8 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
   Matrix = transportMatrix(TMatrix, MatrixColNum, MatrixRowNum);
   printTMatrixForDebug(Matrix);
   
-  float ResultArrivalTime = hybridTreeCodegen(Matrix, MatrixName, MatrixRowNum, MatrixColNum, Output);
+  float ResultArrivalTime = hybridTreeCodegen(Matrix, MatrixName,
+                                              MatrixRowNum, MatrixColNum, Output);
 
   // Index the arrival time of the hybrid tree result.
   ValArrivalTime.insert(std::make_pair(Compressor, ResultArrivalTime));
@@ -1388,11 +1369,11 @@ float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
   // Index the arrival time of the compressor result.
   float CPADelay;
   if (CPADataA.size() == 16)
-    CPADelay = ADD_16_DELAY;
+    CPADelay = ADD_CHAIN_DELAY[0][0];
   else if (CPADataA.size() == 32)
-    CPADelay = ADD_32_DELAY;
+    CPADelay = ADD_CHAIN_DELAY[1][0];
   else if (CPADataA.size() == 64)
-    CPADelay = ADD_64_DELAY;
+    CPADelay = ADD_CHAIN_DELAY[2][0];
 
   float ResultArrivalTime = std::max(CPADataA_ArrivalTime, CPADataB_ArrivalTime) + CPADelay;
 
@@ -1422,45 +1403,40 @@ bool OperandCompare(std::pair<unsigned, float> OpA, std::pair<unsigned, float> O
   return OpA.second < OpB.second;
 }
 
+float SIRAddMulChain::getAddChainDelay(unsigned OpBitWidth, unsigned OpNum) {
+  float Period = VFUs::Period;
+
+  if (OpBitWidth == 16 || OpBitWidth == 17)
+    return ADD_CHAIN_DELAY[0][OpNum - 2] / Period;
+  else if (OpBitWidth == 32)
+    return ADD_CHAIN_DELAY[1][OpNum - 2] / Period;
+  else if (OpBitWidth == 64)
+    return ADD_CHAIN_DELAY[2][OpNum - 2] / Period;
+
+  llvm_unreachable("Unexpected BitWidth!");
+}
+
 float SIRAddMulChain::predictAddChainResultTime(std::vector<std::pair<unsigned, float> > AddChain,
                                                 MatrixType Matrix) {
+  // Handle the trivial case.
   if (AddChain.size() == 1)
     return AddChain[0].second;
 
-  // Sort the operands of add chain in ascending order of delay.
+  // Sort the add chain operands in ascending order of delay.
   std::sort(AddChain.begin(), AddChain.end(), OperandCompare);
 
-  // Add the first two operands, and insert the result into chain until all operands are added.
-  bool Continue = true;
-  unsigned AddResultIdx = Matrix.size();
-  while (Continue) {
-    float DataA_ArrivalTime = AddChain[0].second;
-    float DataB_ArrivalTime = AddChain[1].second;
-
-    float AddDelay;
-    if (Matrix[0].size() == 16)
-      AddDelay = ADD_16_DELAY;
-    else if (Matrix[0].size() == 32)
-      AddDelay = ADD_32_DELAY;
-    else if (Matrix[0].size() == 64)
-      AddDelay = ADD_64_DELAY;
-
-    float AddResult_ArrivalTime = std::max(DataA_ArrivalTime, DataB_ArrivalTime) + AddDelay;
-
-    std::vector<std::pair<unsigned, float> > TempAddChain;
-    for (unsigned i = 2; i < AddChain.size(); ++i)
-      TempAddChain.push_back(AddChain[i]);
-    TempAddChain.push_back(std::make_pair(AddChain.size(), AddResult_ArrivalTime));
-
-    AddChain = TempAddChain;
-    std::sort(AddChain.begin(), AddChain.end(), OperandCompare);
-
-    if (AddChain.size() == 1)
-      Continue = false;
+  // Predict the result arrival time according to the operand bitwidth and number.
+  float OpArrivalTime = 0.0f;
+  unsigned OpBitWidth = 0;
+  for (unsigned i = 0; i < AddChain.size(); ++i) {
+    OpArrivalTime = std::max(OpArrivalTime, AddChain[i].second);
+    OpBitWidth = std::max(OpBitWidth, getOperandBitWidth(Matrix[AddChain[i].first]));
   }
 
-  assert(AddChain.size() == 1 && "Should be only one element");
-  return AddChain[0].second;
+  float ResultArrivalTime
+    = OpArrivalTime + getAddChainDelay(OpBitWidth, AddChain.size());
+
+  return ResultArrivalTime;
 }
 
 void SIRAddMulChain::generateAddChain(MatrixType Matrix,
@@ -1469,95 +1445,37 @@ void SIRAddMulChain::generateAddChain(MatrixType Matrix,
   // Sort the operands of add chain in ascending order of delay.
   std::sort(Ops.begin(), Ops.end(), OperandCompare);
 
-  // Add the first two operands, and insert the result into chain
-  // until all operands are added.
-  unsigned AddNum = 0;
-  unsigned AddResultIdx = Matrix.size();
-  std::map<unsigned, std::string> AddResultIdxName;
-  bool Continue = true;
-  while (Continue) {
-    float DataA_ArrivalTime = Ops[0].second;
-    float DataB_ArrivalTime = Ops[1].second;
-    
-    unsigned DataA_BitWidth;
-    if (Ops[0].first >= Matrix.size())
-      // The Idx means it is the add result.
-      DataA_BitWidth = Matrix[0].size();
-    else
-      DataA_BitWidth = getOperandBitWidth(Matrix[Ops[0].first]);
+  // Get the bitwidht information. To be noted that, this bitwidth is not corresponding
+  // to the adder delay since it don't consider the sign bit pattern.
+  unsigned BitWidth = Matrix[0].size();
 
-    unsigned DataB_BitWidth;
-    if (Ops[1].first >= Matrix.size())
-      // The Idx means it is the add result.
-      DataB_BitWidth = Matrix[1].size();
-    else
-      DataB_BitWidth = getOperandBitWidth(Matrix[Ops[1].first]);
+  // Generate the implementation of the add chain operands.
+  std::vector<std::string> OpNames;
+  for (unsigned i = 0; i < Ops.size(); ++i) {
+    // The name of current add chain operand.
+    std::string OpName = ResultName + "_op_" + utostr_32(i);
+    OpNames.push_back(OpName);
 
-    unsigned AddBitWidth = std::max(DataA_BitWidth, DataB_BitWidth);
+    // The bits of current add chain operand.
+    Output << "wire[" + utostr_32(BitWidth - 1) + ":0] " << OpName << " = {";
+    for (unsigned j = 0; j < BitWidth; ++j) {
+      Output << Matrix[Ops[i].first][BitWidth - 1 - j].first;
 
-    float AddResult_ArrivalTime
-      = std::max(DataA_ArrivalTime, DataB_ArrivalTime) + ADD_16_DELAY;
-
-    // Generate the implementation of the DataA & DataB of current adder.
-    Output << "wire[" + utostr_32(DataA_BitWidth - 1) + ":0] " << ResultName
-           << "_" + utostr_32(AddNum) + "_DataA = ";
-    if (Ops[0].first >= Matrix.size()) {
-      Output << AddResultIdxName[Ops[0].first] << ";\n";
-    } else {
-      Output << "{";
-      for (unsigned i = 0; i < DataA_BitWidth; ++i) {
-        Output << Matrix[Ops[0].first][DataA_BitWidth - 1 - i].first;
-
-        if (i != DataA_BitWidth - 1)
-          Output << ", ";
-      }
-      Output << "};\n";
+      if (j != BitWidth - 1)
+        Output << ", ";
     }
-    
-    Output << "wire[" + utostr_32(DataB_BitWidth - 1) + ":0] " << ResultName
-           << "_" + utostr_32(AddNum) + "_DataB = ";
-    if (Ops[1].first >= Matrix.size()) {
-      Output << AddResultIdxName[Ops[1].first] << ";\n";
-    } else {
-      Output << "{";
-        for (unsigned i = 0; i < DataB_BitWidth; ++i) {
-          Output << Matrix[Ops[1].first][DataB_BitWidth - 1 - i].first;
-
-          if (i != DataB_BitWidth - 1)
-            Output << ", ";
-        }
-        Output << "};\n";
-    }
-
-    // Generate the implementation of the adder.
-    if (Ops.size() != 2) {
-      Output << "wire[" + utostr_32(Matrix[0].size() - 1) + ":0] "
-             << ResultName + "_" + utostr_32(AddNum);
-      Output << " = " << ResultName + "_" + utostr_32(AddNum) + "_DataA";
-      Output << " + " << ResultName + "_" + utostr_32(AddNum) + "_DataB;\n\n";
-    } else {
-      Output << "wire[" + utostr_32(Matrix[0].size() - 1) + ":0] "
-             << ResultName;
-      Output << " = " << ResultName + "_" + utostr_32(AddNum) + "_DataA";
-      Output << " + " << ResultName + "_" + utostr_32(AddNum) + "_DataB;\n\n";
-    }    
-
-    std::vector<std::pair<unsigned, float> > TempAddChain;
-    for (unsigned i = 2; i < Ops.size(); ++i)
-      TempAddChain.push_back(Ops[i]);
-    TempAddChain.push_back(std::make_pair(AddResultIdx, AddResult_ArrivalTime));
-
-    // Index the add result and its name.
-    AddResultIdxName.insert(std::make_pair(AddResultIdx, ResultName + "_" + utostr_32(AddNum)));
-    ++AddResultIdx;
-    ++AddNum;
-
-    Ops = TempAddChain;
-    std::sort(Ops.begin(), Ops.end(), OperandCompare);
-
-    if (Ops.size() == 1)
-      Continue = false;
+    Output << "};\n";
   }
+
+  // Generate the implementation of the add chain.
+  Output << "wire[" + utostr_32(BitWidth - 1) + ":0] " << ResultName << " = ";
+  for (unsigned i = 0; i < Ops.size(); ++i) {
+    Output << OpNames[i];
+
+    if (i != Ops.size() - 1)
+      Output << " + ";
+  }
+  Output << ";\n";
 }
 
 float SIRAddMulChain::hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
