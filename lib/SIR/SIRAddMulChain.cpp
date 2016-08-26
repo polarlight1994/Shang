@@ -29,6 +29,40 @@ static float ADD_CHAIN_DELAY[3][7] = {{1.113, 1.280, 1.489, 2.116, 2.425, 2.371,
                                       {1.793, 1.996, 9999.9999, 9999.9999, 9999.9999, 9999.9999, 9999.9999}};
 
 namespace {
+class SIRGPC {
+public:
+  std::string GPCName;
+
+  // Input dots & Output dots.
+  std::vector<unsigned> InputDotNums;
+  unsigned OutputDotNum;
+
+  // Area cost in FPGA
+  unsigned Area;
+  // Delay cost in FPGA
+  std::vector<std::vector<float> > DelayTable;
+
+  // Default constructor
+  SIRGPC(std::string Name, std::vector<unsigned> InputDotNums,
+         unsigned OutputDotNum, unsigned Area, std::vector<float> Delay)
+    : GPCName(Name), InputDotNums(InputDotNums), OutputDotNum(OutputDotNum),
+      Area(Area){
+    unsigned Idx = 0;
+    for (unsigned i = 0; i < InputDotNums.size(); ++i) {
+      unsigned InputDotNum = InputDotNums[i];
+
+      std::vector<float> DelayTableRow;
+      for (unsigned j = 0; j < InputDotNum; ++j)
+        DelayTableRow.push_back(Delay[Idx++]);
+
+      DelayTable.push_back(DelayTableRow);
+    }
+  }
+
+private:
+  float calcPerformance(std::vector<float> InputDelay);
+};
+
 struct SIRAddMulChain : public SIRPass {
   static char ID;
   DataLayout *TD;
@@ -44,13 +78,14 @@ struct SIRAddMulChain : public SIRPass {
 
   std::map<Value *, float> ValArrivalTime;
 
+  std::vector<SIRGPC> GPCs;
+
   SIRAddMulChain() : SIRPass(ID), ChainNum(0), DebugOutput("DebugMatrix.txt", Error) {
     initializeSIRAddMulChainPass(*PassRegistry::getPassRegistry());
   }
 
   bool runOnSIR(SIR &SM);
   void collectAddMulChain();
-  void visit(Value *Root);
   void collect(IntrinsicInst *ChainRoot);
 
   std::vector<Value *> eliminateIdenticalOperands(std::vector<Value *> Operands,
@@ -84,6 +119,9 @@ struct SIRAddMulChain : public SIRPass {
   std::pair<float, float> generateCompressor(std::vector<DotType> CompressCouple,
                                              std::string SumName, std::string CoutName,
                                              raw_fd_ostream &Output);
+
+  // Initial the GPCs.
+  void initGPCs();
 
   bool needToCompress(std::vector<unsigned> BitNumList, unsigned RowNo);
   MatrixType compressTMatrixInStage(MatrixType TMatrix,
@@ -1115,6 +1153,108 @@ std::pair<float, float>
   return std::make_pair(SumDelay, CoutDelay);
 }
 
+void SIRAddMulChain::initGPCs() {
+  // GPC_3_2_LUT
+  std::vector<float> GPC_3_2_LUT_DelayTable = { 0.043f, 0.043f, 0.043f,
+                                                0.052f, 0.051f, 0.049f };
+  SIRGPC GPC_3_2_LUT = SIRGPC::SIRGPC("GPC_3_2_LUT", { 3 }, 2, 1, GPC_3_2_LUT_DelayTable);
+  GPCs.push_back(GPC_3_2_LUT);
+
+  // GPC_4_3_LUT
+  std::vector<float> GPC_4_3_LUT_DelayTable = { 0.043f, 0.043f, 0.043f, 0.043f,
+                                                0.043f, 0.043f, 0.043f, 0.043f,
+                                                0.051f, 0.049f, 0.052f, 0.051f };
+  SIRGPC GPC_4_3_LUT = SIRGPC::SIRGPC("GPC_4_3_LUT", { 4 }, 3, 2, GPC_4_3_LUT_DelayTable);
+  GPCs.push_back(GPC_4_3_LUT);
+
+  // GPC_5_3_LUT
+  std::vector<float> GPC_5_3_LUT_DelayTable = { 0.043f, 0.043f, 0.043f, 0.043f, 0.043f,
+                                                0.043f, 0.043f, 0.043f, 0.043f, 0.043f,
+                                                0.051f, 0.049f, 0.052f, 0.051f, 0.049f };
+  SIRGPC GPC_5_3_LUT = SIRGPC::SIRGPC("GPC_5_3_LUT", { 5 }, 3, 2, GPC_5_3_LUT_DelayTable);
+  GPCs.push_back(GPC_5_3_LUT);
+
+  // GPC_6_3_LUT
+  std::vector<float> GPC_6_3_LUT_DelayTable = { 0.043f, 0.043f, 0.043f, 0.043f, 0.043f, 0.043f,
+                                                0.043f, 0.043f, 0.043f, 0.043f, 0.043f, 0.043f,
+                                                0.043f, 0.043f, 0.043f, 0.043f, 0.043f, 0.043f };
+  SIRGPC GPC_6_3_LUT = SIRGPC::SIRGPC("GPC_6_3_LUT", { 6 }, 3, 2, GPC_6_3_LUT_DelayTable);
+  GPCs.push_back(GPC_6_3_LUT);
+
+  // GPC_13_3_LUT
+  std::vector<float> GPC_13_3_LUT_DelayTable = { 0.043f, 0.043f, 0.043f, 0.043f,
+                                                 0.043f, 0.043f, 0.043f, 0.043f,
+                                                 0.049f, 0.051f, 0.052f, 0.051f };
+  SIRGPC GPC_13_3_LUT = SIRGPC::SIRGPC("GPC_13_3_LUT", { 3, 1 }, 3, 2, GPC_13_3_LUT_DelayTable);
+  GPCs.push_back(GPC_13_3_LUT);
+
+  // GPC_23_3_LUT
+  std::vector<float> GPC_23_3_LUT_DelayTable = { 0.043f, 0.043f, 0.043f, 0.043f, 0.043f,
+                                                 0.043f, 0.043f, 0.043f, 0.043f, 0.043f,
+                                                 0.049f, 0.049f, 0.051f, 0.051f, 0.052f };
+  SIRGPC GPC_23_3_LUT = SIRGPC::SIRGPC("GPC_23_3_LUT", { 3, 2 }, 3, 2, GPC_23_3_LUT_DelayTable);
+  GPCs.push_back(GPC_23_3_LUT);
+
+  // GPC_14_3_LUT
+  std::vector<float> GPC_14_3_LUT_DelayTable = { 0.043f, 0.043f, 0.043f, 0.043f, 0.043f,
+                                                 0.043f, 0.043f, 0.043f, 0.043f, 0.043f,
+                                                 0.049f, 0.049f, 0.051f, 0.051f, 0.052f };
+  SIRGPC GPC_14_3_LUT = SIRGPC::SIRGPC("GPC_14_3_LUT", { 4, 1 }, 3, 2, GPC_14_3_LUT_DelayTable);
+  GPCs.push_back(GPC_14_3_LUT);
+
+  // GPC_15_3_LUT
+  std::vector<float> GPC_15_3_LUT_DelayTable = { 0.043f, 0.043f, 0.043f, 0.043f, 0.043f, 0.043f,
+                                                 0.043f, 0.043f, 0.043f, 0.043f, 0.043f, 0.043f,
+                                                 0.043f, 0.043f, 0.043f, 0.043f, 0.043f, 0.043f };
+  SIRGPC GPC_15_3_LUT = SIRGPC::SIRGPC("GPC_15_3_LUT", { 5, 1 }, 3, 2, GPC_15_3_LUT_DelayTable);
+  GPCs.push_back(GPC_15_3_LUT);
+
+  // GPC_506_5
+  std::vector<float> GPC_506_5_DelayTable = { 0.167f, 0.167f, 0.167f, 0.167f, 0.167f, 0.167f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f,
+                                              0.261f, 0.261f, 0.261f, 0.261f, 0.261f, 0.261f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f,
+                                              0.325f, 0.325f, 0.325f, 0.325f, 0.325f, 0.309f, 0.16f, 0.16f, 0.16f, 0.16f, 0.16f,
+                                              0.355f, 0.339f, 0.355f, 0.355f, 0.355f, 0.339f, 0.238f, 0.238f, 0.238f, 0.221f, 0.221f,
+                                              0.31f, 0.302f, 0.31f, 0.31f, 0.31f, 0.302f, 0.238f, 0.238f, 0.238f, 0.238f, 0.238f };
+  SIRGPC GPC_506_5 = SIRGPC::SIRGPC("GPC_506_5", { 6, 0, 5 }, 5, 4, GPC_506_5_DelayTable);
+  GPCs.push_back(GPC_506_5);
+
+  // GPC_606_5
+  std::vector<float> GPC_606_5_DelayTable = { 0.167f, 0.167f, 0.167f, 0.167f, 0.167f, 0.167f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f,
+                                              0.261f, 0.261f, 0.261f, 0.261f, 0.261f, 0.261f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f,
+                                              0.309f, 0.325f, 0.325f, 0.325f, 0.325f, 0.309f, 0.16f, 0.16f, 0.16f, 0.16f, 0.16f, 0.16f,
+                                              0.339f, 0.355f, 0.355f, 0.355f, 0.355f, 0.339f, 0.221f, 0.221f, 0.221f, 0.221f, 0.221f, 0.216f,
+                                              0.302f, 0.31f, 0.31f, 0.31f, 0.31f, 0.302f, 0.238f, 0.236f, 0.236f, 0.236f, 0.238f, 0.238f };
+  SIRGPC GPC_606_5 = SIRGPC::SIRGPC("GPC_606_5", { 6, 0, 6 }, 5, 4, GPC_606_5_DelayTable);
+  GPCs.push_back(GPC_606_5);
+
+  // GPC_1325_5
+  std::vector<float> GPC_1325_5_DelayTable = { 0.167f, 0.167f, 0.167f, 0.167f, 0.251f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f,
+                                               0.261f, 0.261f, 0.261f, 0.261f, 0.311f, 0.152f, 0.152f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f,
+                                               0.325f, 0.325f, 0.325f, 0.3f, 0.293f, 0.325f, 0.325f, 0.16f, 0.16f, 0.16f, 9999.9999f,
+                                               0.355f, 0.355f, 0.355f, 0.339f, 0.326f, 0.355f, 0.355f, 0.221f, 0.221f, 0.221f, 0.159f,
+                                               0.31f, 0.31f, 0.31f, 0.302f, 0.287f, 0.31f, 0.31f, 0.238f, 0.238f, 0.238f, 0.238f };
+  SIRGPC GPC_1325_5 = SIRGPC::SIRGPC("GPC_1325_5", { 5, 2, 3, 1 }, 5, 4, GPC_1325_5_DelayTable);
+  GPCs.push_back(GPC_1325_5);
+
+  // GPC_1406_5
+  std::vector<float> GPC_1406_5_DelayTable = { 0.167f, 0.167f, 0.167f, 0.167f, 0.167f, 0.167f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f,
+                                               0.152f, 0.261f, 0.261f, 0.261f, 0.261f, 0.261f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f,
+                                               0.325f, 0.309f, 0.325f, 0.325f, 0.325f, 0.309f, 0.16f, 0.16f, 0.16f, 0.16f, 9999.9999f,
+                                               0.355f, 0.339f, 0.355f, 0.355f, 0.355f, 0.339f, 0.159f, 0.221f, 0.221f, 0.221f, 0.159f,
+                                               0.31f, 0.302f, 0.31f, 0.31f, 0.31f, 0.302f, 0.236f, 0.238f, 0.238f, 0.238f, 0.236f };
+  SIRGPC GPC_1406_5 = SIRGPC::SIRGPC("GPC_1406_5", { 6, 0, 4, 1 }, 5, 4, GPC_1406_5_DelayTable);
+  GPCs.push_back(GPC_1406_5);
+
+  // GPC_1415_5
+  std::vector<float> GPC_1415_5_DelayTable = { 0.167f, 0.167f, 0.167f, 0.167f, 0.251f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f,
+                                               0.261f, 0.152f, 0.261f, 0.261f, 0.311f, 0.152f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f, 9999.9999f,
+                                               0.309f, 0.325f, 0.325f, 0.309f, 0.293f, 0.262f, 0.16f, 0.16f, 0.16f, 0.16f, 9999.9999f,
+                                               0.339f, 0.355f, 0.355f, 0.339f, 0.326f, 0.291f, 0.221f, 0.221f, 0.221f, 0.221f, 0.159f,
+                                               0.302f, 0.31f, 0.31f, 0.302f, 0.287f, 0.25f, 0.238f, 0.238f, 0.238f, 0.238f, 0.238f };
+  SIRGPC GPC_1415_5 = SIRGPC::SIRGPC("GPC_1415_5", { 5, 1, 4, 1 }, 5, 4, GPC_1415_5_DelayTable);
+  GPCs.push_back(GPC_1415_5);
+}
+
 bool SIRAddMulChain::needToCompress(std::vector<unsigned> BitNumList, unsigned RowNo) {
   if (BitNumList[RowNo] == 2) {
     if (RowNo == 0)
@@ -1445,7 +1585,7 @@ void SIRAddMulChain::generateAddChain(MatrixType Matrix,
   // Sort the operands of add chain in ascending order of delay.
   std::sort(Ops.begin(), Ops.end(), OperandCompare);
 
-  // Get the bitwidht information. To be noted that, this bitwidth is not corresponding
+  // Get the bitwidth information. To be noted that, this bitwidth is not corresponding
   // to the adder delay since it don't consider the sign bit pattern.
   unsigned BitWidth = Matrix[0].size();
 
