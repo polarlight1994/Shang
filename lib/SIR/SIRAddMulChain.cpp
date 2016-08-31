@@ -748,10 +748,6 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
     BitWidth = BitWidth + TD->getTypeSizeInBits(OptOperands[i]->getType());
   }
 
-  //SIRDatapathBuilder Builder(SM, *TD);
-  //Value *PesudoOp = Builder.createSBitCatInst(OptOperands, Builder.createIntegerType(BitWidth), ChainRoot, true);
-  //Compressor->setOperand(0, PesudoOp);
-
   // Generate all elements in Dot Matrix.
   unsigned MatrixRowNum = OptOperands.size();
   unsigned MatrixColNum = TD->getTypeSizeInBits(ChainRoot->getType());
@@ -1801,7 +1797,7 @@ float SIRAddMulChain::hybridTreeCodegen(MatrixType Matrix, std::string MatrixNam
       // If the result time is within the limit, then the potential add chain
       // is valid. Or we will try to insert more operands into this chain until
       // it become invalid.
-      if (PotentialAddChainResultTime <= LimitTime && PotentialAddChain.size() <= 6) {
+      if (PotentialAddChainResultTime <= LimitTime && PotentialAddChain.size() <= 3) {
         AddChain = PotentialAddChain;
         continue;
       } else
