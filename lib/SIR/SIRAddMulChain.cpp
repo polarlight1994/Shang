@@ -83,6 +83,7 @@ struct SIRAddMulChain : public SIRPass {
     unsigned getOutputDotNum() { return OutputDotNum; }
     // To be fixed.
     float getCriticalDelay() { return 0.043;  }
+    unsigned getArea() { return Area; }
     float calcPerformance(std::vector<float> InputDelay);
   };
 
@@ -137,6 +138,7 @@ struct SIRAddMulChain : public SIRPass {
   bool needToCompress(std::vector<unsigned> BitNumList, unsigned RowNo);
   MatrixType compressTMatrixUsingGPC(MatrixType TMatrix, unsigned GPCIdx, unsigned RowNo,
                                      unsigned Stage, raw_fd_ostream &Output);
+  unsigned getHighestPriorityGPC(MatrixType TMatrix, unsigned RowNo);
   MatrixType compressTMatrixInStage(MatrixType TMatrix,
                                     unsigned Stage, raw_fd_ostream &Output);
   float compressMatrix(MatrixType TMatrix, std::string MatrixName,
@@ -177,6 +179,10 @@ INITIALIZE_PASS_BEGIN(SIRAddMulChain, "sir-add-mul-chain",
 INITIALIZE_PASS_END(SIRAddMulChain, "sir-add-mul-chain",
                     "Perform the add-mul chain optimization",
                     false, true)
+
+static bool LessThan(std::pair<unsigned, float> OpA, std::pair<unsigned, float> OpB) {
+  return OpA.second < OpB.second;
+}
 
 static bool isLeafValue(SIR *SM, Value *V) {
   // When we visit the Srcs of value, the Leaf Value
@@ -1421,53 +1427,7 @@ void SIRAddMulChain::initGPCs() {
 }
 
 bool SIRAddMulChain::needToCompress(std::vector<unsigned> BitNumList, unsigned RowNo) {
-  if (BitNumList[RowNo] == 2) {
-    if (RowNo == 0)
-      return false;
-
-    if (BitNumList[RowNo - 1] <= 2)
-      return false;
-
-    if (BitNumList[RowNo - 1] == 3) {
-      bool NeedToCompress = true;
-      for (int j = RowNo - 2; j >= 0; --j) {
-        if (BitNumList[j] > 3) {
-          NeedToCompress = false;
-          break;
-        }
-      }
-
-      return NeedToCompress;
-    }
-    
-    if (BitNumList[RowNo - 1] == 4) {
-      bool NeedToCompress = true;
-      for (int j = RowNo - 2; j >= 0; --j) {
-        if (BitNumList[j] >= 3) {
-          NeedToCompress = false;
-          break;
-        }
-      }
-
-      return NeedToCompress;
-    }
-
-    return false;
-  }
-
-  if (BitNumList[RowNo] == 3) {
-    bool NeedToCompress = true;
-    for (int j = RowNo - 1; j >= 0; --j) {
-      if (BitNumList[j] >= 3) {
-        NeedToCompress = false;
-        break;
-      }
-    }
-
-    return NeedToCompress;
-  }
-
-  return false;
+  return true;
 }
 
 MatrixType SIRAddMulChain::compressTMatrixUsingGPC(MatrixType TMatrix, unsigned GPCIdx,
@@ -1528,6 +1488,65 @@ MatrixType SIRAddMulChain::compressTMatrixUsingGPC(MatrixType TMatrix, unsigned 
   return TMatrix;
 }
 
+unsigned SIRAddMulChain::getHighestPriorityGPC(MatrixType TMatrix, unsigned RowNo) {
+  unsigned HighestPriorityGPCIdx;
+
+  // Try all GPCs and evaluate its performance.
+  std::vector<std::pair<unsigned, float> > PriorityList;
+  for (unsigned i = 0; i < GPCs.size(); ++i) {
+    SIRGPC GPC = GPCs[i];
+
+    // Get the information of current GPC.
+    std::vector<unsigned> InputDotNums = GPC.getInputDotNums();
+    unsigned OutputDotNum = GPC.getOutputDotNum();
+    float CriticalDelay = GPC.getCriticalDelay();
+    unsigned Area = GPC.getArea();
+
+    // Get the real input dots number.
+    unsigned RealInputDotNum = 0;
+    for (unsigned j = 0; j < InputDotNums.size(); ++j)
+      RealInputDotNum += std::min(InputDotNums[j], TMatrix[RowNo + j].size());
+
+    // Get the earliest and latest input arrival time.
+    float EarliestInputArrivalTime = 9999.9999f;
+    float LatestInputArrivalTime = 0.0f;
+    for (unsigned j = 0; j < InputDotNums.size(); ++j) {
+      unsigned InputDotNum = std::min(InputDotNums[j], TMatrix[RowNo + j].size());
+
+      for (unsigned k = 0; k < InputDotNum; ++k) {
+        // The earliest input arrival time is only considered in first row.
+        if (j == 0)
+          EarliestInputArrivalTime = std::min(EarliestInputArrivalTime,
+                                              TMatrix[RowNo + j][k].second);
+        LatestInputArrivalTime = std::max(LatestInputArrivalTime,
+                                          TMatrix[RowNo + j][k].second);
+      }
+    }
+
+    // Evaluate the performance.
+    unsigned CompressedDotNum = RealInputDotNum - OutputDotNum;
+    float RealDelay = CriticalDelay + LatestInputArrivalTime - EarliestInputArrivalTime;
+    float Performance = CompressedDotNum / (RealDelay * Area);
+
+    PriorityList.push_back(std::make_pair(i, Performance));
+  }
+
+  // Sort the PriorityList and get the highest one.
+  std::sort(PriorityList.begin(), PriorityList.end(), LessThan);
+
+  // Debug
+  errs() << "GPC performance list is as follows:\n";
+  for (unsigned i = 0; i < PriorityList.size(); ++i) {
+    unsigned GPCIdx = PriorityList[i].first;
+
+    SIRGPC GPC = GPCs[GPCIdx];
+
+    errs() << GPC.getName() << "--" << PriorityList[i].second << "\n";
+  }
+
+  return PriorityList.begin()->first;
+}
+
 MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix,
                                                   unsigned Stage,
                                                   raw_fd_ostream &Output) {
@@ -1577,8 +1596,10 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix,
   // it can be compressed using XOR gate.
   for (unsigned i = 0; i < TMatrix.size() - 1; ++i) {
     // Compress current row if it has more than target final bit numbers.
-    if (BitNumList[i] >= 4)
-      TMatrix = compressTMatrixUsingGPC(TMatrix, 0, i, Stage, Output);
+    if (BitNumList[i] > 3) {
+      unsigned GPCIdx = getHighestPriorityGPC(TMatrix, i);
+      TMatrix = compressTMatrixUsingGPC(TMatrix, GPCIdx, i, Stage, Output);
+    }
 
     // Do some clean up and optimize work.
     TMatrix = eliminateOneBitInTMatrix(TMatrix);
@@ -1733,10 +1754,6 @@ void SIRAddMulChain::printTMatrixForDebug(MatrixType TMatrix) {
   DebugOutput << "\n\n";
 }
 
-bool OperandCompare(std::pair<unsigned, float> OpA, std::pair<unsigned, float> OpB) {
-  return OpA.second < OpB.second;
-}
-
 float SIRAddMulChain::getAddChainDelay(unsigned OpBitWidth, unsigned OpNum) {
   float Period = VFUs::Period;
 
@@ -1757,7 +1774,7 @@ float SIRAddMulChain::predictAddChainResultTime(std::vector<std::pair<unsigned, 
     return AddChain[0].second;
 
   // Sort the add chain operands in ascending order of delay.
-  std::sort(AddChain.begin(), AddChain.end(), OperandCompare);
+  std::sort(AddChain.begin(), AddChain.end(), LessThan);
 
   // Predict the result arrival time according to the operand bitwidth and number.
   float OpArrivalTime = 0.0f;
@@ -1777,7 +1794,7 @@ void SIRAddMulChain::generateAddChain(MatrixType Matrix,
                                       std::vector<std::pair<unsigned, float> > Ops,
                                       std::string ResultName, raw_fd_ostream &Output) {
   // Sort the operands of add chain in ascending order of delay.
-  std::sort(Ops.begin(), Ops.end(), OperandCompare);
+  std::sort(Ops.begin(), Ops.end(), LessThan);
 
   // Get the bitwidth information. To be noted that, this bitwidth is not corresponding
   // to the adder delay since it don't consider the sign bit pattern.
@@ -1843,7 +1860,7 @@ float SIRAddMulChain::hybridTreeCodegen(MatrixType Matrix, std::string MatrixNam
 
   // Represent the operand using its index and sort them in ascending
   // order of arrival time.
-  std::sort(OpArrivalTime.begin(), OpArrivalTime.end(), OperandCompare);
+  std::sort(OpArrivalTime.begin(), OpArrivalTime.end(), LessThan);
   
   /// Build hybrid tree according to the arrival time of operands.
   // The biggest arrival time will be the limit of add chains that can be built.
