@@ -19,7 +19,7 @@ typedef std::pair<std::string, float> DotType;
 typedef std::vector<DotType> MatrixRowType;
 typedef std::vector<MatrixRowType> MatrixType;
 
-static unsigned COMPRESSOR_NUM = 0;
+static unsigned GPC_NUM = 0;
 
 static float NET_DELAY = 0.500;
 
@@ -48,7 +48,7 @@ struct SIRAddMulChain : public SIRPass {
   std::map<Value *, float> ValArrivalTime;
 
   class SIRGPC {
-  public:
+  private:
     std::string GPCName;
 
     // Input dots & Output dots.
@@ -60,11 +60,12 @@ struct SIRAddMulChain : public SIRPass {
     // Delay cost in FPGA
     std::vector<std::vector<float> > DelayTable;
 
+  public:
     // Default constructor
     SIRGPC(std::string Name, std::vector<unsigned> InputDotNums,
-      unsigned OutputDotNum, unsigned Area, std::vector<float> Delay)
+           unsigned OutputDotNum, unsigned Area, std::vector<float> Delay)
       : GPCName(Name), InputDotNums(InputDotNums), OutputDotNum(OutputDotNum),
-      Area(Area) {
+        Area(Area) {
       unsigned Idx = 0;
       for (unsigned i = 0; i < InputDotNums.size(); ++i) {
         unsigned InputDotNum = InputDotNums[i];
@@ -77,7 +78,11 @@ struct SIRAddMulChain : public SIRPass {
       }
     }
 
-  private:
+    std::string getName() { return GPCName; }
+    std::vector<unsigned> getInputDotNums() { return InputDotNums; }
+    unsigned getOutputDotNum() { return OutputDotNum; }
+    // To be fixed.
+    float getCriticalDelay() { return 0.043;  }
     float calcPerformance(std::vector<float> InputDelay);
   };
 
@@ -122,11 +127,16 @@ struct SIRAddMulChain : public SIRPass {
   std::pair<float, float> generateCompressor(std::vector<DotType> CompressCouple,
                                              std::string SumName, std::string CoutName,
                                              raw_fd_ostream &Output);
+  void generateGPCInstance(unsigned GPCIdx, std::vector<std::vector<DotType> > InputDots,
+                           std::string OutputName, float OutputArrivalTime,
+                           raw_fd_ostream &Output);
 
   // Initial the GPCs.
   void initGPCs();
 
   bool needToCompress(std::vector<unsigned> BitNumList, unsigned RowNo);
+  MatrixType compressTMatrixUsingGPC(MatrixType TMatrix, unsigned GPCIdx, unsigned RowNo,
+                                     unsigned Stage, raw_fd_ostream &Output);
   MatrixType compressTMatrixInStage(MatrixType TMatrix,
                                     unsigned Stage, raw_fd_ostream &Output);
   float compressMatrix(MatrixType TMatrix, std::string MatrixName,
@@ -332,7 +342,6 @@ std::vector<Value *> SIRAddMulChain::eliminateIdenticalOperands(std::vector<Valu
   std::vector<std::pair<Value *, unsigned> > OpNums;
   for (unsigned i = 0; i < Operands.size(); ++i) {
     Value *Op = Operands[i];
-    errs() << Op->getName() << "\n";
 
     // First index the constant integer.
     if (isa<ConstantInt>(Op)) {
@@ -360,8 +369,6 @@ std::vector<Value *> SIRAddMulChain::eliminateIdenticalOperands(std::vector<Valu
   typedef std::vector<std::pair<Value *, unsigned> >::iterator iterator;
   for (iterator I = OpNums.begin(), E = OpNums.end(); I != E; ++I) {
     Value *Op = I->first;
-
-    errs() << Op->getName() << "\n";
 
     unsigned OpBitWidth = Builder.getBitWidth(Op);
     unsigned Num = I->second;
@@ -687,25 +694,19 @@ void SIRAddMulChain::generateDotMatrix() {
   std::string Error;
   raw_fd_ostream Output(CompressorOutputPath.c_str(), Error);
 
+  initGPCs();
+
   typedef std::map<IntrinsicInst *, std::vector<IntrinsicInst *> >::iterator iterator;
   for (iterator I = ChainMap.begin(), E = ChainMap.end(); I != E; ++I) {
     generateDotmatrixForChain(I->first, Output);
   }
 
    // Generate the 3-2 compressor.
-   Output << "module compressor_3_2 ( a, b, cin, result, cout );\n";
-   Output << "input a, b, cin;\n";
-   Output << "output result, cout;\n";
-   Output << "assign result = a ^ b ^ cin;\n";
-   Output << "assign cout = (a & b) | (a & cin) | (b & cin);\n";
-   Output << "endmodule\n\n";
- 
-   // Generate the 2-2 compressor.
-   Output << "module compressor_2_2 ( a, b, result, cout );\n";
-   Output << "input a, b;\n";
-   Output << "output result, cout;\n";
-   Output << "assign result = a ^ b;\n";
-   Output << "assign cout = a & b;\n";
+   Output << "module GPC_3_2_LUT(\n";
+   Output << "\tinput wire[2:0] col0,\n";
+   Output << "\toutput wire[1:0] sum\n";
+   Output << ");\n\n";
+   Output << "\tassign sum = col0[0] + col0[1] + col0[2];\n\n";
    Output << "endmodule\n\n";
 }
 
@@ -1124,7 +1125,7 @@ std::pair<float, float>
     Output << "wire " << CoutName << ";\n";
 
     // Print the instantiation of the compressor module.
-    Output << "compressor_3_2 compressor_3_2_" << utostr_32(COMPRESSOR_NUM) << "( ";
+    Output << "compressor_3_2 compressor_3_2_" << utostr_32(GPC_NUM) << "( ";
 
     // Link the wire according to the path delay of compressor, since the delay order is listed as
     // col[1] < col[0] < col[2].
@@ -1148,7 +1149,7 @@ std::pair<float, float>
     Output << "wire " << CoutName << ";\n";
 
     // Print the instantiation of the compressor module.
-    Output << "compressor_2_2 compressor_2_2_" << utostr_32(COMPRESSOR_NUM) << "( ";
+    Output << "compressor_2_2 compressor_2_2_" << utostr_32(GPC_NUM) << "( ";
 
     // Link the wire according to the path delay of compressor, since the delay order is listed as
     // col[1] < col[0].
@@ -1166,9 +1167,51 @@ std::pair<float, float>
     CoutDelay = std::max(CoutDelay_0, CoutDelay_1);
   }  
 
-  ++COMPRESSOR_NUM;
+  ++GPC_NUM;
 
   return std::make_pair(SumDelay, CoutDelay);
+}
+
+void SIRAddMulChain::generateGPCInstance(unsigned GPCIdx,
+                                         std::vector<std::vector<DotType> > InputDots,
+                                         std::string OutputName,
+                                         float OutputArrivalTime,
+                                         raw_fd_ostream &Output) {
+  // Get the GPC to be used and its information.
+  SIRGPC GPC = GPCs[GPCIdx];
+  std::vector<unsigned> InputDotNums = GPC.getInputDotNums();
+  unsigned OutputDotNum = GPC.getOutputDotNum();
+  std::string GPCName = GPC.getName();
+
+  // Print the declaration of the result.  
+  Output << "wire [" << utostr_32(OutputDotNum - 1) << ":0] " << OutputName << ";\n";
+
+  // Print the instantiation of the compressor module.
+  Output << GPCName << " " + GPCName + "_" << utostr_32(GPC_NUM) << "(";
+
+  // Print the inputs and outputs instance.
+  for (unsigned i = 0; i < InputDotNums.size(); ++i) {
+    // Ignore the empty column.
+    if (InputDotNums[i] == 0)
+      continue;
+
+    Output << ".col" << utostr_32(i) << "({";
+
+    std::vector<DotType> InputDotRow = InputDots[i];
+    assert(InputDotRow.size() == InputDotNums[i] && "Unexpected input dot number!");
+    for (unsigned j = 0; j < InputDotRow.size(); ++j) {
+      Output << InputDotRow[j].first;
+
+      if (j != InputDotRow.size() - 1)
+        Output << ", ";
+    }
+
+    Output << "}), ";
+  }
+
+  Output << ".sum(" << OutputName << ")";
+
+  Output << ");\n";
 }
 
 void SIRAddMulChain::initGPCs() {
@@ -1427,6 +1470,64 @@ bool SIRAddMulChain::needToCompress(std::vector<unsigned> BitNumList, unsigned R
   return false;
 }
 
+MatrixType SIRAddMulChain::compressTMatrixUsingGPC(MatrixType TMatrix, unsigned GPCIdx,
+                                                   unsigned RowNo, unsigned Stage,
+                                                   raw_fd_ostream &Output) {
+  // Get the GPC to be used.
+  SIRGPC GPC = GPCs[GPCIdx];
+
+  // Collect input dots.
+  float InputArrivalTime = 0.0f;
+  std::vector<std::vector<DotType> > InputDots;
+  std::vector<unsigned> InputDotNums = GPC.getInputDotNums();
+  for (unsigned i = 0; i < InputDotNums.size(); ++i) {
+    unsigned InputDotNum = InputDotNums[i];
+
+    // The dots to be compressed in current row in TMatrix.
+    std::vector<DotType> InputDotRow;
+    for (unsigned j = 0; j < InputDotNum; ++j) {
+      DotType Dot = TMatrix[RowNo + i][j];
+      InputDotRow.push_back(Dot);
+
+      InputArrivalTime = std::max(InputArrivalTime, Dot.second);
+    }
+    
+    InputDots.push_back(InputDotRow);
+  }
+
+  // Clear input dots in TMatrix.
+  for (unsigned i = 0; i < InputDotNums.size(); ++i) {
+    unsigned InputDotNum = InputDotNums[i];
+
+    // The dots to be compressed in current row in TMatrix.
+    std::vector<DotType> InputDotRow;
+    for (unsigned j = 0; j < InputDotNum; ++j)
+      TMatrix[RowNo + i][j] = std::make_pair("1'b0", 0.0f);
+  }
+
+  // Get name and delay for output dots.
+  std::string OutputName = "gpc_result_" + utostr_32(GPC_NUM++) + "_" + utostr_32(Stage);
+  float OutputArrivalTime = InputArrivalTime + GPC.getCriticalDelay();
+
+  // Insert the output dots into TMatrix.
+  unsigned OutputDotNum = GPC.getOutputDotNum();
+  for (unsigned i = 0; i < OutputDotNum; ++i) {
+    // Do not insert if exceed the range of TMatrix.
+    if (i >= TMatrix.size())
+      break;
+
+    std::string OutputDotName = OutputName + "[" + utostr_32(i) + "]";
+    TMatrix[RowNo + i].push_back(std::make_pair(OutputDotName, OutputArrivalTime));
+  }
+
+  // Generate GPC instance.
+  generateGPCInstance(GPCIdx, InputDots, OutputName, OutputArrivalTime, Output);
+
+  printTMatrixForDebug(TMatrix);
+
+  return TMatrix;
+}
+
 MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix, unsigned Stage, raw_fd_ostream &Output) {
   // Get the informations of the TMatrix.
   std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
@@ -1472,33 +1573,8 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix, unsigned S
   // compressed using XOR gate.
   for (unsigned i = 0; i < TMatrix.size() - 1; ++i) {
     // Compress current row if it has more than target final bit numbers.
-    if (BitNumList[i] >= 3) {
-      // The couple of bits to be compressed.
-      std::vector<DotType> CompressCouple;
-      CompressCouple.push_back(TMatrix[i][0]);
-      CompressCouple.push_back(TMatrix[i][1]);
-      CompressCouple.push_back(TMatrix[i][2]);
-
-      // Clear the compressed bits in TMatrix.
-      TMatrix[i][0] = std::make_pair("1'b0", 0.0f);
-      TMatrix[i][1] = std::make_pair("1'b0", 0.0f);
-      TMatrix[i][2] = std::make_pair("1'b0", 0.0f);
-
-      // Get the information of the result.
-      std::string SumName = "sum_3_2" + utostr_32(i) + "_" + utostr_32(Stage);
-      std::string CoutName = "cout_3_2" + utostr_32(i) + "_" + utostr_32(Stage);
-
-      // Generate the compressor.
-      std::pair<float, float> ResultDelay
-        = generateCompressor(CompressCouple, SumName, CoutName, Output);
-
-      // Insert the result into TMatrix.
-      TMatrix[i].push_back(std::make_pair(SumName, ResultDelay.first));
-      if (i + 1 < TMatrix.size())
-        TMatrix[i + 1].push_back(std::make_pair(CoutName, ResultDelay.second));
-
-      printTMatrixForDebug(TMatrix);
-    }
+    if (BitNumList[i] >= 3)
+      TMatrix = compressTMatrixUsingGPC(TMatrix, 0, i, Stage, Output);
 
     // Do some clean up and optimize work.
     TMatrix = eliminateOneBitInTMatrix(TMatrix);

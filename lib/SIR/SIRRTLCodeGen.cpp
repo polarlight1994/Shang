@@ -573,7 +573,7 @@ void SIRControlPathPrinter::printInitializeFile(SIRMemoryBank *SMB) {
 }
 
 void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned BytesPerGV,
-  unsigned ByteAddrWidth, unsigned NumWords) {
+                                                unsigned ByteAddrWidth, unsigned NumWords) {
   vlang_raw_ostream VOS(OS);
 
   SIRRegister *Addr = SMB->getAddr();
