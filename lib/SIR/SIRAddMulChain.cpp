@@ -1528,7 +1528,9 @@ MatrixType SIRAddMulChain::compressTMatrixUsingGPC(MatrixType TMatrix, unsigned 
   return TMatrix;
 }
 
-MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix, unsigned Stage, raw_fd_ostream &Output) {
+MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix,
+                                                  unsigned Stage,
+                                                  raw_fd_ostream &Output) {
   // Get the informations of the TMatrix.
   std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
 
@@ -1536,14 +1538,16 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix, unsigned S
   if (BitNumList[TMatrix.size() - 1] >= 2) {
     std::vector<DotType> CompressCouple;
 
-    // Collect the compressed bits into CompressCouple and clear the compressed bits in TMatrix.
+    // Collect the compressed bits into CompressCouple
+    // and clear the compressed bits in TMatrix.
     for (unsigned i = 0; i < BitNumList[TMatrix.size() - 1]; ++i) {
       CompressCouple.push_back(TMatrix.back()[i]);
       TMatrix.back()[i] = std::make_pair("1'b0", 0.0f);
     }
 
     // Get the information of the result.
-    std::string ResultName = "result_" + utostr_32(TMatrix.size() - 1) + "_" + utostr_32(Stage);
+    std::string ResultName = "result_" + utostr_32(TMatrix.size() - 1) +
+                             "_" + utostr_32(Stage);
 
     float ResultDelay = 0.0f;
     for (unsigned i = 0; i < CompressCouple.size(); ++i) {
@@ -1569,8 +1573,8 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix, unsigned S
     TMatrix = sortTMatrix(TMatrix);
   }
 
-  // Compress row by row. To be noted that, the last row is ignored since it can be
-  // compressed using XOR gate.
+  // Compress row by row. To be noted that, the last row is ignored since
+  // it can be compressed using XOR gate.
   for (unsigned i = 0; i < TMatrix.size() - 1; ++i) {
     // Compress current row if it has more than target final bit numbers.
     if (BitNumList[i] >= 4)
@@ -1686,7 +1690,8 @@ float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
   Output << "};\n";
 
   // Print the implementation of the CPA.
-  Output << "wire[" << utostr_32(CPADataA.size() - 1) << ":0] CPA_Result = CPA_DataA + CPA_DataB + CPA_DataC;\n";
+  Output << "wire[" << utostr_32(CPADataA.size() - 1)
+         << ":0] CPA_Result = CPA_DataA + CPA_DataB + CPA_DataC;\n";
 
   // Print the implementation of the result.
   Output << "assign result = CPA_Result;\n";
