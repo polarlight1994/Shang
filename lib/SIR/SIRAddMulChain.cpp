@@ -1573,44 +1573,10 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix, unsigned S
   // compressed using XOR gate.
   for (unsigned i = 0; i < TMatrix.size() - 1; ++i) {
     // Compress current row if it has more than target final bit numbers.
-    if (BitNumList[i] >= 3)
+    if (BitNumList[i] >= 4)
       TMatrix = compressTMatrixUsingGPC(TMatrix, 0, i, Stage, Output);
 
     // Do some clean up and optimize work.
-    TMatrix = eliminateOneBitInTMatrix(TMatrix);
-    TMatrix = simplifyTMatrix(TMatrix);
-    TMatrix = sortTMatrix(TMatrix);
-
-    // Update the informations of the TMatrix.
-    BitNumList = getBitNumListInTMatrix(TMatrix);
-
-    if (BitNumList[i] == 2 && needToCompress(BitNumList, i)) {
-      // The couple of bits to be compressed.
-      std::vector<DotType> CompressCouple;
-      CompressCouple.push_back(TMatrix[i][0]);
-      CompressCouple.push_back(TMatrix[i][1]);
-
-      // Clear the compressed bits in TMatrix.
-      TMatrix[i][0] = std::make_pair("1'b0", 0.0f);
-      TMatrix[i][1] = std::make_pair("1'b0", 0.0f);
-
-      // Get the information of the result.
-      std::string SumName = "sum_2_2" + utostr_32(i) + "_" + utostr_32(Stage);
-      std::string CoutName = "cout_2_2" + utostr_32(i) + "_" + utostr_32(Stage);
-
-      // Generate the compressor.
-      std::pair<float, float> ResultDelay
-        = generateCompressor(CompressCouple, SumName, CoutName, Output);
-
-      // Insert the result into TMatrix.
-      TMatrix[i].push_back(std::make_pair(SumName, ResultDelay.first));
-      if (i + 1 < TMatrix.size())
-        TMatrix[i + 1].push_back(std::make_pair(CoutName, ResultDelay.second));
-
-      printTMatrixForDebug(TMatrix);
-    }
-
-    // After compress this row, do some clean up and optimize work.
     TMatrix = eliminateOneBitInTMatrix(TMatrix);
     TMatrix = simplifyTMatrix(TMatrix);
     TMatrix = sortTMatrix(TMatrix);
@@ -1649,7 +1615,7 @@ float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
     std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
     Continue = false;
     for (unsigned i = 0; i < TMatrix.size(); ++i) {
-      if (BitNumList[i] > 2)
+      if (BitNumList[i] > 3)
         Continue = true;
     }
 
@@ -1658,25 +1624,40 @@ float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
       ++Stage;
   }
 
-  /// Finish the compress by sum the left-behind bits using CPA.
-  MatrixRowType CPADataA, CPADataB;
+  /// Finish the compress by sum the left-behind bits using ternary CPA.
+  MatrixRowType CPADataA, CPADataB, CPADataC;
   float CPADataA_ArrivalTime = 0.0f;
   float CPADataB_ArrivalTime = 0.0f;
+  float CPADataC_ArrivalTime = 0.0f;
   
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
     CPADataA.push_back(TMatrix[i][0]);
     CPADataA_ArrivalTime = std::max(CPADataA_ArrivalTime, TMatrix[i][0].second);
 
-    if (TMatrix[i].size() < 2)
+    if (TMatrix[i].size() == 1) {
       CPADataB.push_back(std::make_pair("1'b0", 0.0f));
-    else {
+      CPADataC.push_back(std::make_pair("1'b0", 0.0f));
+    }
+    else if (TMatrix[i].size() == 2) {
       CPADataB.push_back(TMatrix[i][1]);
       CPADataB_ArrivalTime = std::max(CPADataB_ArrivalTime, TMatrix[i][1].second);
+
+      CPADataC.push_back(std::make_pair("1'b0", 0.0f));
+    }
+    else if (TMatrix[i].size() == 3) {
+      CPADataB.push_back(TMatrix[i][1]);
+      CPADataB_ArrivalTime = std::max(CPADataB_ArrivalTime, TMatrix[i][1].second);
+
+      CPADataC.push_back(TMatrix[i][2]);
+      CPADataC_ArrivalTime = std::max(CPADataC_ArrivalTime, TMatrix[i][2].second);
     }
   }
-  assert(CPADataA.size() == CPADataB.size() && "Should be same size!");
+  assert(CPADataA.size() == CPADataB.size() &&
+         CPADataA.size() == CPADataC.size() && "Should be same size!");
 
-  // Print the declaration and definition of DataA & DataB of CPA.
+  Output << "\n";
+
+  // Print the declaration and definition of DataA & DataB & DataC of CPA.
   Output << "wire[" << utostr_32(CPADataA.size() - 1) << ":0] CPA_DataA = {";
   for (unsigned i = 0; i < CPADataA.size(); ++i) {
     Output << CPADataA[CPADataA.size() - 1 - i].first;
@@ -1695,8 +1676,17 @@ float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
   }
   Output << "};\n";
 
+  Output << "wire[" << utostr_32(CPADataC.size() - 1) << ":0] CPA_DataC = {";
+  for (unsigned i = 0; i < CPADataC.size(); ++i) {
+    Output << CPADataC[CPADataC.size() - 1 - i].first;
+
+    if (i != CPADataC.size() - 1)
+      Output << ", ";
+  }
+  Output << "};\n";
+
   // Print the implementation of the CPA.
-  Output << "wire[" << utostr_32(CPADataA.size() - 1) << ":0] CPA_Result = CPA_DataA + CPA_DataB;\n";
+  Output << "wire[" << utostr_32(CPADataA.size() - 1) << ":0] CPA_Result = CPA_DataA + CPA_DataB + CPA_DataC;\n";
 
   // Print the implementation of the result.
   Output << "assign result = CPA_Result;\n";
@@ -1713,7 +1703,8 @@ float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
   else if (CPADataA.size() == 64)
     CPADelay = ADD_CHAIN_64_DELAY[0];
 
-  float ResultArrivalTime = std::max(CPADataA_ArrivalTime, CPADataB_ArrivalTime) + CPADelay;
+  float ResultArrivalTime = std::max(std::max(CPADataA_ArrivalTime, CPADataB_ArrivalTime),
+                                     CPADataC_ArrivalTime) + CPADelay;
 
   return ResultArrivalTime;
 }
