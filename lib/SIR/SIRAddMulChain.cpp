@@ -15,7 +15,7 @@
 using namespace llvm;
 using namespace vast;
 
-typedef std::pair<std::string, float> DotType;
+typedef std::pair<std::string, std::pair<float, unsigned> > DotType;
 typedef std::vector<DotType> MatrixRowType;
 typedef std::vector<MatrixRowType> MatrixType;
 
@@ -104,6 +104,7 @@ struct SIRAddMulChain : public SIRPass {
   bool isConstantInt(MatrixRowType Row);
   unsigned getOperandBitWidth(MatrixRowType Row);
   std::vector<unsigned> getSignBitNumListInMatrix(MatrixType Matrix);
+  std::vector<unsigned> getBitNumInCurrentStageListInTMatrix(MatrixType TMatrix, unsigned Stage);
   MatrixType transportMatrix(MatrixType Matrix, unsigned RowNum, unsigned ColumnNum);
 
   std::vector<unsigned> getOneBitNumListInTMatrix(MatrixType TMatrix);
@@ -126,7 +127,7 @@ struct SIRAddMulChain : public SIRPass {
   bool needToCompress(std::vector<unsigned> BitNumList, unsigned RowNo);
   MatrixType compressTMatrixUsingGPC(MatrixType TMatrix, unsigned GPCIdx, unsigned RowNo,
                                      unsigned Stage, raw_fd_ostream &Output);
-  unsigned getHighestPriorityGPC(MatrixType TMatrix, unsigned RowNo);
+  unsigned getHighestPriorityGPC(MatrixType TMatrix, unsigned RowNo, unsigned Stage);
   MatrixType compressTMatrixInStage(MatrixType TMatrix,
                                     unsigned Stage, raw_fd_ostream &Output);
   float compressMatrix(MatrixType TMatrix, std::string MatrixName,
@@ -407,7 +408,7 @@ MatrixType SIRAddMulChain::createMatrixForOperands(std::vector<Value *> Operands
     MatrixRowType Row;
 
     for (unsigned j = 0; j < ColNum; ++j)
-      Row.push_back(std::make_pair("1'b0", 0.0f));  
+      Row.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
 
     Matrix.push_back(Row);
   }
@@ -430,9 +431,9 @@ MatrixType SIRAddMulChain::createMatrixForOperands(std::vector<Value *> Operands
 
         // Insert the binary representation to the matrix in reverse order.
         if (BitVal)
-          Matrix[i][ColNum - 1 - j] = std::make_pair("1'b1", 0.0f);
+          Matrix[i][ColNum - 1 - j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
         else
-          Matrix[i][ColNum - 1 - j] = std::make_pair("1'b0", 0.0f);
+          Matrix[i][ColNum - 1 - j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
       }
     }
     // Or the dots will be the form like operand[0], operand[1]...
@@ -457,18 +458,18 @@ MatrixType SIRAddMulChain::createMatrixForOperands(std::vector<Value *> Operands
             SIRBitMask Mask = SM->getBitMask(Operand);
 
             if (Mask.isOneKnownAt(j)) {
-              Matrix[i][j] = std::make_pair("1'b1", 0.0f);
+              Matrix[i][j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
               continue;
             }
             else if (Mask.isZeroKnownAt(j)) {
-              Matrix[i][j] = std::make_pair("1'b0", 0.0f);
+              Matrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
               continue;
             } else if (Mask.isSameKnownAt(j)) {
               if (SameBit.size() != 0)
-                Matrix[i][j] = std::make_pair(SameBit, ArrivalTime);
+                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
               else {
                 SameBit = Mangle(OpName) + "[" + utostr_32(j) + "]";
-                Matrix[i][j] = std::make_pair(SameBit, ArrivalTime);
+                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
               }
               continue;
             }
@@ -476,12 +477,12 @@ MatrixType SIRAddMulChain::createMatrixForOperands(std::vector<Value *> Operands
 
           // Or use the form like operand[0], operand[1]...
           std::string DotName = Mangle(OpName) + "[" + utostr_32(j) + "]";
-          Matrix[i][j] = std::make_pair(DotName, ArrivalTime);
+          Matrix[i][j] = std::make_pair(DotName, std::make_pair(ArrivalTime, 0));
         }
         // When the dot position is beyond the range of operand bit width,
         // we need to pad zero into the matrix.
         else {
-          Matrix[i][j] = std::make_pair("1'b0", ArrivalTime);
+          Matrix[i][j] = std::make_pair("1'b0", std::make_pair(ArrivalTime, 0));
         }
       }
     }    
@@ -1007,20 +1008,20 @@ MatrixType SIRAddMulChain::sumAllSignBitsInMatrix(MatrixType Matrix, unsigned Ro
       DotType OriginDot = Matrix[i][SignBitStartPoint];
       Matrix[i][SignBitStartPoint] = std::make_pair("~" + OriginDot.first, OriginDot.second);
       for (unsigned j = SignBitStartPoint + 1; j < Matrix[i].size(); ++j)
-        Matrix[i][j] = std::make_pair("1'b0", 0.0f);
+        Matrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
 
       // Set the non-sign bit to 00000000 in sign bit Matrix.
       for (unsigned j = 0; j < SignBitStartPoint; ++j)
-        SignBitMatrix[i][j] = std::make_pair("1'b0", 0.0f);
+        SignBitMatrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
       // Set the ssssssss to 11111111 in sign bit Matrix.
       for (unsigned j = SignBitStartPoint; j < SignBitMatrix[i].size(); ++j)
-        SignBitMatrix[i][j] = std::make_pair("1'b1", 0.0f);
+        SignBitMatrix[i][j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
     }
     // If there is no sign bit pattern in current row.
     else {
       // Set all bits to 00000000 in sign bit Matrix.
       for (unsigned j = 0; j < SignBitMatrix[i].size(); ++j)
-        SignBitMatrix[i][j] = std::make_pair("1'b0", 0.0f);
+        SignBitMatrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
     }
   }
 
@@ -1034,7 +1035,8 @@ MatrixType SIRAddMulChain::sumAllSignBitsInMatrix(MatrixType Matrix, unsigned Ro
   return Matrix;
 }
 
-MatrixType SIRAddMulChain::transportMatrix(MatrixType Matrix, unsigned RowNum, unsigned ColumnNum) {
+MatrixType SIRAddMulChain::transportMatrix(MatrixType Matrix, unsigned RowNum,
+                                           unsigned ColumnNum) {
   MatrixType TMatrix;
 
   for (unsigned j = 0; j < ColumnNum; ++j) {
@@ -1094,6 +1096,34 @@ std::vector<unsigned> SIRAddMulChain::getBitNumListInTMatrix(MatrixType TMatrix)
   return BitNumList;
 }
 
+std::vector<unsigned>
+SIRAddMulChain::getBitNumInCurrentStageListInTMatrix(MatrixType TMatrix,
+                                                     unsigned Stage) {
+  std::vector<unsigned> BitNumInCurrentStageList;
+
+  for (unsigned i = 0; i < TMatrix.size(); ++i) {
+    MatrixRowType Row = TMatrix[i];
+
+    // If there are no dot in current row.
+    if (Row.size() == 0) {
+      BitNumInCurrentStageList.push_back(0);
+      continue;
+    }
+
+    unsigned BitNum = 0;
+    for (unsigned j = 0; j < Row.size(); ++j) {
+      assert(Row[j].second.second >= Stage && "Unexpected stage!");
+
+      if (Row[j].first != "1'b0" && Row[j].second.second == Stage)
+        ++BitNum;
+    }
+
+    BitNumInCurrentStageList.push_back(BitNum);
+  }
+
+  return BitNumInCurrentStageList;
+}
+
 MatrixType SIRAddMulChain::simplifyTMatrix(MatrixType TMatrix) {
   // Eliminate the useless 1'b0 and its delay-stage info
   MatrixType SimplifiedTMatrix;
@@ -1117,13 +1147,21 @@ MatrixType SIRAddMulChain::simplifyTMatrix(MatrixType TMatrix) {
 }
 
 bool DotCompare(const DotType &DotA, const DotType &DotB) {
-  float DotADelay = DotA.second;
-  float DotBDelay = DotB.second;
+  unsigned DotAStage = DotA.second.second;
+  unsigned DotBStage = DotB.second.second;
+  float DotADelay = DotA.second.first;
+  float DotBDelay = DotB.second.first;
 
-  if (DotADelay < DotBDelay)
+  if (DotAStage < DotBStage)
     return true;
-  else
+  else if (DotAStage > DotBStage)
     return false;
+  else {
+    if (DotADelay < DotBDelay)
+      return true;
+    else
+      return false;
+  }
 }
 
 MatrixType SIRAddMulChain::sortTMatrix(MatrixType TMatrix) {
@@ -1170,7 +1208,7 @@ MatrixType SIRAddMulChain::sumAllOneBitsInTMatrix(MatrixType TMatrix) {
     else
       DotName = "1'b1";
 
-    TRowAfterSum.push_back(std::make_pair(DotName, 0.0f));
+    TRowAfterSum.push_back(std::make_pair(DotName, std::make_pair(0.0f, 0)));
 
     // Insert other origin bits other than one bits which will be eliminated.
     MatrixRowType TRow = TMatrix[i];
@@ -1178,7 +1216,7 @@ MatrixType SIRAddMulChain::sumAllOneBitsInTMatrix(MatrixType TMatrix) {
       if (TRow[j].first != "1'b1")
         TRowAfterSum.push_back(TRow[j]);
       else
-        TRowAfterSum.push_back(std::make_pair("1'b0", 0.0f));
+        TRowAfterSum.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
     }
 
     TMatrixAfterSum.push_back(TRowAfterSum);
@@ -1210,8 +1248,8 @@ MatrixType SIRAddMulChain::eliminateOneBitInTMatrix(MatrixType TMatrix) {
     std::string SumName = "~" + Row[1].first;
     std::string CarryName = Row[1].first;
 
-    TMatrix[i][0] = std::make_pair("1'b0", 0.0f);
-    TMatrix[i][1] = std::make_pair("1'b0", 0.0f);
+    TMatrix[i][0] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+    TMatrix[i][1] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
 
     TMatrix[i].push_back(std::make_pair(SumName, Row[1].second));
     if (i + 1 < TMatrix.size())
@@ -1219,66 +1257,6 @@ MatrixType SIRAddMulChain::eliminateOneBitInTMatrix(MatrixType TMatrix) {
   }
 
   return TMatrix;
-}
-
-std::pair<float, float>
-  SIRAddMulChain::generateCompressor(std::vector<DotType> CompressCouple,
-                                     std::string SumName, std::string CoutName,
-                                     raw_fd_ostream &Output) {
-  float SumDelay = 0.0f;
-  float CoutDelay = 0.0f;
-
-  if (CompressCouple.size() == 3) {
-    // Print the declaration of the result.
-    Output << "wire " << SumName << ";\n";
-    Output << "wire " << CoutName << ";\n";
-
-    // Print the instantiation of the compressor module.
-    Output << "compressor_3_2 compressor_3_2_" << utostr_32(GPC_NUM) << "( ";
-
-    // Link the wire according to the path delay of compressor, since the delay order is listed as
-    // col[1] < col[0] < col[2].
-    Output << ".a(" << CompressCouple[0].first << "), .b(" << CompressCouple[1].first << "), .cin("
-           << CompressCouple[2].first << "), .result(" << SumName << "), .cout(" << CoutName << ") );\n\n";
-
-    // Calculate the output delay.
-    float SumDelay_0 = CompressCouple[1].second;
-    float SumDelay_1 = CompressCouple[2].second;
-    float SumDelay_2 = CompressCouple[0].second;
-
-    float CoutDelay_0 = CompressCouple[1].second;
-    float CoutDelay_1 = CompressCouple[2].second;
-    float CoutDelay_2 = CompressCouple[0].second;
-
-    SumDelay = std::max(SumDelay_0, std::max(SumDelay_1, SumDelay_2));
-    CoutDelay = std::max(CoutDelay_0, std::max(CoutDelay_1, CoutDelay_2));
-  } else {
-    // Print the declaration of the result.
-    Output << "wire " << SumName << ";\n";
-    Output << "wire " << CoutName << ";\n";
-
-    // Print the instantiation of the compressor module.
-    Output << "compressor_2_2 compressor_2_2_" << utostr_32(GPC_NUM) << "( ";
-
-    // Link the wire according to the path delay of compressor, since the delay order is listed as
-    // col[1] < col[0].
-    Output << ".a(" << CompressCouple[0].first << "), .b(" << CompressCouple[1].first 
-           << "), .result(" << SumName << "), .cout(" << CoutName << ") );\n\n";
-
-    // Calculate the output delay.
-    float SumDelay_0 = CompressCouple[1].second;
-    float SumDelay_1 = CompressCouple[0].second;
-
-    float CoutDelay_0 = CompressCouple[1].second;
-    float CoutDelay_1 = CompressCouple[0].second;
-
-    SumDelay = std::max(SumDelay_0, SumDelay_1);
-    CoutDelay = std::max(CoutDelay_0, CoutDelay_1);
-  }  
-
-  ++GPC_NUM;
-
-  return std::make_pair(SumDelay, CoutDelay);
 }
 
 void SIRAddMulChain::generateGPCInstance(unsigned GPCIdx,
@@ -1463,6 +1441,10 @@ bool SIRAddMulChain::needToCompress(std::vector<unsigned> BitNumList, unsigned R
 MatrixType SIRAddMulChain::compressTMatrixUsingGPC(MatrixType TMatrix, unsigned GPCIdx,
                                                    unsigned RowNo, unsigned Stage,
                                                    raw_fd_ostream &Output) {
+  // Get information of TMatrix.
+  std::vector<unsigned> BitNumInCurrentStageList
+    = getBitNumInCurrentStageListInTMatrix(TMatrix, Stage);
+
   // Get the GPC to be used.
   SIRGPC GPC = GPCs[GPCIdx];
 
@@ -1477,20 +1459,24 @@ MatrixType SIRAddMulChain::compressTMatrixUsingGPC(MatrixType TMatrix, unsigned 
     std::vector<DotType> InputDotRow;
     if (RowNo + i < TMatrix.size()) {
       for (unsigned j = 0; j < InputDotNum; ++j) {
-        if (j < TMatrix[RowNo + i].size()) {
+        if (j < BitNumInCurrentStageList[RowNo + i]) {
           DotType Dot = TMatrix[RowNo + i][j];
           InputDotRow.push_back(Dot);
 
-          InputArrivalTime = std::max(InputArrivalTime, Dot.second);
+          // Collect the arrival time of each input dot.
+          InputArrivalTime = std::max(InputArrivalTime, Dot.second.first);
+
+          // Make sure we compress the dots in right stage.
+          assert(Dot.second.second == Stage && "Unexpected dot stage!");
         }
         else {
-          InputDotRow.push_back(std::make_pair("1'b0", 0.0f));
+          InputDotRow.push_back(std::make_pair("1'b0", std::make_pair(0.0f, Stage)));
         }
       }
     }
     else {
       for (unsigned j = 0; j < InputDotNum; ++j)
-        InputDotRow.push_back(std::make_pair("1'b0", 0.0f));
+        InputDotRow.push_back(std::make_pair("1'b0", std::make_pair(0.0f, Stage)));
     }
 
     InputDots.push_back(InputDotRow);
@@ -1504,14 +1490,16 @@ MatrixType SIRAddMulChain::compressTMatrixUsingGPC(MatrixType TMatrix, unsigned 
       // The dots to be compressed in current row in TMatrix.
       std::vector<DotType> InputDotRow;
       for (unsigned j = 0; j < InputDotNum; ++j)
-        if (j < TMatrix[RowNo + i].size())
-          TMatrix[RowNo + i][j] = std::make_pair("1'b0", 0.0f);
+        if (j < BitNumInCurrentStageList[RowNo + i])
+          TMatrix[RowNo + i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
     }
   }
 
   // Get name and delay for output dots.
-  std::string OutputName = "gpc_result_" + utostr_32(GPC_NUM++) + "_" + utostr_32(Stage);
-  float OutputArrivalTime = InputArrivalTime + GPC.getCriticalDelay();
+  std::string OutputName
+    = "gpc_result_" + utostr_32(GPC_NUM++) + "_" + utostr_32(Stage);
+  float OutputArrivalTime
+    = InputArrivalTime + (GPC.getCriticalDelay() + NET_DELAY) / VFUs::Period;
 
   // Insert the output dots into TMatrix.
   unsigned OutputDotNum = GPC.getOutputDotNum();
@@ -1521,7 +1509,9 @@ MatrixType SIRAddMulChain::compressTMatrixUsingGPC(MatrixType TMatrix, unsigned 
       break;
 
     std::string OutputDotName = OutputName + "[" + utostr_32(i) + "]";
-    TMatrix[RowNo + i].push_back(std::make_pair(OutputDotName, OutputArrivalTime));
+    TMatrix[RowNo + i].push_back(std::make_pair(OutputDotName,
+                                                std::make_pair(OutputArrivalTime,
+                                                               Stage + 1)));
   }
 
   // Generate GPC instance.
@@ -1532,8 +1522,13 @@ MatrixType SIRAddMulChain::compressTMatrixUsingGPC(MatrixType TMatrix, unsigned 
   return TMatrix;
 }
 
-unsigned SIRAddMulChain::getHighestPriorityGPC(MatrixType TMatrix, unsigned RowNo) {
+unsigned SIRAddMulChain::getHighestPriorityGPC(MatrixType TMatrix,
+                                               unsigned RowNo, unsigned Stage) {
   unsigned HighestPriorityGPCIdx;
+
+  // Get information of TMatrix.
+  std::vector<unsigned> BitNumInCurrentStageList
+    = getBitNumInCurrentStageListInTMatrix(TMatrix, Stage);
 
   // Try all GPCs and evaluate its performance.
   std::vector<std::pair<unsigned, float> > PriorityList;
@@ -1548,31 +1543,36 @@ unsigned SIRAddMulChain::getHighestPriorityGPC(MatrixType TMatrix, unsigned RowN
 
     // Get the real input dots number.
     unsigned RealInputDotNum = 0;
-    for (unsigned j = 0; j < InputDotNums.size(); ++j)
-      if (RowNo + j < TMatrix.size())
-        RealInputDotNum += std::min(InputDotNums[j], TMatrix[RowNo + j].size());
+    for (unsigned j = 0; j < InputDotNums.size(); ++j) {
+      if (RowNo + j < TMatrix.size()) {
+        RealInputDotNum += std::min(InputDotNums[j],
+                                    BitNumInCurrentStageList[RowNo + j]);
+      }
+    }
 
     // Get the earliest and latest input arrival time.
     float EarliestInputArrivalTime = 9999.9999f;
     float LatestInputArrivalTime = 0.0f;
     for (unsigned j = 0; j < InputDotNums.size(); ++j) {
       if (RowNo + j < TMatrix.size()) {
-        unsigned InputDotNum = std::min(InputDotNums[j], TMatrix[RowNo + j].size());
+        unsigned InputDotNum
+          = std::min(InputDotNums[j], BitNumInCurrentStageList[RowNo + j]);
 
         for (unsigned k = 0; k < InputDotNum; ++k) {
           // The earliest input arrival time is only considered in first row.
           if (j == 0)
             EarliestInputArrivalTime = std::min(EarliestInputArrivalTime,
-              TMatrix[RowNo + j][k].second);
+                                                TMatrix[RowNo + j][k].second.first);
           LatestInputArrivalTime = std::max(LatestInputArrivalTime,
-            TMatrix[RowNo + j][k].second);
+                                            TMatrix[RowNo + j][k].second.first);
         }
       }
     }
 
     // Evaluate the performance.
     unsigned CompressedDotNum = RealInputDotNum - OutputDotNum;
-    float RealDelay = CriticalDelay + NET_DELAY + LatestInputArrivalTime - EarliestInputArrivalTime;
+    float RealDelay
+      = CriticalDelay + NET_DELAY + LatestInputArrivalTime - EarliestInputArrivalTime;
     float Performance = (CompressedDotNum * CompressedDotNum) / (RealDelay * Area);
 
     PriorityList.push_back(std::make_pair(i, Performance));
@@ -1599,16 +1599,18 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix,
                                                   raw_fd_ostream &Output) {
   // Get the informations of the TMatrix.
   std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
+  std::vector<unsigned> BitNumInCurrentStageList
+    = getBitNumInCurrentStageListInTMatrix(TMatrix, Stage);
 
   // Compress the final row using XOR gate.
-  if (BitNumList[TMatrix.size() - 1] >= 2) {
+  if (BitNumInCurrentStageList[TMatrix.size() - 1] >= 2) {
     std::vector<DotType> CompressCouple;
 
     // Collect the compressed bits into CompressCouple
     // and clear the compressed bits in TMatrix.
-    for (unsigned i = 0; i < BitNumList[TMatrix.size() - 1]; ++i) {
+    for (unsigned i = 0; i < BitNumInCurrentStageList[TMatrix.size() - 1]; ++i) {
       CompressCouple.push_back(TMatrix.back()[i]);
-      TMatrix.back()[i] = std::make_pair("1'b0", 0.0f);
+      TMatrix.back()[i] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
     }
 
     // Get the information of the result.
@@ -1617,11 +1619,13 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix,
 
     float ResultDelay = 0.0f;
     for (unsigned i = 0; i < CompressCouple.size(); ++i) {
-      ResultDelay = std::max(ResultDelay, CompressCouple[i].second);
+      ResultDelay = std::max(ResultDelay, CompressCouple[i].second.first);
     }
 
     // Insert the result into TMatrix.
-    TMatrix.back().push_back(std::make_pair(ResultName, 0.0f));
+    // To be fixed.
+    TMatrix.back().push_back(std::make_pair(ResultName,
+                                            std::make_pair(0.0f, Stage + 1)));
 
     // Generate the XOR gate to compress the final row.
     Output << "wire " << ResultName << " = ";
@@ -1643,8 +1647,8 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix,
   // it can be compressed using XOR gate.
   for (unsigned i = 0; i < TMatrix.size() - 1; ++i) {
     // Compress current row if it has more than target final bit numbers.
-    while (BitNumList[i] > 3) {
-      unsigned GPCIdx = getHighestPriorityGPC(TMatrix, i);
+    while (BitNumList[i] > 3 && BitNumInCurrentStageList[i] >= 3) {
+      unsigned GPCIdx = getHighestPriorityGPC(TMatrix, i, Stage);
       TMatrix = compressTMatrixUsingGPC(TMatrix, GPCIdx, i, Stage, Output);
 
       // Do some clean up and optimize work.
@@ -1654,6 +1658,17 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix,
 
       // Update the informations of the TMatrix.
       BitNumList = getBitNumListInTMatrix(TMatrix);
+      BitNumInCurrentStageList = getBitNumInCurrentStageListInTMatrix(TMatrix, Stage);
+    }
+  }
+
+  // Increase the stage number of all remaining bits of current stage.
+  for (unsigned i = 0; i < TMatrix.size() - 1; ++i) {
+    MatrixRowType Row = TMatrix[i];
+
+    for (unsigned j = 0; j < Row.size(); ++j) {
+      if (Row[j].second.second == Stage)
+        TMatrix[i][j].second.second++;
     }
   }
 
@@ -1704,24 +1719,24 @@ float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
   
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
     CPADataA.push_back(TMatrix[i][0]);
-    CPADataA_ArrivalTime = std::max(CPADataA_ArrivalTime, TMatrix[i][0].second);
+    CPADataA_ArrivalTime = std::max(CPADataA_ArrivalTime, TMatrix[i][0].second.first);
 
     if (TMatrix[i].size() == 1) {
-      CPADataB.push_back(std::make_pair("1'b0", 0.0f));
-      CPADataC.push_back(std::make_pair("1'b0", 0.0f));
+      CPADataB.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
+      CPADataC.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
     }
     else if (TMatrix[i].size() == 2) {
       CPADataB.push_back(TMatrix[i][1]);
-      CPADataB_ArrivalTime = std::max(CPADataB_ArrivalTime, TMatrix[i][1].second);
+      CPADataB_ArrivalTime = std::max(CPADataB_ArrivalTime, TMatrix[i][1].second.first);
 
-      CPADataC.push_back(std::make_pair("1'b0", 0.0f));
+      CPADataC.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
     }
     else if (TMatrix[i].size() == 3) {
       CPADataB.push_back(TMatrix[i][1]);
-      CPADataB_ArrivalTime = std::max(CPADataB_ArrivalTime, TMatrix[i][1].second);
+      CPADataB_ArrivalTime = std::max(CPADataB_ArrivalTime, TMatrix[i][1].second.first);
 
       CPADataC.push_back(TMatrix[i][2]);
-      CPADataC_ArrivalTime = std::max(CPADataC_ArrivalTime, TMatrix[i][2].second);
+      CPADataC_ArrivalTime = std::max(CPADataC_ArrivalTime, TMatrix[i][2].second.first);
     }
   }
   assert(CPADataA.size() == CPADataB.size() &&
@@ -1896,10 +1911,10 @@ float SIRAddMulChain::hybridTreeCodegen(MatrixType Matrix, std::string MatrixNam
       DotType Dot = Row[j];
 
       if (ArrivalTime != 0.0f)
-        assert(Dot.second == ArrivalTime ||
-               Dot.second == 0.0f && "Unexpected Dot!");
+        assert(Dot.second.first == ArrivalTime ||
+               Dot.second.first == 0.0f && "Unexpected Dot!");
 
-      ArrivalTime = std::max(ArrivalTime, Dot.second);
+      ArrivalTime = std::max(ArrivalTime, Dot.second.first);
     }
 
     OpArrivalTime.push_back(std::make_pair(i, ArrivalTime));
@@ -1970,7 +1985,7 @@ float SIRAddMulChain::hybridTreeCodegen(MatrixType Matrix, std::string MatrixNam
     MatrixRowType Row;
     for (unsigned j = 0; j < ColNum; ++j) {
       std::string DotName = AddChainResultName + "[" + utostr_32(j) + "]";
-      Row.push_back(std::make_pair(DotName, AddChainResultTime));
+      Row.push_back(std::make_pair(DotName, std::make_pair(AddChainResultTime, 0)));
     }
 
     NewMatrix.push_back(Row);
