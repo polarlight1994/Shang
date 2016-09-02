@@ -19,7 +19,6 @@ typedef std::pair<std::string, float> DotType;
 typedef std::vector<DotType> MatrixRowType;
 typedef std::vector<MatrixRowType> MatrixType;
 
-static unsigned DEBUG_NUM = 0;
 static unsigned GPC_NUM = 0;
 
 static float NET_DELAY = 0.500;
@@ -1308,7 +1307,8 @@ void SIRAddMulChain::generateGPCInstance(unsigned GPCIdx,
     Output << ".col" << utostr_32(i) << "({";
 
     std::vector<DotType> InputDotRow = InputDots[i];
-    assert(InputDotRow.size() == InputDotNums[i] && "Unexpected input dot number!");
+    assert(InputDotRow.size() == InputDotNums[i] || InputDotRow.size() == 0
+           && "Unexpected input dot number!");
     for (unsigned j = 0; j < InputDotRow.size(); ++j) {
       Output << InputDotRow[j].first;
 
@@ -1475,18 +1475,24 @@ MatrixType SIRAddMulChain::compressTMatrixUsingGPC(MatrixType TMatrix, unsigned 
 
     // The dots to be compressed in current row in TMatrix.
     std::vector<DotType> InputDotRow;
-    for (unsigned j = 0; j < InputDotNum; ++j) {
-      if (j < TMatrix[RowNo + i].size()) {
-        DotType Dot = TMatrix[RowNo + i][j];
-        InputDotRow.push_back(Dot);
+    if (RowNo + i < TMatrix.size()) {
+      for (unsigned j = 0; j < InputDotNum; ++j) {
+        if (j < TMatrix[RowNo + i].size()) {
+          DotType Dot = TMatrix[RowNo + i][j];
+          InputDotRow.push_back(Dot);
 
-        InputArrivalTime = std::max(InputArrivalTime, Dot.second);
-      }
-      else {
-        InputDotRow.push_back(std::make_pair("1'b0", 0.0f));
+          InputArrivalTime = std::max(InputArrivalTime, Dot.second);
+        }
+        else {
+          InputDotRow.push_back(std::make_pair("1'b0", 0.0f));
+        }
       }
     }
-    
+    else {
+      for (unsigned j = 0; j < InputDotNum; ++j)
+        InputDotRow.push_back(std::make_pair("1'b0", 0.0f));
+    }
+
     InputDots.push_back(InputDotRow);
   }
 
@@ -1576,14 +1582,14 @@ unsigned SIRAddMulChain::getHighestPriorityGPC(MatrixType TMatrix, unsigned RowN
   std::sort(PriorityList.begin(), PriorityList.end(), LessThan);
 
   // Debug
-  errs() << "GPC performance list is as follows:\n";
-  for (unsigned i = 0; i < PriorityList.size(); ++i) {
-    unsigned GPCIdx = PriorityList[i].first;
-
-    SIRGPC GPC = GPCs[GPCIdx];
-
-    errs() << GPC.getName() << "--" << PriorityList[i].second << "\n";
-  }
+//   errs() << "GPC performance list is as follows:\n";
+//   for (unsigned i = 0; i < PriorityList.size(); ++i) {
+//     unsigned GPCIdx = PriorityList[i].first;
+// 
+//     SIRGPC GPC = GPCs[GPCIdx];
+// 
+//     errs() << GPC.getName() << "--" << PriorityList[i].second << "\n";
+//   }
 
   return PriorityList.back().first;
 }
@@ -1637,19 +1643,18 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix,
   // it can be compressed using XOR gate.
   for (unsigned i = 0; i < TMatrix.size() - 1; ++i) {
     // Compress current row if it has more than target final bit numbers.
-    if (BitNumList[i] > 3) {
-      DEBUG_NUM++;
+    while (BitNumList[i] > 3) {
       unsigned GPCIdx = getHighestPriorityGPC(TMatrix, i);
       TMatrix = compressTMatrixUsingGPC(TMatrix, GPCIdx, i, Stage, Output);
+
+      // Do some clean up and optimize work.
+      TMatrix = eliminateOneBitInTMatrix(TMatrix);
+      TMatrix = simplifyTMatrix(TMatrix);
+      TMatrix = sortTMatrix(TMatrix);
+
+      // Update the informations of the TMatrix.
+      BitNumList = getBitNumListInTMatrix(TMatrix);
     }
-
-    // Do some clean up and optimize work.
-    TMatrix = eliminateOneBitInTMatrix(TMatrix);
-    TMatrix = simplifyTMatrix(TMatrix);
-    TMatrix = sortTMatrix(TMatrix);
-
-    // Update the informations of the TMatrix.
-    BitNumList = getBitNumListInTMatrix(TMatrix);
   }
 
   return TMatrix;
