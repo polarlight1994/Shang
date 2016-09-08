@@ -11,6 +11,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 #include <sstream>
+#include "math.h"
 
 using namespace llvm;
 using namespace vast;
@@ -19,7 +20,7 @@ typedef std::pair<std::string, std::pair<float, unsigned> > DotType;
 typedef std::vector<DotType> MatrixRowType;
 typedef std::vector<MatrixRowType> MatrixType;
 
-static unsigned GPC_NUM = 0;
+static unsigned Component_NUM = 0;
 
 static float NET_DELAY = 0.500;
 
@@ -47,9 +48,12 @@ struct SIRAddMulChain : public SIRPass {
 
   std::map<Value *, float> ValArrivalTime;
 
-  class SIRGPC {
+  // The component to be used to compress the dot matrix.
+  // 1) GPCs
+  // 2) AddChains
+  class CompressComponent {
   private:
-    std::string GPCName;
+    std::string Name;
 
     // Input dots & Output dots.
     std::vector<unsigned> InputDotNums;
@@ -62,12 +66,12 @@ struct SIRAddMulChain : public SIRPass {
 
   public:
     // Default constructor
-    SIRGPC(std::string Name, std::vector<unsigned> InputDotNums,
-           unsigned OutputDotNum, unsigned Area, float CriticalDelay)
-      : GPCName(Name), InputDotNums(InputDotNums), OutputDotNum(OutputDotNum),
+    CompressComponent(std::string Name, std::vector<unsigned> InputDotNums,
+                      unsigned OutputDotNum, unsigned Area, float CriticalDelay)
+      : Name(Name), InputDotNums(InputDotNums), OutputDotNum(OutputDotNum),
         Area(Area), CriticalDelay(CriticalDelay) {}
 
-    std::string getName() { return GPCName; }
+    std::string getName() { return Name; }
     std::vector<unsigned> getInputDotNums() { return InputDotNums; }
     unsigned getOutputDotNum() { return OutputDotNum; }
     // To be fixed.
@@ -75,7 +79,7 @@ struct SIRAddMulChain : public SIRPass {
     unsigned getArea() { return Area; }
   };
 
-  std::vector<SIRGPC> GPCs;
+  std::vector<CompressComponent> Library;
 
   SIRAddMulChain() : SIRPass(ID), ChainNum(0), DebugOutput("DebugMatrix.txt", Error) {
     initializeSIRAddMulChainPass(*PassRegistry::getPassRegistry());
@@ -117,17 +121,24 @@ struct SIRAddMulChain : public SIRPass {
   std::pair<float, float> generateCompressor(std::vector<DotType> CompressCouple,
                                              std::string SumName, std::string CoutName,
                                              raw_fd_ostream &Output);
-  void generateGPCInstance(unsigned GPCIdx, std::vector<std::vector<DotType> > InputDots,
-                           std::string OutputName, float OutputArrivalTime,
-                           raw_fd_ostream &Output);
+  void generateComponentInstance(unsigned ComponentIdx,
+                                 std::vector<std::vector<DotType> > InputDots,
+                                 std::string OutputName, float OutputArrivalTime,
+                                 raw_fd_ostream &Output);
 
   // Initial the GPCs.
+  CompressComponent createAddChainComponent(std::string Name, unsigned OpNum,
+                                            unsigned BitWidth, unsigned Area,
+                                            float CriticalDelay);
   void initGPCs();
+  void initAddChains();
+  void initLibrary();
 
   bool needToCompress(std::vector<unsigned> BitNumList, unsigned RowNo);
-  MatrixType compressTMatrixUsingGPC(MatrixType TMatrix, unsigned GPCIdx, unsigned RowNo,
-                                     unsigned Stage, raw_fd_ostream &Output);
-  unsigned getHighestPriorityGPC(MatrixType TMatrix, unsigned RowNo, unsigned Stage);
+  MatrixType compressTMatrixUsingComponent(MatrixType TMatrix, unsigned ComponentIdx,
+                                           unsigned RowNo, unsigned Stage,
+                                           raw_fd_ostream &Output);
+  unsigned getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo, unsigned Stage);
   MatrixType compressTMatrixInStage(MatrixType TMatrix,
                                     unsigned Stage, raw_fd_ostream &Output);
   float compressMatrix(MatrixType TMatrix, std::string MatrixName,
@@ -147,6 +158,9 @@ struct SIRAddMulChain : public SIRPass {
   void generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_ostream &Output);
   void replaceWithCompressor();
 
+  void printGPCModule(raw_fd_ostream &Output);
+  void printAddChainModule(unsigned OpNum, unsigned BitWidth, raw_fd_ostream &Output);
+  void printCompressComponent(raw_fd_ostream &Output);
   void printAllChain();
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -684,140 +698,196 @@ float SIRAddMulChain::getOperandArrivalTime(Value *Operand) {
   return ArrivalTime;
 }
 
+void SIRAddMulChain::printGPCModule(raw_fd_ostream &Output) {
+  // Generate the 3-2 compressor.
+  Output << "module GPC_3_2_LUT(\n";
+  Output << "\tinput wire[2:0] col0,\n";
+  Output << "\toutput wire[1:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2];\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 4-3 compressor.
+  Output << "module GPC_4_3_LUT(\n";
+  Output << "\tinput wire[3:0] col0,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3];\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 5-3 compressor.
+  Output << "module GPC_5_3_LUT(\n";
+  Output << "\tinput wire[4:0] col0,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4];\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 6-3 compressor.
+  Output << "module GPC_6_3_LUT(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5];\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 13-3 compressor.
+  Output << "module GPC_13_3_LUT(\n";
+  Output << "\tinput wire[2:0] col0,\n";
+  Output << "\tinput wire col1,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + 2 * col1;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 14-3 compressor.
+  Output << "module GPC_14_3_LUT(\n";
+  Output << "\tinput wire[3:0] col0,\n";
+  Output << "\tinput wire col1,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + 2 * col1;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 15-3 compressor.
+  Output << "module GPC_15_3_LUT(\n";
+  Output << "\tinput wire[4:0] col0,\n";
+  Output << "\tinput wire col1,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + 2 * col1;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 23-3 compressor.
+  Output << "module GPC_23_3_LUT(\n";
+  Output << "\tinput wire[2:0] col0,\n";
+  Output << "\tinput wire[1:0] col1,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + 2 * (col1[0] + col1[1]);\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 506-5 compressor.
+  Output << "module GPC_506_5(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\tinput wire[4:0] col2,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
+  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4]);\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 606-5 compressor.
+  Output << "module GPC_606_5(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\tinput wire[5:0] col2,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
+  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4] + col2[5]);\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 1325-5 compressor.
+  Output << "module GPC_1325_5(\n";
+  Output << "\tinput wire[4:0] col0,\n";
+  Output << "\tinput wire[1:0] col1,\n";
+  Output << "\tinput wire[2:0] col2,\n";
+  Output << "\tinput wire col3,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
+  Output << "+ 2 * (col1[0] + col1[1]) + 4 * (col2[0] + col2[1] + col2[2]) + 8 * col3;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 1406-5 compressor.
+  Output << "module GPC_1406_5(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\tinput wire[3:0] col2,\n";
+  Output << "\tinput wire col3,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
+  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 1415-5 compressor.
+  Output << "module GPC_1415_5(\n";
+  Output << "\tinput wire[4:0] col0,\n";
+  Output << "\tinput wire col1,\n";
+  Output << "\tinput wire[3:0] col2,\n";
+  Output << "\tinput wire col3,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
+  Output << "+ 2 * col1 + 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
+  Output << "endmodule\n\n";
+}
+
+void SIRAddMulChain::printAddChainModule(unsigned OpNum, unsigned BitWidth, raw_fd_ostream &Output) {
+  // Calculate the output bitwidth.
+  unsigned OutputBitWidth = BitWidth + std::ceil(log(OpNum) / log(2));
+
+  Output << "module AddChain_" << utostr_32(OpNum) << "_" << utostr_32(BitWidth) << "(\n";
+  for (unsigned i = 0; i < BitWidth; ++i) {
+    Output << "\tinput wire[" << utostr_32(OpNum - 1) << ":0] col" << utostr_32(i) << ",\n";
+  }
+  Output << "\toutput wire[" << utostr_32(OutputBitWidth - 1) << ":0] sum\n";
+  Output << ");\n\n";
+  for (unsigned i = 0; i < OpNum; ++i) {
+    Output << "\twire[" << utostr_32(BitWidth - 1) <<":0] op" << utostr_32(i) << " = {";
+
+    for (unsigned j = 0; j < BitWidth; ++j) {
+      Output << "col" << utostr_32(BitWidth - 1 - j) << "[" << utostr_32(i) << "]";
+
+      if (j != BitWidth - 1)
+        Output << ", ";
+    }
+
+    Output << "};\n";      
+  }
+  Output << "\n";
+
+  Output << "\tassign sum = ";
+  for (unsigned i = 0; i < OpNum; ++i) {
+    Output << "op" << utostr_32(i);
+
+    if (i != OpNum - 1)
+      Output << " + ";
+  }
+  Output << ";\n\n";
+
+  Output << "endmodule\n\n";
+}
+
+void SIRAddMulChain::printCompressComponent(raw_fd_ostream &Output) {
+  /// Print the module of compress components.
+  // GPCs
+  printGPCModule(Output);
+
+  // AddChains
+  // Generate the AddChain with bitwidth of 16.
+  for (unsigned i = 2; i < 10; ++i) {
+    printAddChainModule(i, 16, Output);
+    printAddChainModule(i, 32, Output);
+    printAddChainModule(i, 64, Output);
+  }    
+}
+
 void SIRAddMulChain::generateDotMatrix() {
   std::string CompressorOutputPath = LuaI::GetString("CompressorOutput");
   std::string Error;
   raw_fd_ostream Output(CompressorOutputPath.c_str(), Error);
 
-  initGPCs();
+  // Initialize the compress library.
+  initLibrary();
 
   typedef std::map<IntrinsicInst *, std::vector<IntrinsicInst *> >::iterator iterator;
   for (iterator I = ChainMap.begin(), E = ChainMap.end(); I != E; ++I) {
     generateDotmatrixForChain(I->first, Output);
   }
 
-   // Generate the 3-2 compressor.
-   Output << "module GPC_3_2_LUT(\n";
-   Output << "\tinput wire[2:0] col0,\n";
-   Output << "\toutput wire[1:0] sum\n";
-   Output << ");\n\n";
-   Output << "\tassign sum = col0[0] + col0[1] + col0[2];\n\n";
-   Output << "endmodule\n\n";
-
-   // Generate the 4-3 compressor.
-   Output << "module GPC_4_3_LUT(\n";
-   Output << "\tinput wire[3:0] col0,\n";
-   Output << "\toutput wire[2:0] sum\n";
-   Output << ");\n\n";
-   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3];\n\n";
-   Output << "endmodule\n\n";
-
-   // Generate the 5-3 compressor.
-   Output << "module GPC_5_3_LUT(\n";
-   Output << "\tinput wire[4:0] col0,\n";
-   Output << "\toutput wire[2:0] sum\n";
-   Output << ");\n\n";
-   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4];\n\n";
-   Output << "endmodule\n\n";
-
-   // Generate the 6-3 compressor.
-   Output << "module GPC_6_3_LUT(\n";
-   Output << "\tinput wire[5:0] col0,\n";
-   Output << "\toutput wire[2:0] sum\n";
-   Output << ");\n\n";
-   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5];\n\n";
-   Output << "endmodule\n\n";
-
-   // Generate the 13-3 compressor.
-   Output << "module GPC_13_3_LUT(\n";
-   Output << "\tinput wire[2:0] col0,\n";
-   Output << "\tinput wire col1,\n";
-   Output << "\toutput wire[2:0] sum\n";
-   Output << ");\n\n";
-   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + 2 * col1;\n\n";
-   Output << "endmodule\n\n";
-
-   // Generate the 14-3 compressor.
-   Output << "module GPC_14_3_LUT(\n";
-   Output << "\tinput wire[3:0] col0,\n";
-   Output << "\tinput wire col1,\n";
-   Output << "\toutput wire[2:0] sum\n";
-   Output << ");\n\n";
-   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + 2 * col1;\n\n";
-   Output << "endmodule\n\n";
-
-   // Generate the 15-3 compressor.
-   Output << "module GPC_15_3_LUT(\n";
-   Output << "\tinput wire[4:0] col0,\n";
-   Output << "\tinput wire col1,\n";
-   Output << "\toutput wire[2:0] sum\n";
-   Output << ");\n\n";
-   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + 2 * col1;\n\n";
-   Output << "endmodule\n\n";
-
-   // Generate the 23-3 compressor.
-   Output << "module GPC_23_3_LUT(\n";
-   Output << "\tinput wire[2:0] col0,\n";
-   Output << "\tinput wire[1:0] col1,\n";
-   Output << "\toutput wire[2:0] sum\n";
-   Output << ");\n\n";
-   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + 2 * (col1[0] + col1[1]);\n\n";
-   Output << "endmodule\n\n";
-
-   // Generate the 506-5 compressor.
-   Output << "module GPC_506_5(\n";
-   Output << "\tinput wire[5:0] col0,\n";
-   Output << "\tinput wire[4:0] col2,\n";
-   Output << "\toutput wire[4:0] sum\n";
-   Output << ");\n\n";
-   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
-   Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4]);\n\n";
-   Output << "endmodule\n\n";
-
-   // Generate the 606-5 compressor.
-   Output << "module GPC_606_5(\n";
-   Output << "\tinput wire[5:0] col0,\n";
-   Output << "\tinput wire[5:0] col2,\n";
-   Output << "\toutput wire[4:0] sum\n";
-   Output << ");\n\n";
-   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
-   Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4] + col2[5]);\n\n";
-   Output << "endmodule\n\n";
-
-   // Generate the 1325-5 compressor.
-   Output << "module GPC_1325_5(\n";
-   Output << "\tinput wire[4:0] col0,\n";
-   Output << "\tinput wire[1:0] col1,\n";
-   Output << "\tinput wire[2:0] col2,\n";
-   Output << "\tinput wire col3,\n";
-   Output << "\toutput wire[4:0] sum\n";
-   Output << ");\n\n";
-   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
-   Output << "+ 2 * (col1[0] + col1[1]) + 4 * (col2[0] + col2[1] + col2[2]) + 8 * col3;\n\n";
-   Output << "endmodule\n\n";
-
-   // Generate the 1406-5 compressor.
-   Output << "module GPC_1406_5(\n";
-   Output << "\tinput wire[5:0] col0,\n";
-   Output << "\tinput wire[3:0] col2,\n";
-   Output << "\tinput wire col3,\n";
-   Output << "\toutput wire[4:0] sum\n";
-   Output << ");\n\n";
-   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
-   Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
-   Output << "endmodule\n\n";
-
-   // Generate the 1415-5 compressor.
-   Output << "module GPC_1415_5(\n";
-   Output << "\tinput wire[4:0] col0,\n";
-   Output << "\tinput wire col1,\n";
-   Output << "\tinput wire[3:0] col2,\n";
-   Output << "\tinput wire col3,\n";
-   Output << "\toutput wire[4:0] sum\n";
-   Output << ");\n\n";
-   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
-   Output << "+ 2 * col1 + 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
-   Output << "endmodule\n\n";
+  // Print the compress component modules.
+  printCompressComponent(Output);   
 }
 
 void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_ostream &Output) {
@@ -1259,22 +1329,22 @@ MatrixType SIRAddMulChain::eliminateOneBitInTMatrix(MatrixType TMatrix) {
   return TMatrix;
 }
 
-void SIRAddMulChain::generateGPCInstance(unsigned GPCIdx,
-                                         std::vector<std::vector<DotType> > InputDots,
-                                         std::string OutputName,
-                                         float OutputArrivalTime,
-                                         raw_fd_ostream &Output) {
-  // Get the GPC to be used and its information.
-  SIRGPC GPC = GPCs[GPCIdx];
-  std::vector<unsigned> InputDotNums = GPC.getInputDotNums();
-  unsigned OutputDotNum = GPC.getOutputDotNum();
-  std::string GPCName = GPC.getName();
+void SIRAddMulChain::generateComponentInstance(unsigned ComponentIdx,
+                                               std::vector<std::vector<DotType> > InputDots,
+                                               std::string OutputName,
+                                               float OutputArrivalTime,
+                                               raw_fd_ostream &Output) {
+  // Get the Component to be used and its information.
+  CompressComponent Component = Library[ComponentIdx];
+  std::vector<unsigned> InputDotNums = Component.getInputDotNums();
+  unsigned OutputDotNum = Component.getOutputDotNum();
+  std::string ComponentName = Component.getName();
 
   // Print the declaration of the result.  
   Output << "wire [" << utostr_32(OutputDotNum - 1) << ":0] " << OutputName << ";\n";
 
   // Print the instantiation of the compressor module.
-  Output << GPCName << " " + GPCName + "_" << utostr_32(GPC_NUM) << "(";
+  Output << ComponentName << " " + ComponentName + "_" << utostr_32(Component_NUM) << "(";
 
   // Print the inputs and outputs instance.
   for (unsigned i = 0; i < InputDotNums.size(); ++i) {
@@ -1302,6 +1372,24 @@ void SIRAddMulChain::generateGPCInstance(unsigned GPCIdx,
   Output << ");\n";
 }
 
+SIRAddMulChain::CompressComponent
+  SIRAddMulChain::createAddChainComponent(std::string Name, unsigned OpNum,
+                                          unsigned BitWidth, unsigned Area,
+                                          float CriticalDelay) {
+  // Inputs
+  std::vector<unsigned> AddChain_InputsVector;
+  for (unsigned i = 0; i < BitWidth; ++i)
+    AddChain_InputsVector.push_back(OpNum);
+
+  // Output
+  unsigned OutputBitWidth = BitWidth + std::ceil(log(OpNum) / log(2));
+
+  CompressComponent AddChain(Name, AddChain_InputsVector,
+                             OutputBitWidth, Area, CriticalDelay);
+
+  return AddChain;
+}
+
 void SIRAddMulChain::initGPCs() {
   /// GPC_3_2_LUT
   // Inputs & Outputs
@@ -1309,9 +1397,9 @@ void SIRAddMulChain::initGPCs() {
   std::vector<unsigned> GPC_3_2_LUT_InputsVector(GPC_3_2_LUT_Inputs,
                                                  GPC_3_2_LUT_Inputs + 1);
 
-  SIRGPC GPC_3_2_LUT("GPC_3_2_LUT", GPC_3_2_LUT_InputsVector,
-                     2, 1, 0.052f);
-  GPCs.push_back(GPC_3_2_LUT);
+  CompressComponent GPC_3_2_LUT("GPC_3_2_LUT", GPC_3_2_LUT_InputsVector,
+                                2, 1, 0.052f);
+  Library.push_back(GPC_3_2_LUT);
 
   /// GPC_4_3_LUT
   // Inputs & Outputs
@@ -1319,9 +1407,9 @@ void SIRAddMulChain::initGPCs() {
   std::vector<unsigned> GPC_4_3_LUT_InputsVector(GPC_4_3_LUT_Inputs,
                                                  GPC_4_3_LUT_Inputs + 1);
 
-  SIRGPC GPC_4_3_LUT("GPC_4_3_LUT", GPC_4_3_LUT_InputsVector,
-                     3, 2, 0.052f);
-  GPCs.push_back(GPC_4_3_LUT);
+  CompressComponent GPC_4_3_LUT("GPC_4_3_LUT", GPC_4_3_LUT_InputsVector,
+                                3, 2, 0.052f);
+  Library.push_back(GPC_4_3_LUT);
 
   /// GPC_5_3_LUT
   // Inputs & Outputs
@@ -1329,9 +1417,9 @@ void SIRAddMulChain::initGPCs() {
   std::vector<unsigned> GPC_5_3_LUT_InputsVector(GPC_5_3_LUT_Inputs,
                                                  GPC_5_3_LUT_Inputs + 1);
 
-  SIRGPC GPC_5_3_LUT("GPC_5_3_LUT", GPC_5_3_LUT_InputsVector,
-                     3, 2, 0.052f);
-  GPCs.push_back(GPC_5_3_LUT);
+  CompressComponent GPC_5_3_LUT("GPC_5_3_LUT", GPC_5_3_LUT_InputsVector,
+                                3, 2, 0.052f);
+  Library.push_back(GPC_5_3_LUT);
 
   /// GPC_6_3_LUT
   // Inputs & Outputs
@@ -1339,9 +1427,9 @@ void SIRAddMulChain::initGPCs() {
   std::vector<unsigned> GPC_6_3_LUT_InputsVector(GPC_6_3_LUT_Inputs,
                                                  GPC_6_3_LUT_Inputs + 1);
 
-  SIRGPC GPC_6_3_LUT("GPC_6_3_LUT", GPC_6_3_LUT_InputsVector,
-                     3, 2, 0.043f);
-  GPCs.push_back(GPC_6_3_LUT);
+  CompressComponent GPC_6_3_LUT("GPC_6_3_LUT", GPC_6_3_LUT_InputsVector,
+                                3, 2, 0.043f);
+  Library.push_back(GPC_6_3_LUT);
 
   /// GPC_13_3_LUT
   // Inputs & Outputs
@@ -1349,9 +1437,9 @@ void SIRAddMulChain::initGPCs() {
   std::vector<unsigned> GPC_13_3_LUT_InputsVector(GPC_13_3_LUT_Inputs,
                                                   GPC_13_3_LUT_Inputs + 2);
 
-  SIRGPC GPC_13_3_LUT("GPC_13_3_LUT", GPC_13_3_LUT_InputsVector,
-                      3, 2, 0.052f);
-  GPCs.push_back(GPC_13_3_LUT);
+  CompressComponent GPC_13_3_LUT("GPC_13_3_LUT", GPC_13_3_LUT_InputsVector,
+                                 3, 2, 0.052f);
+  Library.push_back(GPC_13_3_LUT);
 
   /// GPC_23_3_LUT
   // Inputs & Outputs
@@ -1359,9 +1447,9 @@ void SIRAddMulChain::initGPCs() {
   std::vector<unsigned> GPC_23_3_LUT_InputsVector(GPC_23_3_LUT_Inputs,
                                                   GPC_23_3_LUT_Inputs + 2);
 
-  SIRGPC GPC_23_3_LUT("GPC_23_3_LUT", GPC_23_3_LUT_InputsVector,
-                      3, 2, 0.052f);
-  GPCs.push_back(GPC_23_3_LUT);
+  CompressComponent GPC_23_3_LUT("GPC_23_3_LUT", GPC_23_3_LUT_InputsVector,
+                                 3, 2, 0.052f);
+  Library.push_back(GPC_23_3_LUT);
 
   /// GPC_14_3_LUT
   // Inputs & Outputs
@@ -1369,9 +1457,9 @@ void SIRAddMulChain::initGPCs() {
   std::vector<unsigned> GPC_14_3_LUT_InputsVector(GPC_14_3_LUT_Inputs,
                                                   GPC_14_3_LUT_Inputs + 2);
 
-  SIRGPC GPC_14_3_LUT("GPC_14_3_LUT", GPC_14_3_LUT_InputsVector,
-                      3, 2, 0.052f);
-  GPCs.push_back(GPC_14_3_LUT);
+  CompressComponent GPC_14_3_LUT("GPC_14_3_LUT", GPC_14_3_LUT_InputsVector,
+                                 3, 2, 0.052f);
+  Library.push_back(GPC_14_3_LUT);
 
   /// GPC_15_3_LUT
   // Inputs & Outputs
@@ -1379,9 +1467,9 @@ void SIRAddMulChain::initGPCs() {
   std::vector<unsigned> GPC_15_3_LUT_InputsVector(GPC_15_3_LUT_Inputs,
                                                   GPC_15_3_LUT_Inputs + 2);
 
-  SIRGPC GPC_15_3_LUT("GPC_15_3_LUT", GPC_15_3_LUT_InputsVector,
-                      3, 2, 0.043f);
-  GPCs.push_back(GPC_15_3_LUT);
+  CompressComponent GPC_15_3_LUT("GPC_15_3_LUT", GPC_15_3_LUT_InputsVector,
+                                 3, 2, 0.043f);
+  Library.push_back(GPC_15_3_LUT);
 
   /// GPC_506_5
   // Inputs & Outputs
@@ -1389,9 +1477,9 @@ void SIRAddMulChain::initGPCs() {
   std::vector<unsigned> GPC_506_5_InputsVector(GPC_506_5_Inputs,
                                                GPC_506_5_Inputs + 3);
 
-  SIRGPC GPC_506_5("GPC_506_5", GPC_506_5_InputsVector,
-                   5, 4, 0.355f);
-  GPCs.push_back(GPC_506_5);
+  CompressComponent GPC_506_5("GPC_506_5", GPC_506_5_InputsVector,
+                              5, 4, 0.355f);
+  Library.push_back(GPC_506_5);
 
   // GPC_606_5
   // Inputs & Outputs
@@ -1399,9 +1487,9 @@ void SIRAddMulChain::initGPCs() {
   std::vector<unsigned> GPC_606_5_InputsVector(GPC_606_5_Inputs,
                                                GPC_606_5_Inputs + 3);
 
-  SIRGPC GPC_606_5("GPC_606_5", GPC_606_5_InputsVector,
-                   5, 4, 0.355f);
-  GPCs.push_back(GPC_606_5);
+  CompressComponent GPC_606_5("GPC_606_5", GPC_606_5_InputsVector,
+                              5, 4, 0.355f);
+  Library.push_back(GPC_606_5);
 
   // GPC_1325_5
   // Inputs & Outputs
@@ -1409,9 +1497,9 @@ void SIRAddMulChain::initGPCs() {
   std::vector<unsigned> GPC_1325_5_InputsVector(GPC_1325_5_Inputs,
                                                 GPC_1325_5_Inputs + 4);
 
-  SIRGPC GPC_1325_5("GPC_1325_5", GPC_1325_5_InputsVector,
-                    5, 4, 0.355f);
-  GPCs.push_back(GPC_1325_5);
+  CompressComponent GPC_1325_5("GPC_1325_5", GPC_1325_5_InputsVector,
+                               5, 4, 0.355f);
+  Library.push_back(GPC_1325_5);
 
   // GPC_1406_5
   // Inputs & Outputs
@@ -1419,9 +1507,9 @@ void SIRAddMulChain::initGPCs() {
   std::vector<unsigned> GPC_1406_5_InputsVector(GPC_1406_5_Inputs,
                                                 GPC_1406_5_Inputs + 4);
 
-  SIRGPC GPC_1406_5("GPC_1406_5", GPC_1406_5_InputsVector,
-                    5, 4, 0.355f);
-  GPCs.push_back(GPC_1406_5);
+  CompressComponent GPC_1406_5("GPC_1406_5", GPC_1406_5_InputsVector,
+                               5, 4, 0.355f);
+  Library.push_back(GPC_1406_5);
 
   // GPC_1415_5
   // Inputs & Outputs
@@ -1429,29 +1517,180 @@ void SIRAddMulChain::initGPCs() {
   std::vector<unsigned> GPC_1415_5_InputsVector(GPC_1415_5_Inputs,
                                                 GPC_1415_5_Inputs + 4);
 
-  SIRGPC GPC_1415_5("GPC_1415_5", GPC_1415_5_InputsVector,
-                    5, 4, 0.355f);
-  GPCs.push_back(GPC_1415_5);
+  CompressComponent GPC_1415_5("GPC_1415_5", GPC_1415_5_InputsVector,
+                               5, 4, 0.355f);
+  Library.push_back(GPC_1415_5);
 }
 
-bool SIRAddMulChain::needToCompress(std::vector<unsigned> BitNumList, unsigned RowNo) {
+void SIRAddMulChain::initAddChains() {
+  /// AddChain with bitwidth of 16
+  // AddChain_2_16
+  CompressComponent
+    AddChain_2_16 = createAddChainComponent("AddChain_2_16", 2, 16, 16, 0.521);
+  Library.push_back(AddChain_2_16);
+
+  // AddChain_3_16
+  CompressComponent
+    AddChain_3_16 = createAddChainComponent("AddChain_3_16", 3, 16, 16, 0.59);
+  Library.push_back(AddChain_3_16);
+
+  // AddChain_4_16
+  CompressComponent
+    AddChain_4_16 = createAddChainComponent("AddChain_4_16", 4, 16, 44, 0.706);
+  Library.push_back(AddChain_4_16);
+
+  // AddChain_5_16
+  CompressComponent
+    AddChain_5_16 = createAddChainComponent("AddChain_5_16", 5, 16, 32, 1.584);
+  Library.push_back(AddChain_5_16);
+
+  // AddChain_6_16
+  CompressComponent
+    AddChain_6_16 = createAddChainComponent("AddChain_6_16", 6, 16, 60, 1.715);
+  Library.push_back(AddChain_6_16);
+
+  // AddChain_7_16
+  CompressComponent
+    AddChain_7_16 = createAddChainComponent("AddChain_7_16", 7, 16, 48, 1.822);
+  Library.push_back(AddChain_7_16);
+
+  // AddChain_8_16
+  CompressComponent
+    AddChain_8_16 = createAddChainComponent("AddChain_8_16", 8, 16, 76, 2.101);
+  Library.push_back(AddChain_8_16);
+
+  // AddChain_9_16
+  CompressComponent
+    AddChain_9_16 = createAddChainComponent("AddChain_9_16", 9, 16, 64, 2.183);
+  Library.push_back(AddChain_9_16);
+
+  // AddChain_10_16
+  CompressComponent
+    AddChain_10_16 = createAddChainComponent("AddChain_10_16", 10, 16, 92, 2.009);
+  Library.push_back(AddChain_10_16);
+
+  /// AddChain with bitwidth of 32
+  // AddChain_2_32
+  CompressComponent
+    AddChain_2_32 = createAddChainComponent("AddChain_2_32", 2, 32, 32, 0.816);
+  Library.push_back(AddChain_2_32);
+
+  // AddChain_3_32
+  CompressComponent
+    AddChain_3_32 = createAddChainComponent("AddChain_3_32", 3, 32, 32, 0.876);
+  Library.push_back(AddChain_3_32);
+
+  // AddChain_4_32
+  CompressComponent
+    AddChain_4_32 = createAddChainComponent("AddChain_4_32", 4, 32, 92, 1.163);
+  Library.push_back(AddChain_4_32);
+
+  // AddChain_5_32
+  CompressComponent
+    AddChain_5_32 = createAddChainComponent("AddChain_5_32", 5, 32, 64, 2.199);
+  Library.push_back(AddChain_5_32);
+
+  // AddChain_6_32
+  CompressComponent
+    AddChain_6_32 = createAddChainComponent("AddChain_6_32", 6, 32, 124, 2.343);
+  Library.push_back(AddChain_6_32);
+
+  // AddChain_7_32
+  CompressComponent
+    AddChain_7_32 = createAddChainComponent("AddChain_7_32", 7, 32, 96, 2.343);
+  Library.push_back(AddChain_7_32);
+
+  // AddChain_8_32
+  CompressComponent
+    AddChain_8_32 = createAddChainComponent("AddChain_8_32", 8, 32, 156, 2.047);
+  Library.push_back(AddChain_8_32);
+
+  // AddChain_9_32
+  CompressComponent
+    AddChain_9_32 = createAddChainComponent("AddChain_9_32", 9, 32, 128, 2.265);
+  Library.push_back(AddChain_9_32);
+
+  // AddChain_10_32
+  CompressComponent
+    AddChain_10_32 = createAddChainComponent("AddChain_10_32", 10, 32, 188, 2.504);
+  Library.push_back(AddChain_10_32);
+
+  /// AddChain with bitwidth of 64
+  // AddChain_2_64
+  CompressComponent
+    AddChain_2_64 = createAddChainComponent("AddChain_2_64", 2, 64, 64, 1.24);
+  Library.push_back(AddChain_2_64);
+
+  // AddChain_3_64
+  CompressComponent
+    AddChain_3_64 = createAddChainComponent("AddChain_3_64", 3, 64, 64, 1.255);
+  Library.push_back(AddChain_3_64);
+
+  // AddChain_4_64
+  CompressComponent
+    AddChain_4_64 = createAddChainComponent("AddChain_4_64", 4, 64, 188, 1.574);
+  Library.push_back(AddChain_4_64);
+
+  // AddChain_5_64
+  CompressComponent
+    AddChain_5_64 = createAddChainComponent("AddChain_5_64", 5, 64, 128, 2.326);
+  Library.push_back(AddChain_5_64);
+
+  // AddChain_6_64
+  CompressComponent
+    AddChain_6_64 = createAddChainComponent("AddChain_6_64", 6, 64, 254, 2.784);
+  Library.push_back(AddChain_6_64);
+
+  // AddChain_7_64
+  CompressComponent
+    AddChain_7_64 = createAddChainComponent("AddChain_7_64", 7, 64, 192, 2.143);
+  Library.push_back(AddChain_7_64);
+
+  // AddChain_8_64
+  CompressComponent
+    AddChain_8_64 = createAddChainComponent("AddChain_8_64", 8, 64, 316, 2.9);
+  Library.push_back(AddChain_8_64);
+
+  // AddChain_9_64
+  CompressComponent
+    AddChain_9_64 = createAddChainComponent("AddChain_9_64", 9, 64, 256, 2.607);
+  Library.push_back(AddChain_9_64);
+
+  // AddChain_10_64
+  CompressComponent
+    AddChain_10_64 = createAddChainComponent("AddChain_10_64", 10, 64, 380, 3.033);
+  Library.push_back(AddChain_10_64);
+}
+
+void SIRAddMulChain::initLibrary() {
+  // Initialize the GPCs.
+  initGPCs();
+
+  // Initialize the AddChains.
+  initAddChains();
+}
+
+bool SIRAddMulChain::needToCompress(std::vector<unsigned> BitNumList,
+                                    unsigned RowNo) {
   return true;
 }
 
-MatrixType SIRAddMulChain::compressTMatrixUsingGPC(MatrixType TMatrix, unsigned GPCIdx,
-                                                   unsigned RowNo, unsigned Stage,
-                                                   raw_fd_ostream &Output) {
+MatrixType
+  SIRAddMulChain::compressTMatrixUsingComponent(MatrixType TMatrix,
+                                                unsigned ComponentIdx,
+                                                unsigned RowNo, unsigned Stage,
+                                                raw_fd_ostream &Output) {
   // Get information of TMatrix.
   std::vector<unsigned> BitNumInCurrentStageList
     = getBitNumInCurrentStageListInTMatrix(TMatrix, Stage);
 
-  // Get the GPC to be used.
-  SIRGPC GPC = GPCs[GPCIdx];
+  // Get the Component to be used.
+  CompressComponent Component = Library[ComponentIdx];
 
   // Collect input dots.
   float InputArrivalTime = 0.0f;
   std::vector<std::vector<DotType> > InputDots;
-  std::vector<unsigned> InputDotNums = GPC.getInputDotNums();
+  std::vector<unsigned> InputDotNums = Component.getInputDotNums();
   for (unsigned i = 0; i < InputDotNums.size(); ++i) {
     unsigned InputDotNum = InputDotNums[i];
 
@@ -1497,12 +1736,12 @@ MatrixType SIRAddMulChain::compressTMatrixUsingGPC(MatrixType TMatrix, unsigned 
 
   // Get name and delay for output dots.
   std::string OutputName
-    = "gpc_result_" + utostr_32(GPC_NUM++) + "_" + utostr_32(Stage);
+    = "gpc_result_" + utostr_32(Component_NUM++) + "_" + utostr_32(Stage);
   float OutputArrivalTime
-    = InputArrivalTime + (GPC.getCriticalDelay() + NET_DELAY) / VFUs::Period;
+    = InputArrivalTime + (Component.getCriticalDelay() + NET_DELAY) / VFUs::Period;
 
   // Insert the output dots into TMatrix.
-  unsigned OutputDotNum = GPC.getOutputDotNum();
+  unsigned OutputDotNum = Component.getOutputDotNum();
   for (unsigned i = 0; i < OutputDotNum; ++i) {
     // Do not insert if exceed the range of TMatrix.
     if (RowNo + i >= TMatrix.size())
@@ -1514,34 +1753,50 @@ MatrixType SIRAddMulChain::compressTMatrixUsingGPC(MatrixType TMatrix, unsigned 
                                                                Stage + 1)));
   }
 
-  // Generate GPC instance.
-  generateGPCInstance(GPCIdx, InputDots, OutputName, OutputArrivalTime, Output);
+  // Generate component instance.
+  generateComponentInstance(ComponentIdx, InputDots, OutputName, OutputArrivalTime, Output);
 
   printTMatrixForDebug(TMatrix);
 
   return TMatrix;
 }
 
-unsigned SIRAddMulChain::getHighestPriorityGPC(MatrixType TMatrix,
-                                               unsigned RowNo, unsigned Stage) {
+bool sortComponent(std::pair<unsigned, std::pair<float, unsigned> > OpA,
+                   std::pair<unsigned, std::pair<float, unsigned> > OpB) {
+  if (OpA.second.first < OpB.second.first)
+    return true;
+  else if (OpA.second.first > OpB.second.first)
+    return false;
+  else {
+    if (OpA.second.second < OpB.second.second)
+      return true;
+    else
+      return false;
+  }
+}
+
+unsigned
+  SIRAddMulChain::getHighestPriorityComponent(MatrixType TMatrix,
+                                              unsigned RowNo, unsigned Stage) {
   unsigned HighestPriorityGPCIdx;
 
   // Get information of TMatrix.
   std::vector<unsigned> BitNumInCurrentStageList
     = getBitNumInCurrentStageListInTMatrix(TMatrix, Stage);
 
-  // Try all GPCs and evaluate its performance.
-  std::vector<std::pair<unsigned, float> > PriorityList;
-  for (unsigned i = 0; i < GPCs.size(); ++i) {
-    SIRGPC GPC = GPCs[i];
+  // Try all library and evaluate its priority which is considered in two
+  // aspects: 1) performance 2) input dot num in row 0.
+  std::vector<std::pair<unsigned, std::pair<float, unsigned> > > PriorityList;
+  for (unsigned i = 0; i < Library.size(); ++i) {
+    CompressComponent Component = Library[i];
 
     // Get the information of current GPC.
-    std::vector<unsigned> InputDotNums = GPC.getInputDotNums();
-    unsigned OutputDotNum = GPC.getOutputDotNum();
-    float CriticalDelay = GPC.getCriticalDelay();
-    unsigned Area = GPC.getArea();
+    std::vector<unsigned> InputDotNums = Component.getInputDotNums();
+    unsigned OutputDotNum = Component.getOutputDotNum();
+    float CriticalDelay = Component.getCriticalDelay();
+    unsigned Area = Component.getArea();
 
-    // Get the real input dots number.
+    // Get the real input dots number and output dot number.
     unsigned RealInputDotNum = 0;
     for (unsigned j = 0; j < InputDotNums.size(); ++j) {
       if (RowNo + j < TMatrix.size()) {
@@ -1549,6 +1804,7 @@ unsigned SIRAddMulChain::getHighestPriorityGPC(MatrixType TMatrix,
                                     BitNumInCurrentStageList[RowNo + j]);
       }
     }
+    unsigned RealOutputDotNum = std::min(OutputDotNum, TMatrix.size() - RowNo + 1);
 
     // Get the earliest and latest input arrival time.
     float EarliestInputArrivalTime = 9999.9999f;
@@ -1570,26 +1826,30 @@ unsigned SIRAddMulChain::getHighestPriorityGPC(MatrixType TMatrix,
     }
 
     // Evaluate the performance.
-    unsigned CompressedDotNum = RealInputDotNum - OutputDotNum;
+    unsigned CompressedDotNum = RealInputDotNum > RealOutputDotNum ? 
+                                  RealInputDotNum - RealOutputDotNum : 0;
     float RealDelay
       = CriticalDelay + NET_DELAY + LatestInputArrivalTime - EarliestInputArrivalTime;
-    float Performance = (CompressedDotNum * CompressedDotNum) / (RealDelay * Area);
+    //float Performance = (CompressedDotNum * CompressedDotNum) / (RealDelay * Area);
+    float Performance = CompressedDotNum / (RealDelay * Area);
 
-    PriorityList.push_back(std::make_pair(i, Performance));
+    PriorityList.push_back(std::make_pair(i, std::make_pair(Performance,
+                                                            InputDotNums[0])));
   }
 
   // Sort the PriorityList and get the highest one.
-  std::sort(PriorityList.begin(), PriorityList.end(), LessThan);
+  std::sort(PriorityList.begin(), PriorityList.end(), sortComponent);
 
   // Debug
-//   errs() << "GPC performance list is as follows:\n";
+//   errs() << "Component performance list is as follows:\n";
 //   for (unsigned i = 0; i < PriorityList.size(); ++i) {
-//     unsigned GPCIdx = PriorityList[i].first;
+//     unsigned ComponentIdx = PriorityList[i].first;
 // 
-//     SIRGPC GPC = GPCs[GPCIdx];
+//     CompressComponent Component = Library[ComponentIdx];
 // 
-//     errs() << GPC.getName() << "--" << PriorityList[i].second << "\n";
+//     errs() << Component.getName() << "--" << PriorityList[i].second.first << "\n";
 //   }
+
 
   return PriorityList.back().first;
 }
@@ -1648,8 +1908,8 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix,
   for (unsigned i = 0; i < TMatrix.size() - 1; ++i) {
     // Compress current row if it has more than target final bit numbers.
     while (BitNumList[i] > 3 && BitNumInCurrentStageList[i] >= 3) {
-      unsigned GPCIdx = getHighestPriorityGPC(TMatrix, i, Stage);
-      TMatrix = compressTMatrixUsingGPC(TMatrix, GPCIdx, i, Stage, Output);
+      unsigned ComponentIdx = getHighestPriorityComponent(TMatrix, i, Stage);
+      TMatrix = compressTMatrixUsingComponent(TMatrix, ComponentIdx, i, Stage, Output);
 
       // Do some clean up and optimize work.
       TMatrix = eliminateOneBitInTMatrix(TMatrix);
@@ -1678,6 +1938,7 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix,
 float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
                                      unsigned OperandNum, unsigned OperandWidth,
                                      raw_fd_ostream &Output) {
+  // Code for debug.
   printTMatrixForDebug(TMatrix);
 
   /// Prepare for the compress progress
@@ -1690,6 +1951,7 @@ float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
   // Sort the TMatrix.
   TMatrix = sortTMatrix(TMatrix);
 
+  // Code for debug.
   printTMatrixForDebug(TMatrix);
 
   /// Start to compress the TMatrix
@@ -1928,80 +2190,84 @@ float SIRAddMulChain::hybridTreeCodegen(MatrixType Matrix, std::string MatrixNam
   // The biggest arrival time will be the limit of add chains that can be built.
   float LimitTime = OpArrivalTime.back().second;
   
-  // Traverse the OperandArrivalTimeMap to build add chain as many as possible.
-  std::vector<std::pair<std::vector<std::pair<unsigned, float> >, float> > AddChainList;
-  std::set<unsigned> OpsInAddChain;
-  bool Continue = true;
-  while (Continue) {
-    Continue = false;
-  
-    std::vector<std::pair<unsigned, float> > AddChain;
-    for (unsigned i = 0; i < OpArrivalTime.size(); ++i) {
-      // Ignore the operand that is already included in other add chains.
-      if (OpsInAddChain.count(OpArrivalTime[i].first))
-        continue;
-
-      std::vector<std::pair<unsigned, float> > PotentialAddChain = AddChain;
-      PotentialAddChain.push_back(OpArrivalTime[i]);
-  
-      float PotentialAddChainResultTime = predictAddChainResultTime(PotentialAddChain, Matrix);
-      // If the result time is within the limit, then the potential add chain
-      // is valid. Or we will try to insert more operands into this chain until
-      // it become invalid.
-      if (PotentialAddChainResultTime <= LimitTime && PotentialAddChain.size() <= 3) {
-        AddChain = PotentialAddChain;
-        continue;
-      } else
-        break;
-    }
-  
-    // If we succeed to build a add chain, index it.
-    if (AddChain.size() > 1) {
-      float AddChainResultTime = predictAddChainResultTime(AddChain, Matrix);
-      AddChainList.push_back(std::make_pair(AddChain, AddChainResultTime));
-
-      for (unsigned i = 0; i < AddChain.size(); ++i)
-        OpsInAddChain.insert(AddChain[i].first);
-
-      Continue = true;
-    }
-  }
-
-  /// Rebuild the matrix according to the partition.
-  MatrixType NewMatrix;
-
-  // Insert the add chain result to the matrix to be compressed later.
-  for (unsigned i = 0; i < AddChainList.size(); ++i) {
-    std::pair<std::vector<std::pair<unsigned, float> >, float> AddChain = AddChainList[i];
-    std::vector<std::pair<unsigned, float> > AddChainOps = AddChain.first;
-    float AddChainResultTime = AddChain.second;
-
-    // Create a operand represent the add chain result.
-    std::string AddChainResultName = "add_chain_result_" + utostr_32(i);
-
-    // Generate the implementation of the add chains.
-    generateAddChain(Matrix, AddChainOps, AddChainResultName, Output);
-
-    MatrixRowType Row;
-    for (unsigned j = 0; j < ColNum; ++j) {
-      std::string DotName = AddChainResultName + "[" + utostr_32(j) + "]";
-      Row.push_back(std::make_pair(DotName, std::make_pair(AddChainResultTime, 0)));
-    }
-
-    NewMatrix.push_back(Row);
-  }
-  // All operands that are not included in add chain will be compressed later.
-  for (unsigned i = 0; i < RowNum; ++i) {
-    // Ignore the operands in add chain.
-    if (OpsInAddChain.count(i))
-      continue;
-
-    NewMatrix.push_back(Matrix[i]);
-  }
+//   // Traverse the OperandArrivalTimeMap to build add chain as many as possible.
+//   std::vector<std::pair<std::vector<std::pair<unsigned, float> >, float> > AddChainList;
+//   std::set<unsigned> OpsInAddChain;
+//   bool Continue = true;
+//   while (Continue) {
+//     Continue = false;
+//   
+//     std::vector<std::pair<unsigned, float> > AddChain;
+//     for (unsigned i = 0; i < OpArrivalTime.size(); ++i) {
+//       // Ignore the operand that is already included in other add chains.
+//       if (OpsInAddChain.count(OpArrivalTime[i].first))
+//         continue;
+// 
+//       std::vector<std::pair<unsigned, float> > PotentialAddChain = AddChain;
+//       PotentialAddChain.push_back(OpArrivalTime[i]);
+//   
+//       float PotentialAddChainResultTime = predictAddChainResultTime(PotentialAddChain, Matrix);
+//       // If the result time is within the limit, then the potential add chain
+//       // is valid. Or we will try to insert more operands into this chain until
+//       // it become invalid.
+//       if (PotentialAddChainResultTime <= LimitTime && PotentialAddChain.size() <= 9) {
+//         AddChain = PotentialAddChain;
+//         continue;
+//       } else
+//         break;
+//     }
+//   
+//     // If we succeed to build a add chain, index it.
+//     if (AddChain.size() > 1) {
+//       float AddChainResultTime = predictAddChainResultTime(AddChain, Matrix);
+//       AddChainList.push_back(std::make_pair(AddChain, AddChainResultTime));
+// 
+//       for (unsigned i = 0; i < AddChain.size(); ++i)
+//         OpsInAddChain.insert(AddChain[i].first);
+// 
+//       Continue = true;
+//     }
+//   }
+// 
+//   /// Rebuild the matrix according to the partition.
+//   MatrixType NewMatrix;
+// 
+//   // Insert the add chain result to the matrix to be compressed later.
+//   for (unsigned i = 0; i < AddChainList.size(); ++i) {
+//     std::pair<std::vector<std::pair<unsigned, float> >, float> AddChain = AddChainList[i];
+//     std::vector<std::pair<unsigned, float> > AddChainOps = AddChain.first;
+//     float AddChainResultTime = AddChain.second;
+// 
+//     // Create a operand represent the add chain result.
+//     std::string AddChainResultName = "add_chain_result_" + utostr_32(i);
+// 
+//     // Generate the implementation of the add chains.
+//     generateAddChain(Matrix, AddChainOps, AddChainResultName, Output);
+// 
+//     MatrixRowType Row;
+//     for (unsigned j = 0; j < ColNum; ++j) {
+//       std::string DotName = AddChainResultName + "[" + utostr_32(j) + "]";
+//       Row.push_back(std::make_pair(DotName, std::make_pair(AddChainResultTime, 0)));
+//     }
+// 
+//     NewMatrix.push_back(Row);
+//   }
+//   // All operands that are not included in add chain will be compressed later.
+//   for (unsigned i = 0; i < RowNum; ++i) {
+//     // Ignore the operands in add chain.
+//     if (OpsInAddChain.count(i))
+//       continue;
+// 
+//     NewMatrix.push_back(Matrix[i]);
+//   }
+// 
+//   // Compress the NewMatrix.
+//   MatrixType TMatrix = transportMatrix(NewMatrix, NewMatrix.size(), ColNum);
+//   float ResultArrivalTime = compressMatrix(TMatrix, MatrixName, NewMatrix.size(), ColNum, Output);
 
   // Compress the NewMatrix.
-  MatrixType NewTMatrix = transportMatrix(NewMatrix, NewMatrix.size(), ColNum);
-  float ResultArrivalTime = compressMatrix(NewTMatrix, MatrixName, NewMatrix.size(), ColNum, Output);
+  MatrixType TMatrix = transportMatrix(Matrix, Matrix.size(), ColNum);
+  float ResultArrivalTime = compressMatrix(TMatrix, MatrixName, Matrix.size(), ColNum, Output);
 
   return ResultArrivalTime;
 }
