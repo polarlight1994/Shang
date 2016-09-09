@@ -1136,7 +1136,7 @@ namespace {
       SIRPass::getAnalysisUsage(AU);
       AU.addRequired<DataLayout>();
       AU.addRequiredID(SIRSchedulingID);
-      AU.addRequiredID(SIRAddMulChainID);
+      AU.addRequiredID(SIRMOAOptID);
       AU.addRequiredID(SIRBitMaskAnalysisID);
       AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
       AU.addRequiredID(SIRTimingScriptGenID);
@@ -1562,15 +1562,15 @@ Pass *llvm::createSIR2RTLPass() {
 //===----------------------------------------------------------------------===//
 
 INITIALIZE_PASS_BEGIN(SIR2RTL, "shang-sir-verilog-writer",
-  "Write the RTL verilog code to output file.",
-  false, true)
+                      "Write the RTL verilog code to output file.",
+                      false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(SIRScheduling)
-  INITIALIZE_PASS_DEPENDENCY(SIRAddMulChain)
+  INITIALIZE_PASS_DEPENDENCY(SIRMOAOpt)
   INITIALIZE_PASS_DEPENDENCY(SIRBitMaskAnalysis)
   INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForCodeGen)
   INITIALIZE_PASS_DEPENDENCY(SIRTimingScriptGen)
-  INITIALIZE_PASS_END(SIR2RTL, "shang-sir-verilog-writer",
-    "Write the RTL verilog code to output file.",
-    false, true)
+INITIALIZE_PASS_END(SIR2RTL, "shang-sir-verilog-writer",
+                    "Write the RTL verilog code to output file.",
+                    false, true)
 

@@ -33,18 +33,22 @@ static float ADD_CHAIN_32_DELAY[23] = { 0.816, 0.876, 1.163, 2.199, 2.343,
 static float ADD_CHAIN_64_DELAY[9] = {1.24, 1.255, 1.574, 2.326, 2.784, 2.784, 2.9, 2.9, 3.033};
 
 namespace {
-struct SIRAddMulChain : public SIRPass {
+struct SIRMOAOpt : public SIRPass {
   static char ID;
   DataLayout *TD;
   SIR *SM;
 
-  unsigned ChainNum;
+  // Output for debug.
+  std::string Error;
+  raw_fd_ostream DebugOutput;
 
-  std::set<IntrinsicInst *> Visited;
-  std::set<IntrinsicInst *> Collected;
-  std::map<IntrinsicInst *, std::vector<IntrinsicInst *> > ChainMap;
-  std::map<IntrinsicInst *, IntrinsicInst *> ChainRoot2Compressor;
-  std::map<IntrinsicInst *, IntrinsicInst *> Compressor2ChainRoot;
+  // To identify if the adder has been visited in collecting operands
+  // of the MOAs. So we can avoid a adder been counted in two MOAs which
+  // will lead to bad area performance.
+  std::set<IntrinsicInst *> VisitedAdders;
+  std::vector<IntrinsicInst *> MOAs;
+  std::map<IntrinsicInst *, IntrinsicInst *> MOA2PseudoHybridTreeInst;
+  std::map<IntrinsicInst *, std::vector<Value *> > MOA2Ops;
 
   std::map<Value *, float> ValArrivalTime;
 
@@ -79,37 +83,45 @@ struct SIRAddMulChain : public SIRPass {
     unsigned getArea() { return Area; }
   };
 
+  // The library of compress components.
   std::vector<CompressComponent> Library;
 
-  SIRAddMulChain() : SIRPass(ID), ChainNum(0), DebugOutput("DebugMatrix.txt", Error) {
-    initializeSIRAddMulChainPass(*PassRegistry::getPassRegistry());
+  SIRMOAOpt() : SIRPass(ID), DebugOutput("DebugMatrix.txt", Error) {
+    initializeSIRMOAOptPass(*PassRegistry::getPassRegistry());
   }
 
   bool runOnSIR(SIR &SM);
-  void collectAddMulChain();
-  void collect(IntrinsicInst *ChainRoot);
 
+  // Optimization on operands of MOA.
   std::vector<Value *> eliminateIdenticalOperands(std::vector<Value *> Operands,
-                                                  Value *ChainRoot, unsigned BitWidth);
+                                                  Value *MOA, unsigned BitWidth);
   std::vector<Value *> OptimizeOperands(std::vector<Value *> Operands,
-                                        Value *ChainRoot, unsigned BitWidth);
+                                        Value *MOA, unsigned BitWidth);
 
-  MatrixType createMatrixForOperands(std::vector<Value *> Operands,
-                                     unsigned RowNum, unsigned ColNum);
-  MatrixType sumAllSignBitsInMatrix(MatrixType Matrix, unsigned RowNum, unsigned ColumnNum);
+  void generateHybridTreeForMOA(IntrinsicInst *MOA, raw_fd_ostream &Output);
+  void generateHybridTrees();
 
-  float getAddChainDelay(unsigned OpBitWidth, unsigned OpNum);
-  float predictAddChainResultTime(std::vector<std::pair<unsigned, float> > AddChain,
-                                  MatrixType Matrix);
+  void collectMOAOps(IntrinsicInst *MOA);
+  void collectMOAs();
+
+  
+
+  MatrixType createDotMatrix(std::vector<Value *> Operands,
+                             unsigned RowNum, unsigned ColNum);
+  MatrixType sumAllSignBitsInMatrix(MatrixType Matrix,
+                                    unsigned RowNum, unsigned ColumnNum);
 
   float getLatency(Instruction *Inst);
   float getOperandArrivalTime(Value *Operand);
 
   bool isConstantInt(MatrixRowType Row);
   unsigned getOperandBitWidth(MatrixRowType Row);
-  std::vector<unsigned> getSignBitNumListInMatrix(MatrixType Matrix);
-  std::vector<unsigned> getBitNumInCurrentStageListInTMatrix(MatrixType TMatrix, unsigned Stage);
-  MatrixType transportMatrix(MatrixType Matrix, unsigned RowNum, unsigned ColumnNum);
+  std::vector<unsigned>
+    getSignBitNumListInMatrix(MatrixType Matrix);
+  std::vector<unsigned>
+    getBitNumInCurrentStageListInTMatrix(MatrixType TMatrix, unsigned Stage);
+  MatrixType
+    transportMatrix(MatrixType Matrix, unsigned RowNum, unsigned ColumnNum);
 
   std::vector<unsigned> getOneBitNumListInTMatrix(MatrixType TMatrix);
   std::vector<unsigned> getBitNumListInTMatrix(MatrixType TMatrix);
@@ -117,14 +129,6 @@ struct SIRAddMulChain : public SIRPass {
   MatrixType sortTMatrix(MatrixType TMatrix);
   MatrixType sumAllOneBitsInTMatrix(MatrixType TMatrix);
   MatrixType eliminateOneBitInTMatrix(MatrixType TMatrix);
-
-  std::pair<float, float> generateCompressor(std::vector<DotType> CompressCouple,
-                                             std::string SumName, std::string CoutName,
-                                             raw_fd_ostream &Output);
-  void generateComponentInstance(unsigned ComponentIdx,
-                                 std::vector<std::vector<DotType> > InputDots,
-                                 std::string OutputName, float OutputArrivalTime,
-                                 raw_fd_ostream &Output);
 
   // Initial the GPCs.
   CompressComponent createAddChainComponent(std::string Name, unsigned OpNum,
@@ -134,34 +138,29 @@ struct SIRAddMulChain : public SIRPass {
   void initAddChains();
   void initLibrary();
 
-  bool needToCompress(std::vector<unsigned> BitNumList, unsigned RowNo);
   MatrixType compressTMatrixUsingComponent(MatrixType TMatrix, unsigned ComponentIdx,
                                            unsigned RowNo, unsigned Stage,
                                            raw_fd_ostream &Output);
-  unsigned getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo, unsigned Stage);
+  unsigned getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
+                                       unsigned Stage);
   MatrixType compressTMatrixInStage(MatrixType TMatrix,
                                     unsigned Stage, raw_fd_ostream &Output);
   float compressMatrix(MatrixType TMatrix, std::string MatrixName,
                        unsigned OperandNum, unsigned OperandWidth,
                        raw_fd_ostream &Output);
 
-  void generateAddChain(MatrixType Matrix, std::vector<std::pair<unsigned, float> > Ops,
-                        std::string ResultName, raw_fd_ostream &Output);
   float hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
                           unsigned RowNum, unsigned ColNum, raw_fd_ostream &Output);
 
-  std::string Error;
-  raw_fd_ostream DebugOutput;
+  // The function to output verilog and debug files.
   void printTMatrixForDebug(MatrixType TMatrix);
-
-  void generateDotMatrix();
-  void generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_ostream &Output);
-  void replaceWithCompressor();
-
   void printGPCModule(raw_fd_ostream &Output);
   void printAddChainModule(unsigned OpNum, unsigned BitWidth, raw_fd_ostream &Output);
   void printCompressComponent(raw_fd_ostream &Output);
-  void printAllChain();
+  void printComponentInstance(unsigned ComponentIdx,
+                              std::vector<std::vector<DotType> > InputDots,
+                              std::string OutputName, float OutputArrivalTime,
+                              raw_fd_ostream &Output);
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     SIRPass::getAnalysisUsage(AU);
@@ -172,18 +171,19 @@ struct SIRAddMulChain : public SIRPass {
 };
 }
 
-char SIRAddMulChain::ID = 0;
-char &llvm::SIRAddMulChainID = SIRAddMulChain::ID;
-INITIALIZE_PASS_BEGIN(SIRAddMulChain, "sir-add-mul-chain",
-                      "Perform the add-mul chain optimization",
+char SIRMOAOpt::ID = 0;
+char &llvm::SIRMOAOptID = SIRMOAOpt::ID;
+INITIALIZE_PASS_BEGIN(SIRMOAOpt, "sir-multi-operand-optimization",
+                      "Perform the multi-operand adder optimization",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(SIRBitMaskAnalysis)
-INITIALIZE_PASS_END(SIRAddMulChain, "sir-add-mul-chain",
-                    "Perform the add-mul chain optimization",
+INITIALIZE_PASS_END(SIRMOAOpt, "sir-multi-operand-optimization",
+                    "Perform the multi-operand adder optimization",
                     false, true)
 
-static bool LessThan(std::pair<unsigned, float> OpA, std::pair<unsigned, float> OpB) {
+static bool LessThan(std::pair<unsigned, float> OpA,
+                     std::pair<unsigned, float> OpB) {
   return OpA.second < OpB.second;
 }
 
@@ -221,288 +221,52 @@ static bool isLeafValue(SIR *SM, Value *V) {
   return false;
 }
 
-bool SIRAddMulChain::runOnSIR(SIR &SM) {
+bool SIRMOAOpt::runOnSIR(SIR &SM) {
   this->TD = &getAnalysis<DataLayout>();
   this->SM = &SM;
 
-  collectAddMulChain();
-  printAllChain();
+  // Extract multi-operand adders
+  collectMOAs();
 
-  replaceWithCompressor();
-  generateDotMatrix();
+  // Generate hybrid tree.
+  generateHybridTrees();
 
   return false;
 }
 
-void SIRAddMulChain::collectAddMulChain() {
-  std::vector<IntrinsicInst *> AddChainRootVector;
-
-  Function *F = SM->getFunction();
-
-  ReversePostOrderTraversal<BasicBlock *> RPO(&F->getEntryBlock());
-  typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
-
-  for (bb_top_iterator BI = RPO.begin(), BE = RPO.end(); BI != BE; ++BI) {
-    BasicBlock *BB = *BI;
-
-    typedef BasicBlock::iterator inst_iterator;
-    for (inst_iterator II = BB->begin(), IE = BB->end(); II != IE; ++II) {
-      Instruction *Inst = II;
-
-      if (IntrinsicInst *InstII = dyn_cast<IntrinsicInst>(Inst)) {
-        if (InstII->getIntrinsicID() == Intrinsic::shang_add ||
-            InstII->getIntrinsicID() == Intrinsic::shang_addc) {
-          unsigned UserNum = 0;
-          unsigned UsedByChainNum = 0;
-          typedef Value::use_iterator use_iterator;
-          for (use_iterator UI = InstII->use_begin(), UE = InstII->use_end(); UI != UE; ++UI) {
-            Value *UserVal = *UI;
-
-            if (IntrinsicInst *UserInst = dyn_cast<IntrinsicInst>(UserVal)) {
-              ++UserNum;
-
-              if (UserInst->getIntrinsicID() == Intrinsic::shang_add || UserInst->getIntrinsicID() == Intrinsic::shang_addc)
-                ++UsedByChainNum;
-            }
-          }
-
-          if (UsedByChainNum == 0 || UserNum >= 2)
-            AddChainRootVector.push_back(InstII);
-        }
-      }
-    }
-  }
-
-  for (unsigned i = 0; i < AddChainRootVector.size(); ++i) {
-    IntrinsicInst *AddChainRoot = AddChainRootVector[i];
-    collect(AddChainRoot);
-  }
-}
-
-void SIRAddMulChain::collect(IntrinsicInst *ChainRoot) {
-  assert(ChainRoot->getIntrinsicID() == Intrinsic::shang_add ||
-         ChainRoot->getIntrinsicID() == Intrinsic::shang_addc &&
-         "Unexpected intrinsic instruction type!");
-
-  typedef Instruction::op_iterator op_iterator;
-  std::vector<std::pair<IntrinsicInst *, op_iterator> > VisitStack;
-
-  VisitStack.push_back(std::make_pair(ChainRoot, ChainRoot->op_begin()));
-
-  unsigned Depth = 0;
-  std::vector<IntrinsicInst *> Chain;
-  while(!VisitStack.empty()) {
-    IntrinsicInst *CurNode = VisitStack.back().first;
-    op_iterator &I = VisitStack.back().second;
-
-    assert(CurNode->getIntrinsicID() == Intrinsic::shang_add ||
-           CurNode->getIntrinsicID() == Intrinsic::shang_addc && "Unexpected type!");
-
-    // All children of current node have been visited.
-    if (I == CurNode->op_end()) {
-      VisitStack.pop_back();
-
-      if (Depth != 0) {
-         Chain.push_back(CurNode);
-         Collected.insert(CurNode);
-      }
-
-      continue;
-    }
-
-    // Otherwise, remember the node and visit its children first.
-    Value *ChildVal = *I;
-    ++I;
-    IntrinsicInst *ChildInst = dyn_cast<IntrinsicInst>(ChildVal);
-
-    if (!ChildInst)
-      continue;
-
-    if (Collected.count(ChildInst))
-      continue;
-
-    unsigned UsedByChainNum = 0;
-    typedef Value::use_iterator use_iterator;
-    for (use_iterator UI = ChildInst->use_begin(), UE = ChildInst->use_end(); UI != UE; ++UI) {
-      Value *UserVal = *UI;
-
-      if (IntrinsicInst *UserInst = dyn_cast<IntrinsicInst>(UserVal))
-        ++UsedByChainNum;
-    }
-    if (UsedByChainNum >= 2)
-      continue;
-
-    if (ChildInst->getIntrinsicID() == Intrinsic::shang_add || ChildInst->getIntrinsicID() == Intrinsic::shang_addc) {
-      VisitStack.push_back(std::make_pair(ChildInst, ChildInst->op_begin()));
-      Depth++;
-    }
-  }
-
-  if (Depth != 0 && Chain.size() > 2) {
-    ChainMap.insert(std::make_pair(ChainRoot, Chain));
-    Collected.insert(ChainRoot);
-  }
-}
-
-std::vector<Value *> SIRAddMulChain::eliminateIdenticalOperands(std::vector<Value *> Operands, Value *ChainRoot, unsigned BitWidth) {
-  std::vector<Value *> FinalOperands;
-
-  std::set<Value *> Visited;
-  std::vector<std::pair<Value *, unsigned> > OpNums;
-  for (unsigned i = 0; i < Operands.size(); ++i) {
-    Value *Op = Operands[i];
-
-    // First index the constant integer.
-    if (isa<ConstantInt>(Op)) {
-      SM->indexKeepVal(Op);
-      FinalOperands.push_back(Op);
-      continue;
-    }
-
-    // Then index the repeated operand and its numbers.
-    if (!Visited.count(Op))
-      OpNums.push_back(std::make_pair(Op, 1));
-    else {
-      for (unsigned j = 0; j < OpNums.size(); ++j) {
-        Value *SameOp = OpNums[j].first;
-
-        if (Op == SameOp)
-          OpNums[j].second++;
-      }
-    }
-  }
-
-  // Initial a datapath builder to handle the repeated operand.
-  SIRDatapathBuilder Builder(SM, *TD);
-
-  typedef std::vector<std::pair<Value *, unsigned> >::iterator iterator;
-  for (iterator I = OpNums.begin(), E = OpNums.end(); I != E; ++I) {
-    Value *Op = I->first;
-
-    unsigned OpBitWidth = Builder.getBitWidth(Op);
-    unsigned Num = I->second;
-
-    if (Num == 1) {
-      SM->indexKeepVal(Op);
-      FinalOperands.push_back(Op);
-      continue;
-    }
-
-    if (Num == 2) {
-      Value *ExtractResult = Builder.createSBitExtractInst(Op, OpBitWidth - 1, 0, Builder.createIntegerType(OpBitWidth - 1), ChainRoot, true);
-      Value *ShiftResult = Builder.createSBitCatInst(ExtractResult, Builder.createIntegerValue(1, 0), Op->getType(), ChainRoot, true);
-
-      SIRBitMask OpMask = SM->getBitMask(Op);
-      OpMask = OpMask.shl(1);
-
-      SM->IndexVal2BitMask(ShiftResult, OpMask);
-      SM->indexKeepVal(ShiftResult);
-      FinalOperands.push_back(ShiftResult);
-    } else {
-      llvm_unreachable("Not handled yet!");
-    }
-  }
-
-  return FinalOperands;
-}
-
-std::vector<Value *> SIRAddMulChain::OptimizeOperands(std::vector<Value *> Operands, Value *ChainRoot, unsigned BitWidth) {
-  // Eliminate the identical operands in add chain.
-  std::vector<Value *> OptOperands = eliminateIdenticalOperands(Operands, ChainRoot, BitWidth);
-
-  return OptOperands;
-}
-
-MatrixType SIRAddMulChain::createMatrixForOperands(std::vector<Value *> Operands, unsigned RowNum,
-                                                   unsigned ColNum) {
-  MatrixType Matrix;
-
-  // Initial a empty matrix first.
+float SIRMOAOpt::hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
+                                   unsigned RowNum, unsigned ColNum,
+                                   raw_fd_ostream &Output) {
+  // Print the declaration of the module.  
+  Output << "module " << "compressor_" << MatrixName << "(\n";
   for (unsigned i = 0; i < RowNum; ++i) {
-    MatrixRowType Row;
-
-    for (unsigned j = 0; j < ColNum; ++j)
-      Row.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
-
-    Matrix.push_back(Row);
+    Output << "\tinput wire[";
+    Output << utostr_32(ColNum - 1) << ":0] operand_" << utostr_32(i) << ",\n";
   }
+  Output << "\toutput wire[";
+  Output << utostr_32(ColNum - 1) << ":0] result\n);\n\n";
 
-  for (unsigned i = 0; i < RowNum; ++i) {
-    Value *Operand = Operands[i];
+  // Optimize the dot matrix taking advantage of the sign bits.
+  Matrix = sumAllSignBitsInMatrix(Matrix, RowNum, ColNum);
+  RowNum = Matrix.size();
+  printTMatrixForDebug(Matrix);
 
-    unsigned OpWidth = TD->getTypeSizeInBits(Operand->getType());
-    std::string OpName = Operand->getName();
+  // Optimize the dot matrix taking advantage of the known bits.
+  MatrixType TMatrix = transportMatrix(Matrix, RowNum, ColNum);
+  TMatrix = sumAllOneBitsInTMatrix(TMatrix);
+  ++RowNum;
+  Matrix = transportMatrix(TMatrix, ColNum, RowNum);
+  printTMatrixForDebug(Matrix);
 
-    // If the operand is a constant integer, then the dots will be
-    // its binary representation.
-    if (ConstantInt *CI = dyn_cast<ConstantInt>(Operand)) {
-      unsigned CIVal = CI->getZExtValue();
+  // After these optimization, the first row of dot matrix
+  // should be a constant integer.
+  assert(isConstantInt(Matrix[0]) && "Should be a constant integer!");
 
-      for (unsigned j = 0; j < ColNum; ++j) {
-        unsigned BaseVal = int(std::pow(double(2.0), double(ColNum - 1 - j)));
-        unsigned BitVal = CIVal / (BaseVal);
-        CIVal = (CIVal >= BaseVal) ? CIVal - BaseVal : CIVal;
+  // Compress the dot matrix.
+  TMatrix = transportMatrix(Matrix, Matrix.size(), ColNum);
+  float ResultArrivalTime = compressMatrix(TMatrix, MatrixName, Matrix.size(), ColNum, Output);
 
-        // Insert the binary representation to the matrix in reverse order.
-        if (BitVal)
-          Matrix[i][ColNum - 1 - j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
-        else
-          Matrix[i][ColNum - 1 - j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
-      }
-    }
-    // Or the dots will be the form like operand[0], operand[1]...
-    else {
-      // Get the arrival time of the dots.
-      float ArrivalTime;
-      if (SIRRegister *Reg = SM->lookupSIRReg(Operand))
-        ArrivalTime = 0.0f;
-      else
-        ArrivalTime = getOperandArrivalTime(Operand);
-
-      // Get the name of the operand to denote the name of the dot later.
-      std::string OpName = "operand_" + utostr_32(i);
-      // Used to denote the sign bit of the operand if it exists.
-      std::string SameBit;
-      for (unsigned j = 0; j < ColNum; ++j) {
-        // When the dot position is within the range of operand bit width,
-        // we get the name of dot considering the bit mask.
-        if (j < OpWidth) {
-          // If it is a known bit, then use the known value.
-          if (SM->hasBitMask(Operand)) {
-            SIRBitMask Mask = SM->getBitMask(Operand);
-
-            if (Mask.isOneKnownAt(j)) {
-              Matrix[i][j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
-              continue;
-            }
-            else if (Mask.isZeroKnownAt(j)) {
-              Matrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
-              continue;
-            } else if (Mask.isSameKnownAt(j)) {
-              if (SameBit.size() != 0)
-                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
-              else {
-                SameBit = Mangle(OpName) + "[" + utostr_32(j) + "]";
-                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
-              }
-              continue;
-            }
-          }
-
-          // Or use the form like operand[0], operand[1]...
-          std::string DotName = Mangle(OpName) + "[" + utostr_32(j) + "]";
-          Matrix[i][j] = std::make_pair(DotName, std::make_pair(ArrivalTime, 0));
-        }
-        // When the dot position is beyond the range of operand bit width,
-        // we need to pad zero into the matrix.
-        else {
-          Matrix[i][j] = std::make_pair("1'b0", std::make_pair(ArrivalTime, 0));
-        }
-      }
-    }    
-  }
-
-  return Matrix;
+  return ResultArrivalTime;
 }
 
 static unsigned LogCeiling(unsigned x, unsigned n) {
@@ -510,7 +274,7 @@ static unsigned LogCeiling(unsigned x, unsigned n) {
   return (Log2_32_Ceil(x) + log2n - 1) / log2n;
 }
 
-float SIRAddMulChain::getLatency(Instruction *Inst) {
+float SIRMOAOpt::getLatency(Instruction *Inst) {
   assert(Inst && "Unexpected SMGNode!");
 
   /// Get the delay of this node.
@@ -521,7 +285,7 @@ float SIRAddMulChain::getLatency(Instruction *Inst) {
   if (isa<PtrToIntInst>(Inst) || isa<IntToPtrInst>(Inst) || isa<BitCastInst>(Inst))
     return 0.0f;
 
-  // Otherwise it must be shang intrinsic instructions.
+  // Otherwise it must be intrinsic instructions.
   IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst);
   assert(II && "Unexpected non-IntrinsicInst!");
 
@@ -609,7 +373,7 @@ float SIRAddMulChain::getLatency(Instruction *Inst) {
   }
 }
 
-float SIRAddMulChain::getOperandArrivalTime(Value *Operand) {
+float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
   SM->indexKeepVal(Operand);
 
   if (isLeafValue(SM, Operand))
@@ -640,7 +404,7 @@ float SIRAddMulChain::getOperandArrivalTime(Value *Operand) {
   delay = getLatency(Root);
 
   VisitStack.push_back(std::make_pair(Root, Root->op_begin()));
-  while(!VisitStack.empty()) {
+  while (!VisitStack.empty()) {
     Instruction *Node = VisitStack.back().first;
     iterator &It = VisitStack.back().second;
 
@@ -680,10 +444,10 @@ float SIRAddMulChain::getOperandArrivalTime(Value *Operand) {
         }
 
       if (isa<IntrinsicInst>(ChildInst) || isa<PtrToIntInst>(ChildInst) ||
-          isa<IntToPtrInst>(ChildInst) || isa<BitCastInst>(ChildInst)) {
-         VisitStack.push_back(std::make_pair(ChildInst, ChildInst->op_begin()));
-         delay += getLatency(ChildInst);
-      }      
+        isa<IntToPtrInst>(ChildInst) || isa<BitCastInst>(ChildInst)) {
+        VisitStack.push_back(std::make_pair(ChildInst, ChildInst->op_begin()));
+        delay += getLatency(ChildInst);
+      }
     }
   }
 
@@ -698,290 +462,404 @@ float SIRAddMulChain::getOperandArrivalTime(Value *Operand) {
   return ArrivalTime;
 }
 
-void SIRAddMulChain::printGPCModule(raw_fd_ostream &Output) {
-  // Generate the 3-2 compressor.
-  Output << "module GPC_3_2_LUT(\n";
-  Output << "\tinput wire[2:0] col0,\n";
-  Output << "\toutput wire[1:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2];\n\n";
-  Output << "endmodule\n\n";
+std::vector<Value *>
+  SIRMOAOpt::eliminateIdenticalOperands(std::vector<Value *> Operands,
+                                        Value *MOA, unsigned BitWidth) {
+  // The operans after elimination
+  std::vector<Value *> FinalOperands;
 
-  // Generate the 4-3 compressor.
-  Output << "module GPC_4_3_LUT(\n";
-  Output << "\tinput wire[3:0] col0,\n";
-  Output << "\toutput wire[2:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3];\n\n";
-  Output << "endmodule\n\n";
+  std::set<Value *> Visited;
+  std::vector<std::pair<Value *, unsigned> > OpNums;
+  for (unsigned i = 0; i < Operands.size(); ++i) {
+    Value *Op = Operands[i];
 
-  // Generate the 5-3 compressor.
-  Output << "module GPC_5_3_LUT(\n";
-  Output << "\tinput wire[4:0] col0,\n";
-  Output << "\toutput wire[2:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4];\n\n";
-  Output << "endmodule\n\n";
-
-  // Generate the 6-3 compressor.
-  Output << "module GPC_6_3_LUT(\n";
-  Output << "\tinput wire[5:0] col0,\n";
-  Output << "\toutput wire[2:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5];\n\n";
-  Output << "endmodule\n\n";
-
-  // Generate the 13-3 compressor.
-  Output << "module GPC_13_3_LUT(\n";
-  Output << "\tinput wire[2:0] col0,\n";
-  Output << "\tinput wire col1,\n";
-  Output << "\toutput wire[2:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + 2 * col1;\n\n";
-  Output << "endmodule\n\n";
-
-  // Generate the 14-3 compressor.
-  Output << "module GPC_14_3_LUT(\n";
-  Output << "\tinput wire[3:0] col0,\n";
-  Output << "\tinput wire col1,\n";
-  Output << "\toutput wire[2:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + 2 * col1;\n\n";
-  Output << "endmodule\n\n";
-
-  // Generate the 15-3 compressor.
-  Output << "module GPC_15_3_LUT(\n";
-  Output << "\tinput wire[4:0] col0,\n";
-  Output << "\tinput wire col1,\n";
-  Output << "\toutput wire[2:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + 2 * col1;\n\n";
-  Output << "endmodule\n\n";
-
-  // Generate the 23-3 compressor.
-  Output << "module GPC_23_3_LUT(\n";
-  Output << "\tinput wire[2:0] col0,\n";
-  Output << "\tinput wire[1:0] col1,\n";
-  Output << "\toutput wire[2:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + 2 * (col1[0] + col1[1]);\n\n";
-  Output << "endmodule\n\n";
-
-  // Generate the 506-5 compressor.
-  Output << "module GPC_506_5(\n";
-  Output << "\tinput wire[5:0] col0,\n";
-  Output << "\tinput wire[4:0] col2,\n";
-  Output << "\toutput wire[4:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
-  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4]);\n\n";
-  Output << "endmodule\n\n";
-
-  // Generate the 606-5 compressor.
-  Output << "module GPC_606_5(\n";
-  Output << "\tinput wire[5:0] col0,\n";
-  Output << "\tinput wire[5:0] col2,\n";
-  Output << "\toutput wire[4:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
-  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4] + col2[5]);\n\n";
-  Output << "endmodule\n\n";
-
-  // Generate the 1325-5 compressor.
-  Output << "module GPC_1325_5(\n";
-  Output << "\tinput wire[4:0] col0,\n";
-  Output << "\tinput wire[1:0] col1,\n";
-  Output << "\tinput wire[2:0] col2,\n";
-  Output << "\tinput wire col3,\n";
-  Output << "\toutput wire[4:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
-  Output << "+ 2 * (col1[0] + col1[1]) + 4 * (col2[0] + col2[1] + col2[2]) + 8 * col3;\n\n";
-  Output << "endmodule\n\n";
-
-  // Generate the 1406-5 compressor.
-  Output << "module GPC_1406_5(\n";
-  Output << "\tinput wire[5:0] col0,\n";
-  Output << "\tinput wire[3:0] col2,\n";
-  Output << "\tinput wire col3,\n";
-  Output << "\toutput wire[4:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
-  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
-  Output << "endmodule\n\n";
-
-  // Generate the 1415-5 compressor.
-  Output << "module GPC_1415_5(\n";
-  Output << "\tinput wire[4:0] col0,\n";
-  Output << "\tinput wire col1,\n";
-  Output << "\tinput wire[3:0] col2,\n";
-  Output << "\tinput wire col3,\n";
-  Output << "\toutput wire[4:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
-  Output << "+ 2 * col1 + 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
-  Output << "endmodule\n\n";
-}
-
-void SIRAddMulChain::printAddChainModule(unsigned OpNum, unsigned BitWidth, raw_fd_ostream &Output) {
-  // Calculate the output bitwidth.
-  unsigned OutputBitWidth = BitWidth + std::ceil(log(OpNum) / log(2));
-
-  Output << "module AddChain_" << utostr_32(OpNum) << "_" << utostr_32(BitWidth) << "(\n";
-  for (unsigned i = 0; i < BitWidth; ++i) {
-    Output << "\tinput wire[" << utostr_32(OpNum - 1) << ":0] col" << utostr_32(i) << ",\n";
-  }
-  Output << "\toutput wire[" << utostr_32(OutputBitWidth - 1) << ":0] sum\n";
-  Output << ");\n\n";
-  for (unsigned i = 0; i < OpNum; ++i) {
-    Output << "\twire[" << utostr_32(BitWidth - 1) <<":0] op" << utostr_32(i) << " = {";
-
-    for (unsigned j = 0; j < BitWidth; ++j) {
-      Output << "col" << utostr_32(BitWidth - 1 - j) << "[" << utostr_32(i) << "]";
-
-      if (j != BitWidth - 1)
-        Output << ", ";
+    // First index the constant integer.
+    if (isa<ConstantInt>(Op)) {
+      SM->indexKeepVal(Op);
+      FinalOperands.push_back(Op);
+      continue;
     }
 
-    Output << "};\n";      
-  }
-  Output << "\n";
+    // Then index the repeated operand and its numbers.
+    if (!Visited.count(Op))
+      OpNums.push_back(std::make_pair(Op, 1));
+    else {
+      for (unsigned j = 0; j < OpNums.size(); ++j) {
+        Value *SameOp = OpNums[j].first;
 
-  Output << "\tassign sum = ";
-  for (unsigned i = 0; i < OpNum; ++i) {
-    Output << "op" << utostr_32(i);
-
-    if (i != OpNum - 1)
-      Output << " + ";
-  }
-  Output << ";\n\n";
-
-  Output << "endmodule\n\n";
-}
-
-void SIRAddMulChain::printCompressComponent(raw_fd_ostream &Output) {
-  /// Print the module of compress components.
-  // GPCs
-  printGPCModule(Output);
-
-  // AddChains
-  // Generate the AddChain with bitwidth of 16.
-  for (unsigned i = 2; i < 10; ++i) {
-    printAddChainModule(i, 16, Output);
-    printAddChainModule(i, 32, Output);
-    printAddChainModule(i, 64, Output);
-  }    
-}
-
-void SIRAddMulChain::generateDotMatrix() {
-  std::string CompressorOutputPath = LuaI::GetString("CompressorOutput");
-  std::string Error;
-  raw_fd_ostream Output(CompressorOutputPath.c_str(), Error);
-
-  // Initialize the compress library.
-  initLibrary();
-
-  typedef std::map<IntrinsicInst *, std::vector<IntrinsicInst *> >::iterator iterator;
-  for (iterator I = ChainMap.begin(), E = ChainMap.end(); I != E; ++I) {
-    generateDotmatrixForChain(I->first, Output);
-  }
-
-  // Print the compress component modules.
-  printCompressComponent(Output);   
-}
-
-void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_ostream &Output) {
-  assert(ChainMap.count(ChainRoot) && "Not a chain rooted on ChainRoot!");
-  std::vector<IntrinsicInst *> &Chain = ChainMap[ChainRoot];
-
-  // Collect all chain instructions and extract all their operands.
-  std::set<IntrinsicInst *> ChainInstSet;
-  typedef std::vector<IntrinsicInst *>::iterator iterator;
-  for (iterator I = Chain.begin(), E = Chain.end(); I != E; ++I)
-    ChainInstSet.insert(*I);
-
-  std::vector<Value *> Operands;
-  for (iterator I = Chain.begin(), E = Chain.end(); I != E; ++I) {
-    IntrinsicInst *ChainInst = *I;
-
-    for (unsigned i = 0; i < ChainInst->getNumOperands() - 1; ++i) {
-      Value *Operand = ChainInst->getOperand(i);
-
-      // Ignore the chain instruction itself.
-      if (IntrinsicInst *OperandInst = dyn_cast<IntrinsicInst>(Operand)) {
-        if (ChainInstSet.count(OperandInst))
-          continue;
+        if (Op == SameOp)
+          OpNums[j].second++;
       }
-
-      Operands.push_back(Operand);
     }
   }
 
-  // Optimize operands if there are known same sign bits in two or more operands.
+  // Initial a datapath builder to handle the repeated operand.
+  SIRDatapathBuilder Builder(SM, *TD);
+
+  typedef std::vector<std::pair<Value *, unsigned> >::iterator iterator;
+  for (iterator I = OpNums.begin(), E = OpNums.end(); I != E; ++I) {
+    Value *Op = I->first;
+
+    unsigned OpBitWidth = Builder.getBitWidth(Op);
+    unsigned Num = I->second;
+
+    if (Num == 1) {
+      SM->indexKeepVal(Op);
+      FinalOperands.push_back(Op);
+      continue;
+    }
+
+    if (Num == 2) {
+      Value *ExtractResult
+        = Builder.createSBitExtractInst(Op, OpBitWidth - 1, 0,
+                                        Builder.createIntegerType(OpBitWidth - 1),
+                                        MOA, true);
+      Value *ShiftResult
+        = Builder.createSBitCatInst(ExtractResult, Builder.createIntegerValue(1, 0),
+                                    Op->getType(), MOA, true);
+
+      SIRBitMask OpMask = SM->getBitMask(Op);
+      OpMask = OpMask.shl(1);
+
+      SM->IndexVal2BitMask(ShiftResult, OpMask);
+      SM->indexKeepVal(ShiftResult);
+      FinalOperands.push_back(ShiftResult);
+    }
+    else {
+      llvm_unreachable("Not handled yet!");
+    }
+  }
+
+  return FinalOperands;
+}
+
+MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
+                                      unsigned RowNum, unsigned ColNum) {
+  MatrixType Matrix;
+
+  // Initial a empty matrix first.
+  for (unsigned i = 0; i < RowNum; ++i) {
+    MatrixRowType Row;
+
+    for (unsigned j = 0; j < ColNum; ++j)
+      Row.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
+
+    Matrix.push_back(Row);
+  }
+
+  for (unsigned i = 0; i < RowNum; ++i) {
+    Value *Operand = Operands[i];
+
+    unsigned OpWidth = TD->getTypeSizeInBits(Operand->getType());
+    std::string OpName = Operand->getName();
+
+    // If the operand is a constant integer, then the dots will be
+    // its binary representation.
+    if (ConstantInt *CI = dyn_cast<ConstantInt>(Operand)) {
+      unsigned CIVal = CI->getZExtValue();
+
+      for (unsigned j = 0; j < ColNum; ++j) {
+        unsigned BaseVal = int(std::pow(double(2.0), double(ColNum - 1 - j)));
+        unsigned BitVal = CIVal / (BaseVal);
+        CIVal = (CIVal >= BaseVal) ? CIVal - BaseVal : CIVal;
+
+        // Insert the binary representation to the matrix in reverse order.
+        if (BitVal)
+          Matrix[i][ColNum - 1 - j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
+        else
+          Matrix[i][ColNum - 1 - j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+      }
+    }
+    // Or the dots will be the form like operand[0], operand[1]...
+    else {
+      // Get the arrival time of the dots.
+      float ArrivalTime;
+      if (SIRRegister *Reg = SM->lookupSIRReg(Operand))
+        ArrivalTime = 0.0f;
+      else
+        ArrivalTime = getOperandArrivalTime(Operand);
+
+      // Get the name of the operand to denote the name of the dot later.
+      std::string OpName = "operand_" + utostr_32(i);
+      // Used to denote the sign bit of the operand if it exists.
+      std::string SameBit;
+      for (unsigned j = 0; j < ColNum; ++j) {
+        // When the dot position is within the range of operand bit width,
+        // we get the name of dot considering the bit mask.
+        if (j < OpWidth) {
+          // If it is a known bit, then use the known value.
+          if (SM->hasBitMask(Operand)) {
+            SIRBitMask Mask = SM->getBitMask(Operand);
+
+            if (Mask.isOneKnownAt(j)) {
+              Matrix[i][j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
+              continue;
+            }
+            else if (Mask.isZeroKnownAt(j)) {
+              Matrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+              continue;
+            }
+            else if (Mask.isSameKnownAt(j)) {
+              if (SameBit.size() != 0)
+                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
+              else {
+                SameBit = Mangle(OpName) + "[" + utostr_32(j) + "]";
+                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
+              }
+              continue;
+            }
+          }
+
+          // Or use the form like operand[0], operand[1]...
+          std::string DotName = Mangle(OpName) + "[" + utostr_32(j) + "]";
+          Matrix[i][j] = std::make_pair(DotName, std::make_pair(ArrivalTime, 0));
+        }
+        // When the dot position is beyond the range of operand bit width,
+        // we need to pad zero into the matrix.
+        else {
+          Matrix[i][j] = std::make_pair("1'b0", std::make_pair(ArrivalTime, 0));
+        }
+      }
+    }
+  }
+
+  return Matrix;
+}
+
+std::vector<Value *>
+  SIRMOAOpt::OptimizeOperands(std::vector<Value *> Operands,
+                              Value *MOA, unsigned BitWidth) {
+  // Eliminate the identical operands in add chain.
+  std::vector<Value *>
+    OptOperands = eliminateIdenticalOperands(Operands, MOA, BitWidth);
+
+  return OptOperands;
+}
+
+void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
+                                         raw_fd_ostream &Output) {
+  // Get all the operands of MOA.
+  std::vector<Value *> Operands = MOA2Ops[MOA];
+
+  // Optimize operands if there exists
+  // 1) identical operands.
   std::vector<Value *> OptOperands = Operands;
-  OptOperands = OptimizeOperands(Operands, ChainRoot, TD->getTypeSizeInBits(ChainRoot->getType()));
+  OptOperands
+    = OptimizeOperands(Operands, MOA, TD->getTypeSizeInBits(MOA->getType()));
 
-  IntrinsicInst *Compressor = ChainRoot2Compressor[ChainRoot];
-  SM->IndexOps2AdderChain(Compressor, OptOperands);
+  // Index the connection of operands and pseudo hybrid tree instruction.
+  // So we can generate the instance of the hybrid tree module.
+  IntrinsicInst *PseudoHybridTreeInst = MOA2PseudoHybridTreeInst[MOA];
+  SM->IndexOps2AdderChain(PseudoHybridTreeInst, OptOperands);
 
-  unsigned BitWidth = 0;
-  for (unsigned i = 0; i < OptOperands.size(); ++i) {
-    BitWidth = BitWidth + TD->getTypeSizeInBits(OptOperands[i]->getType());
-  }
-
-  // Generate all elements in Dot Matrix.
+  // Generate dot matrix.
   unsigned MatrixRowNum = OptOperands.size();
-  unsigned MatrixColNum = TD->getTypeSizeInBits(ChainRoot->getType());
-
-  // Print the declaration of the module.
-  IntrinsicInst *CompressorInst = ChainRoot2Compressor[ChainRoot];
-  std::string MatrixName = Mangle(CompressorInst->getName());
-  Output << "module " << "compressor_" << MatrixName << "(\n";
-  for (unsigned i = 0; i < MatrixRowNum; ++i) {
-    Output << "\t(* altera_attribute = \"-name VIRTUAL_PIN on\" *) input wire[";
-    Output << utostr_32(MatrixColNum - 1) << ":0] operand_" << utostr_32(i) << ",\n";
-  }
-  Output << "\t(* altera_attribute = \"-name VIRTUAL_PIN on\" *) output wire[";
-  Output << utostr_32(MatrixColNum - 1) << ":0] result\n);\n\n";
-
-  MatrixType Matrix = createMatrixForOperands(OptOperands, MatrixRowNum, MatrixColNum);
+  unsigned MatrixColNum = TD->getTypeSizeInBits(MOA->getType());
+  std::string MatrixName = Mangle(PseudoHybridTreeInst->getName());
+  MatrixType
+    Matrix = createDotMatrix(OptOperands, MatrixRowNum, MatrixColNum);
   printTMatrixForDebug(Matrix);
 
-  errs() << "Operands for hybrid tree " << MatrixName << "is indexed as:\n";
-  for (unsigned i = 0; i < OptOperands.size(); ++i) {
-    std::stringstream ss;
-    ss << getOperandArrivalTime(OptOperands[i]);
+//   // Code for debug
+//   errs() << "Operands for hybrid tree " << MatrixName << "is indexed as:\n";
+//   for (unsigned i = 0; i < OptOperands.size(); ++i) {
+//     std::stringstream ss;
+//     ss << getOperandArrivalTime(OptOperands[i]);
+// 
+//     std::string delay_string;
+//     ss >> delay_string;
+//     ss.clear();
+//     errs() << "[" + utostr_32(i) + "--" << delay_string << "],";
+//   }
+//   errs() << "\n";
 
-    std::string delay_string;
-    ss >> delay_string;
-    ss.clear();
-    errs() << "[" + utostr_32(i) + "--" << delay_string << "],";
-  }
-  errs() << "\n";
-
-  // Optimize the Matrix taking advantage of the sign bits.
-  Matrix = sumAllSignBitsInMatrix(Matrix, MatrixRowNum, MatrixColNum);
-  MatrixRowNum = Matrix.size();
-  printTMatrixForDebug(Matrix);
-
-  // Optimize the Matrix taking advantage of the known bits.
-  MatrixType TMatrix = transportMatrix(Matrix, MatrixRowNum, MatrixColNum);
-  //printTMatrixForDebug(TMatrix);
-  TMatrix = sumAllOneBitsInTMatrix(TMatrix);
-  ++MatrixRowNum;
-  printTMatrixForDebug(TMatrix);
-
-  Matrix = transportMatrix(TMatrix, MatrixColNum, MatrixRowNum);
-  printTMatrixForDebug(Matrix);
-  
   float ResultArrivalTime = hybridTreeCodegen(Matrix, MatrixName,
                                               MatrixRowNum, MatrixColNum, Output);
 
   // Index the arrival time of the hybrid tree result.
-  ValArrivalTime.insert(std::make_pair(Compressor, ResultArrivalTime));
+  ValArrivalTime.insert(std::make_pair(PseudoHybridTreeInst, ResultArrivalTime));
 }
 
-bool SIRAddMulChain::isConstantInt(MatrixRowType Row) {
+void SIRMOAOpt::generateHybridTrees() {
+  // Create a pseudo instruction to represent the
+  // hybrid tree we created later in SIR.
+  SIRDatapathBuilder Builder(SM, *TD);
+  typedef std::vector<IntrinsicInst *>::iterator iterator;
+  for (iterator I = MOAs.begin(), E = MOAs.end(); I != E; ++I) {
+    Value *PseudoHybridTreeVal = Builder.createCompressorInst(*I);
+
+    // Index the pseudo instruction as KeepVal so it will
+    // not be eliminated in optimization.
+    SM->indexKeepVal(PseudoHybridTreeVal);
+
+    // Index the connection of pseudo instruction and
+    // the multi-operand adder.
+    IntrinsicInst *PseudoHybridTreeInst
+      = dyn_cast<IntrinsicInst>(PseudoHybridTreeVal);
+    MOA2PseudoHybridTreeInst.insert(std::make_pair(*I, PseudoHybridTreeInst));
+  }
+
+  // Initialize the library of compress component.
+  initLibrary();
+
+  // Initialize the output file for hybrid tree.
+  std::string CompressorOutputPath = LuaI::GetString("CompressorOutput");
+  std::string Error;
+  raw_fd_ostream Output(CompressorOutputPath.c_str(), Error);
+
+  // Generate hybrid tree for each multi-operand adder.
+  for (iterator I = MOAs.begin(), E = MOAs.end(); I != E; ++I) {
+    generateHybridTreeForMOA(*I, Output);
+  }
+
+  // Print the compress component modules.
+  printCompressComponent(Output);
+}
+
+void SIRMOAOpt::collectMOAs() {
+  std::vector<IntrinsicInst *> MOAVector;
+
+  Function *F = SM->getFunction();
+
+  ReversePostOrderTraversal<BasicBlock *> RPO(&F->getEntryBlock());
+  typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
+  for (bb_top_iterator BI = RPO.begin(), BE = RPO.end(); BI != BE; ++BI) {
+    BasicBlock *BB = *BI;
+
+    typedef BasicBlock::iterator inst_iterator;
+    for (inst_iterator II = BB->begin(), IE = BB->end(); II != IE; ++II) {
+      Instruction *Inst = II;
+
+      if (IntrinsicInst *InstII = dyn_cast<IntrinsicInst>(Inst)) {
+        if (InstII->getIntrinsicID() == Intrinsic::shang_add ||
+            InstII->getIntrinsicID() == Intrinsic::shang_addc) {
+          unsigned UserNum = 0;
+          unsigned UsedByChainNum = 0;
+          typedef Value::use_iterator use_iterator;
+          for (use_iterator UI = InstII->use_begin(), UE = InstII->use_end();
+               UI != UE; ++UI) {
+            Value *UserVal = *UI;
+
+            if (IntrinsicInst *UserInst = dyn_cast<IntrinsicInst>(UserVal)) {
+              ++UserNum;
+
+              if (UserInst->getIntrinsicID() == Intrinsic::shang_add ||
+                  UserInst->getIntrinsicID() == Intrinsic::shang_addc)
+                ++UsedByChainNum;
+            }
+          }
+
+          if (UsedByChainNum == 0 || UserNum >= 2)
+            MOAVector.push_back(InstII);
+        }
+      }
+    }
+  }
+
+  for (unsigned i = 0; i < MOAVector.size(); ++i) {
+    IntrinsicInst *MOA = MOAVector[i];
+    collectMOAOps(MOA);
+  }
+}
+
+void SIRMOAOpt::collectMOAOps(IntrinsicInst *MOA) {
+  assert(MOA->getIntrinsicID() == Intrinsic::shang_add ||
+         MOA->getIntrinsicID() == Intrinsic::shang_addc &&
+         "Unexpected intrinsic instruction type!");
+
+  /// The MOA in SIR is not a single instruction but a bunch
+  /// of add instructions. So we need to find them and extract
+  /// their operands.
+  typedef Instruction::op_iterator op_iterator;
+  std::vector<std::pair<IntrinsicInst *, op_iterator> > VisitStack;
+
+  VisitStack.push_back(std::make_pair(MOA, MOA->op_begin()));
+
+  unsigned Depth = 0;
+  std::vector<IntrinsicInst *> AdderVector;
+  while(!VisitStack.empty()) {
+    IntrinsicInst *CurNode = VisitStack.back().first;
+    op_iterator &I = VisitStack.back().second;
+
+    assert(CurNode->getIntrinsicID() == Intrinsic::shang_add ||
+           CurNode->getIntrinsicID() == Intrinsic::shang_addc &&
+           "Unexpected type!");
+
+    // All children of current node have been visited.
+    if (I == CurNode->op_end()) {
+      VisitStack.pop_back();
+
+      if (Depth != 0) {
+        AdderVector.push_back(CurNode);
+        VisitedAdders.insert(CurNode);
+      }
+
+      continue;
+    }
+
+    // Otherwise, remember the node and visit its children first.
+    Value *ChildVal = *I;
+    ++I;
+    IntrinsicInst *ChildInst = dyn_cast<IntrinsicInst>(ChildVal);
+
+    if (!ChildInst)
+      continue;
+
+    if (VisitedAdders.count(ChildInst))
+      continue;
+
+    unsigned UsedByChainNum = 0;
+    typedef Value::use_iterator use_iterator;
+    for (use_iterator UI = ChildInst->use_begin(), UE = ChildInst->use_end();
+         UI != UE; ++UI) {
+      Value *UserVal = *UI;
+
+      if (IntrinsicInst *UserInst = dyn_cast<IntrinsicInst>(UserVal))
+        ++UsedByChainNum;
+    }
+    if (UsedByChainNum >= 2)
+      continue;
+
+    if (ChildInst->getIntrinsicID() == Intrinsic::shang_add ||
+        ChildInst->getIntrinsicID() == Intrinsic::shang_addc) {
+      VisitStack.push_back(std::make_pair(ChildInst, ChildInst->op_begin()));
+      Depth++;
+    }
+  }
+
+  if (Depth != 0 && AdderVector.size() > 2) {
+    MOAs.push_back(MOA);
+    VisitedAdders.insert(MOA);
+
+    // Collect all the operands of MOA.
+    std::set<IntrinsicInst *> AdderSet;
+    typedef std::vector<IntrinsicInst *>::iterator iterator;
+    for (iterator I = AdderVector.begin(), E = AdderVector.end(); I != E; ++I)
+      AdderSet.insert(*I);
+
+    std::vector<Value *> Operands;
+    for (iterator I = AdderVector.begin(), E = AdderVector.end(); I != E; ++I) {
+      IntrinsicInst *Adder = *I;
+
+      for (unsigned i = 0; i < Adder->getNumOperands() - 1; ++i) {
+        Value *Operand = Adder->getOperand(i);
+
+        // Ignore the adder instruction itself.
+        if (IntrinsicInst *OperandInst = dyn_cast<IntrinsicInst>(Operand)) {
+          if (AdderSet.count(OperandInst))
+            continue;
+        }
+
+        Operands.push_back(Operand);
+      }
+    }
+
+    // Index the connection between MOA and its operands.
+    MOA2Ops.insert(std::make_pair(MOA, Operands));
+  }
+}
+
+bool SIRMOAOpt::isConstantInt(MatrixRowType Row) {
   bool IsConstantInt = true;
 
   for (unsigned i = 0; i < Row.size(); ++i) {
@@ -996,7 +874,7 @@ bool SIRAddMulChain::isConstantInt(MatrixRowType Row) {
   return IsConstantInt;
 }
 
-unsigned SIRAddMulChain::getOperandBitWidth(MatrixRowType Row) {
+unsigned SIRMOAOpt::getOperandBitWidth(MatrixRowType Row) {
   unsigned BitWidth = 0;
   bool HeadingZero = true;
   for (unsigned i = 0; i < Row.size(); ++i) {
@@ -1011,7 +889,7 @@ unsigned SIRAddMulChain::getOperandBitWidth(MatrixRowType Row) {
   return BitWidth;
 }
 
-std::vector<unsigned> SIRAddMulChain::getSignBitNumListInMatrix(MatrixType Matrix) {
+std::vector<unsigned> SIRMOAOpt::getSignBitNumListInMatrix(MatrixType Matrix) {
   std::vector<unsigned> SignBitNumList;
 
   for (unsigned i = 0; i < Matrix.size(); ++i) {
@@ -1048,7 +926,7 @@ std::vector<unsigned> SIRAddMulChain::getSignBitNumListInMatrix(MatrixType Matri
   return SignBitNumList;
 }
 
-MatrixType SIRAddMulChain::sumAllSignBitsInMatrix(MatrixType Matrix, unsigned RowNum,
+MatrixType SIRMOAOpt::sumAllSignBitsInMatrix(MatrixType Matrix, unsigned RowNum,
                                                   unsigned ColumnNum) {
   // Get the number of sign bit in each row in Matrix.
   std::vector<unsigned> SignBitNumList = getSignBitNumListInMatrix(Matrix);
@@ -1105,7 +983,7 @@ MatrixType SIRAddMulChain::sumAllSignBitsInMatrix(MatrixType Matrix, unsigned Ro
   return Matrix;
 }
 
-MatrixType SIRAddMulChain::transportMatrix(MatrixType Matrix, unsigned RowNum,
+MatrixType SIRMOAOpt::transportMatrix(MatrixType Matrix, unsigned RowNum,
                                            unsigned ColumnNum) {
   MatrixType TMatrix;
 
@@ -1124,7 +1002,7 @@ MatrixType SIRAddMulChain::transportMatrix(MatrixType Matrix, unsigned RowNum,
   return TMatrix;
 }
 
-std::vector<unsigned> SIRAddMulChain::getOneBitNumListInTMatrix(MatrixType TMatrix) {
+std::vector<unsigned> SIRMOAOpt::getOneBitNumListInTMatrix(MatrixType TMatrix) {
   std::vector<unsigned> OneBitNumList;
 
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
@@ -1142,7 +1020,7 @@ std::vector<unsigned> SIRAddMulChain::getOneBitNumListInTMatrix(MatrixType TMatr
   return OneBitNumList;
 }
 
-std::vector<unsigned> SIRAddMulChain::getBitNumListInTMatrix(MatrixType TMatrix) {
+std::vector<unsigned> SIRMOAOpt::getBitNumListInTMatrix(MatrixType TMatrix) {
   std::vector<unsigned> BitNumList;
 
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
@@ -1167,7 +1045,7 @@ std::vector<unsigned> SIRAddMulChain::getBitNumListInTMatrix(MatrixType TMatrix)
 }
 
 std::vector<unsigned>
-SIRAddMulChain::getBitNumInCurrentStageListInTMatrix(MatrixType TMatrix,
+SIRMOAOpt::getBitNumInCurrentStageListInTMatrix(MatrixType TMatrix,
                                                      unsigned Stage) {
   std::vector<unsigned> BitNumInCurrentStageList;
 
@@ -1194,7 +1072,7 @@ SIRAddMulChain::getBitNumInCurrentStageListInTMatrix(MatrixType TMatrix,
   return BitNumInCurrentStageList;
 }
 
-MatrixType SIRAddMulChain::simplifyTMatrix(MatrixType TMatrix) {
+MatrixType SIRMOAOpt::simplifyTMatrix(MatrixType TMatrix) {
   // Eliminate the useless 1'b0 and its delay-stage info
   MatrixType SimplifiedTMatrix;
 
@@ -1234,7 +1112,7 @@ bool DotCompare(const DotType &DotA, const DotType &DotB) {
   }
 }
 
-MatrixType SIRAddMulChain::sortTMatrix(MatrixType TMatrix) {
+MatrixType SIRMOAOpt::sortTMatrix(MatrixType TMatrix) {
   // Sort the bits according to #1: stage, #2: delay.
   MatrixType SortedTMatrix;
 
@@ -1249,7 +1127,7 @@ MatrixType SIRAddMulChain::sortTMatrix(MatrixType TMatrix) {
   return SortedTMatrix;
 }
 
-MatrixType SIRAddMulChain::sumAllOneBitsInTMatrix(MatrixType TMatrix) {
+MatrixType SIRMOAOpt::sumAllOneBitsInTMatrix(MatrixType TMatrix) {
   // Get the number of one bit in each row in TMatrix.
   std::vector<unsigned> OneBitNumList = getOneBitNumListInTMatrix(TMatrix);
 
@@ -1295,7 +1173,7 @@ MatrixType SIRAddMulChain::sumAllOneBitsInTMatrix(MatrixType TMatrix) {
   return TMatrixAfterSum;
 }
 
-MatrixType SIRAddMulChain::eliminateOneBitInTMatrix(MatrixType TMatrix) {
+MatrixType SIRMOAOpt::eliminateOneBitInTMatrix(MatrixType TMatrix) {
   return TMatrix;
 
   // Simplify and sort the TMatrix to prepare for the eliminating.
@@ -1329,53 +1207,10 @@ MatrixType SIRAddMulChain::eliminateOneBitInTMatrix(MatrixType TMatrix) {
   return TMatrix;
 }
 
-void SIRAddMulChain::generateComponentInstance(unsigned ComponentIdx,
-                                               std::vector<std::vector<DotType> > InputDots,
-                                               std::string OutputName,
-                                               float OutputArrivalTime,
-                                               raw_fd_ostream &Output) {
-  // Get the Component to be used and its information.
-  CompressComponent Component = Library[ComponentIdx];
-  std::vector<unsigned> InputDotNums = Component.getInputDotNums();
-  unsigned OutputDotNum = Component.getOutputDotNum();
-  std::string ComponentName = Component.getName();
-
-  // Print the declaration of the result.  
-  Output << "wire [" << utostr_32(OutputDotNum - 1) << ":0] " << OutputName << ";\n";
-
-  // Print the instantiation of the compressor module.
-  Output << ComponentName << " " + ComponentName + "_" << utostr_32(Component_NUM) << "(";
-
-  // Print the inputs and outputs instance.
-  for (unsigned i = 0; i < InputDotNums.size(); ++i) {
-    // Ignore the empty column.
-    if (InputDotNums[i] == 0)
-      continue;
-
-    Output << ".col" << utostr_32(i) << "({";
-
-    std::vector<DotType> InputDotRow = InputDots[i];
-    assert(InputDotRow.size() == InputDotNums[i] || InputDotRow.size() == 0
-           && "Unexpected input dot number!");
-    for (unsigned j = 0; j < InputDotRow.size(); ++j) {
-      Output << InputDotRow[j].first;
-
-      if (j != InputDotRow.size() - 1)
-        Output << ", ";
-    }
-
-    Output << "}), ";
-  }
-
-  Output << ".sum(" << OutputName << ")";
-
-  Output << ");\n";
-}
-
-SIRAddMulChain::CompressComponent
-  SIRAddMulChain::createAddChainComponent(std::string Name, unsigned OpNum,
-                                          unsigned BitWidth, unsigned Area,
-                                          float CriticalDelay) {
+SIRMOAOpt::CompressComponent
+  SIRMOAOpt::createAddChainComponent(std::string Name, unsigned OpNum,
+                                     unsigned BitWidth, unsigned Area,
+                                     float CriticalDelay) {
   // Inputs
   std::vector<unsigned> AddChain_InputsVector;
   for (unsigned i = 0; i < BitWidth; ++i)
@@ -1390,7 +1225,7 @@ SIRAddMulChain::CompressComponent
   return AddChain;
 }
 
-void SIRAddMulChain::initGPCs() {
+void SIRMOAOpt::initGPCs() {
   /// GPC_3_2_LUT
   // Inputs & Outputs
   unsigned GPC_3_2_LUT_Inputs[1] = { 3 };
@@ -1522,7 +1357,7 @@ void SIRAddMulChain::initGPCs() {
   Library.push_back(GPC_1415_5);
 }
 
-void SIRAddMulChain::initAddChains() {
+void SIRMOAOpt::initAddChains() {
   /// AddChain with bitwidth of 16
   // AddChain_2_16
   CompressComponent
@@ -1662,7 +1497,7 @@ void SIRAddMulChain::initAddChains() {
   Library.push_back(AddChain_10_64);
 }
 
-void SIRAddMulChain::initLibrary() {
+void SIRMOAOpt::initLibrary() {
   // Initialize the GPCs.
   initGPCs();
 
@@ -1670,16 +1505,11 @@ void SIRAddMulChain::initLibrary() {
   initAddChains();
 }
 
-bool SIRAddMulChain::needToCompress(std::vector<unsigned> BitNumList,
-                                    unsigned RowNo) {
-  return true;
-}
-
 MatrixType
-  SIRAddMulChain::compressTMatrixUsingComponent(MatrixType TMatrix,
-                                                unsigned ComponentIdx,
-                                                unsigned RowNo, unsigned Stage,
-                                                raw_fd_ostream &Output) {
+  SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
+                                           unsigned ComponentIdx,
+                                           unsigned RowNo, unsigned Stage,
+                                           raw_fd_ostream &Output) {
   // Get information of TMatrix.
   std::vector<unsigned> BitNumInCurrentStageList
     = getBitNumInCurrentStageListInTMatrix(TMatrix, Stage);
@@ -1754,7 +1584,8 @@ MatrixType
   }
 
   // Generate component instance.
-  generateComponentInstance(ComponentIdx, InputDots, OutputName, OutputArrivalTime, Output);
+  printComponentInstance(ComponentIdx, InputDots, OutputName,
+                         OutputArrivalTime, Output);
 
   printTMatrixForDebug(TMatrix);
 
@@ -1776,8 +1607,8 @@ bool sortComponent(std::pair<unsigned, std::pair<float, unsigned> > OpA,
 }
 
 unsigned
-  SIRAddMulChain::getHighestPriorityComponent(MatrixType TMatrix,
-                                              unsigned RowNo, unsigned Stage) {
+  SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
+                                         unsigned RowNo, unsigned Stage) {
   unsigned HighestPriorityGPCIdx;
 
   // Get information of TMatrix.
@@ -1854,9 +1685,9 @@ unsigned
   return PriorityList.back().first;
 }
 
-MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix,
-                                                  unsigned Stage,
-                                                  raw_fd_ostream &Output) {
+MatrixType SIRMOAOpt::compressTMatrixInStage(MatrixType TMatrix,
+                                             unsigned Stage,
+                                             raw_fd_ostream &Output) {
   // Get the informations of the TMatrix.
   std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
   std::vector<unsigned> BitNumInCurrentStageList
@@ -1935,9 +1766,9 @@ MatrixType SIRAddMulChain::compressTMatrixInStage(MatrixType TMatrix,
   return TMatrix;
 }
 
-float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
-                                     unsigned OperandNum, unsigned OperandWidth,
-                                     raw_fd_ostream &Output) {
+float SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
+                                unsigned OperandNum, unsigned OperandWidth,
+                                raw_fd_ostream &Output) {
   // Code for debug.
   printTMatrixForDebug(TMatrix);
 
@@ -2059,7 +1890,7 @@ float SIRAddMulChain::compressMatrix(MatrixType TMatrix, std::string MatrixName,
   return ResultArrivalTime;
 }
 
-void SIRAddMulChain::printTMatrixForDebug(MatrixType TMatrix) {
+void SIRMOAOpt::printTMatrixForDebug(MatrixType TMatrix) {
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
     MatrixRowType Row = TMatrix[i];
 
@@ -2078,253 +1909,225 @@ void SIRAddMulChain::printTMatrixForDebug(MatrixType TMatrix) {
   DebugOutput << "\n\n";
 }
 
-float SIRAddMulChain::getAddChainDelay(unsigned OpBitWidth, unsigned OpNum) {
-  float Period = VFUs::Period;
+void SIRMOAOpt::printGPCModule(raw_fd_ostream &Output) {
+  // Generate the 3-2 compressor.
+  Output << "module GPC_3_2_LUT(\n";
+  Output << "\tinput wire[2:0] col0,\n";
+  Output << "\toutput wire[1:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2];\n\n";
+  Output << "endmodule\n\n";
 
-  if (OpBitWidth == 16 || OpBitWidth == 17)
-    return (ADD_CHAIN_16_DELAY[OpNum - 2] + NET_DELAY) / Period;
-  else if (OpBitWidth == 32)
-    return (ADD_CHAIN_32_DELAY[OpNum - 2] + NET_DELAY) / Period;
-  else if (OpBitWidth == 64)
-    return (ADD_CHAIN_64_DELAY[OpNum - 2] + NET_DELAY) / Period;
+  // Generate the 4-3 compressor.
+  Output << "module GPC_4_3_LUT(\n";
+  Output << "\tinput wire[3:0] col0,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3];\n\n";
+  Output << "endmodule\n\n";
 
-  llvm_unreachable("Unexpected BitWidth!");
+  // Generate the 5-3 compressor.
+  Output << "module GPC_5_3_LUT(\n";
+  Output << "\tinput wire[4:0] col0,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4];\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 6-3 compressor.
+  Output << "module GPC_6_3_LUT(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5];\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 13-3 compressor.
+  Output << "module GPC_13_3_LUT(\n";
+  Output << "\tinput wire[2:0] col0,\n";
+  Output << "\tinput wire col1,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + 2 * col1;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 14-3 compressor.
+  Output << "module GPC_14_3_LUT(\n";
+  Output << "\tinput wire[3:0] col0,\n";
+  Output << "\tinput wire col1,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + 2 * col1;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 15-3 compressor.
+  Output << "module GPC_15_3_LUT(\n";
+  Output << "\tinput wire[4:0] col0,\n";
+  Output << "\tinput wire col1,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + 2 * col1;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 23-3 compressor.
+  Output << "module GPC_23_3_LUT(\n";
+  Output << "\tinput wire[2:0] col0,\n";
+  Output << "\tinput wire[1:0] col1,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + 2 * (col1[0] + col1[1]);\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 506-5 compressor.
+  Output << "module GPC_506_5(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\tinput wire[4:0] col2,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
+  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4]);\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 606-5 compressor.
+  Output << "module GPC_606_5(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\tinput wire[5:0] col2,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
+  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4] + col2[5]);\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 1325-5 compressor.
+  Output << "module GPC_1325_5(\n";
+  Output << "\tinput wire[4:0] col0,\n";
+  Output << "\tinput wire[1:0] col1,\n";
+  Output << "\tinput wire[2:0] col2,\n";
+  Output << "\tinput wire col3,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
+  Output << "+ 2 * (col1[0] + col1[1]) + 4 * (col2[0] + col2[1] + col2[2]) + 8 * col3;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 1406-5 compressor.
+  Output << "module GPC_1406_5(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\tinput wire[3:0] col2,\n";
+  Output << "\tinput wire col3,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
+  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 1415-5 compressor.
+  Output << "module GPC_1415_5(\n";
+  Output << "\tinput wire[4:0] col0,\n";
+  Output << "\tinput wire col1,\n";
+  Output << "\tinput wire[3:0] col2,\n";
+  Output << "\tinput wire col3,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
+  Output << "+ 2 * col1 + 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
+  Output << "endmodule\n\n";
 }
 
-float SIRAddMulChain::predictAddChainResultTime(std::vector<std::pair<unsigned, float> > AddChain,
-                                                MatrixType Matrix) {
-  // Handle the trivial case.
-  if (AddChain.size() == 1)
-    return AddChain[0].second;
+void SIRMOAOpt::printAddChainModule(unsigned OpNum, unsigned BitWidth,
+                                         raw_fd_ostream &Output) {
+  // Calculate the output bitwidth.
+  unsigned OutputBitWidth = BitWidth + std::ceil(log(OpNum) / log(2));
 
-  // Sort the add chain operands in ascending order of delay.
-  std::sort(AddChain.begin(), AddChain.end(), LessThan);
-
-  // Predict the result arrival time according to the operand bitwidth and number.
-  float OpArrivalTime = 0.0f;
-  unsigned OpBitWidth = 0;
-  for (unsigned i = 0; i < AddChain.size(); ++i) {
-    OpArrivalTime = std::max(OpArrivalTime, AddChain[i].second);
-    OpBitWidth = std::max(OpBitWidth, getOperandBitWidth(Matrix[AddChain[i].first]));
+  Output << "module AddChain_" << utostr_32(OpNum)
+    << "_" << utostr_32(BitWidth) << "(\n";
+  for (unsigned i = 0; i < BitWidth; ++i) {
+    Output << "\tinput wire[" << utostr_32(OpNum - 1)
+      << ":0] col" << utostr_32(i) << ",\n";
   }
+  Output << "\toutput wire[" << utostr_32(OutputBitWidth - 1)
+    << ":0] sum\n";
+  Output << ");\n\n";
+  for (unsigned i = 0; i < OpNum; ++i) {
+    Output << "\twire[" << utostr_32(BitWidth - 1)
+      << ":0] op" << utostr_32(i) << " = {";
 
-  float ResultArrivalTime
-    = OpArrivalTime + getAddChainDelay(OpBitWidth, AddChain.size());
-
-  return ResultArrivalTime;
-}
-
-void SIRAddMulChain::generateAddChain(MatrixType Matrix,
-                                      std::vector<std::pair<unsigned, float> > Ops,
-                                      std::string ResultName, raw_fd_ostream &Output) {
-  // Sort the operands of add chain in ascending order of delay.
-  std::sort(Ops.begin(), Ops.end(), LessThan);
-
-  // Get the bitwidth information. To be noted that, this bitwidth is not corresponding
-  // to the adder delay since it don't consider the sign bit pattern.
-  unsigned BitWidth = Matrix[0].size();
-
-  // Generate the implementation of the add chain operands.
-  std::vector<std::string> OpNames;
-  for (unsigned i = 0; i < Ops.size(); ++i) {
-    // The name of current add chain operand.
-    std::string OpName = ResultName + "_op_" + utostr_32(i);
-    OpNames.push_back(OpName);
-
-    // The bits of current add chain operand.
-    Output << "wire[" + utostr_32(BitWidth - 1) + ":0] " << OpName << " = {";
     for (unsigned j = 0; j < BitWidth; ++j) {
-      Output << Matrix[Ops[i].first][BitWidth - 1 - j].first;
+      Output << "col" << utostr_32(BitWidth - 1 - j)
+        << "[" << utostr_32(i) << "]";
 
       if (j != BitWidth - 1)
         Output << ", ";
     }
+
     Output << "};\n";
   }
+  Output << "\n";
 
-  // Generate the implementation of the add chain.
-  Output << "wire[" + utostr_32(BitWidth - 1) + ":0] " << ResultName << " = ";
-  for (unsigned i = 0; i < Ops.size(); ++i) {
-    Output << OpNames[i];
+  Output << "\tassign sum = ";
+  for (unsigned i = 0; i < OpNum; ++i) {
+    Output << "op" << utostr_32(i);
 
-    if (i != Ops.size() - 1)
+    if (i != OpNum - 1)
       Output << " + ";
   }
-  Output << ";\n";
+  Output << ";\n\n";
+
+  Output << "endmodule\n\n";
 }
 
-float SIRAddMulChain::hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
-                                        unsigned RowNum, unsigned ColNum,
-                                        raw_fd_ostream &Output) {
-  assert(isConstantInt(Matrix[0]) && "Should be a constant integer!");
+void SIRMOAOpt::printCompressComponent(raw_fd_ostream &Output) {
+  /// Print the module of compress components.
+  // GPCs
+  printGPCModule(Output);
+  // AddChains
+  for (unsigned i = 2; i < 10; ++i) {
+    printAddChainModule(i, 16, Output);
+    printAddChainModule(i, 32, Output);
+    printAddChainModule(i, 64, Output);
+  }
+}
 
-  // Consider a row in Matrix is a operand, get its arrival time.
-  // Ignore the constant integer row since it is more efficient to
-  // compress it instead of add it.
-  std::vector<std::pair<unsigned, float> > OpArrivalTime;
-  for (unsigned i = 0; i < RowNum; ++i) {
-    MatrixRowType Row = Matrix[i];
+void
+  SIRMOAOpt::printComponentInstance(unsigned ComponentIdx,
+                                    std::vector<std::vector<DotType> > InputDots,
+                                    std::string OutputName,
+                                    float OutputArrivalTime,
+                                    raw_fd_ostream &Output) {
+  // Get the Component to be used and its information.
+  CompressComponent Component = Library[ComponentIdx];
+  std::vector<unsigned> InputDotNums = Component.getInputDotNums();
+  unsigned OutputDotNum = Component.getOutputDotNum();
+  std::string ComponentName = Component.getName();
 
-    if (isConstantInt(Row))
+  // Print the declaration of the result.  
+  Output << "wire [" << utostr_32(OutputDotNum - 1) << ":0] " << OutputName << ";\n";
+
+  // Print the instantiation of the compressor module.
+  Output << ComponentName << " " + ComponentName + "_" << utostr_32(Component_NUM) << "(";
+
+  // Print the inputs and outputs instance.
+  for (unsigned i = 0; i < InputDotNums.size(); ++i) {
+    // Ignore the empty column.
+    if (InputDotNums[i] == 0)
       continue;
 
-    float ArrivalTime = 0.0f;
-    for (unsigned j = 0; j < ColNum; ++j) {
-      DotType Dot = Row[j];
+    Output << ".col" << utostr_32(i) << "({";
 
-      if (ArrivalTime != 0.0f)
-        assert(Dot.second.first == ArrivalTime ||
-               Dot.second.first == 0.0f && "Unexpected Dot!");
+    std::vector<DotType> InputDotRow = InputDots[i];
+    assert(InputDotRow.size() == InputDotNums[i] || InputDotRow.size() == 0
+      && "Unexpected input dot number!");
+    for (unsigned j = 0; j < InputDotRow.size(); ++j) {
+      Output << InputDotRow[j].first;
 
-      ArrivalTime = std::max(ArrivalTime, Dot.second.first);
+      if (j != InputDotRow.size() - 1)
+        Output << ", ";
     }
 
-    OpArrivalTime.push_back(std::make_pair(i, ArrivalTime));
+    Output << "}), ";
   }
 
-  // Represent the operand using its index and sort them in ascending
-  // order of arrival time.
-  std::sort(OpArrivalTime.begin(), OpArrivalTime.end(), LessThan);
-  
-  /// Build hybrid tree according to the arrival time of operands.
-  // The biggest arrival time will be the limit of add chains that can be built.
-  float LimitTime = OpArrivalTime.back().second;
-  
-//   // Traverse the OperandArrivalTimeMap to build add chain as many as possible.
-//   std::vector<std::pair<std::vector<std::pair<unsigned, float> >, float> > AddChainList;
-//   std::set<unsigned> OpsInAddChain;
-//   bool Continue = true;
-//   while (Continue) {
-//     Continue = false;
-//   
-//     std::vector<std::pair<unsigned, float> > AddChain;
-//     for (unsigned i = 0; i < OpArrivalTime.size(); ++i) {
-//       // Ignore the operand that is already included in other add chains.
-//       if (OpsInAddChain.count(OpArrivalTime[i].first))
-//         continue;
-// 
-//       std::vector<std::pair<unsigned, float> > PotentialAddChain = AddChain;
-//       PotentialAddChain.push_back(OpArrivalTime[i]);
-//   
-//       float PotentialAddChainResultTime = predictAddChainResultTime(PotentialAddChain, Matrix);
-//       // If the result time is within the limit, then the potential add chain
-//       // is valid. Or we will try to insert more operands into this chain until
-//       // it become invalid.
-//       if (PotentialAddChainResultTime <= LimitTime && PotentialAddChain.size() <= 9) {
-//         AddChain = PotentialAddChain;
-//         continue;
-//       } else
-//         break;
-//     }
-//   
-//     // If we succeed to build a add chain, index it.
-//     if (AddChain.size() > 1) {
-//       float AddChainResultTime = predictAddChainResultTime(AddChain, Matrix);
-//       AddChainList.push_back(std::make_pair(AddChain, AddChainResultTime));
-// 
-//       for (unsigned i = 0; i < AddChain.size(); ++i)
-//         OpsInAddChain.insert(AddChain[i].first);
-// 
-//       Continue = true;
-//     }
-//   }
-// 
-//   /// Rebuild the matrix according to the partition.
-//   MatrixType NewMatrix;
-// 
-//   // Insert the add chain result to the matrix to be compressed later.
-//   for (unsigned i = 0; i < AddChainList.size(); ++i) {
-//     std::pair<std::vector<std::pair<unsigned, float> >, float> AddChain = AddChainList[i];
-//     std::vector<std::pair<unsigned, float> > AddChainOps = AddChain.first;
-//     float AddChainResultTime = AddChain.second;
-// 
-//     // Create a operand represent the add chain result.
-//     std::string AddChainResultName = "add_chain_result_" + utostr_32(i);
-// 
-//     // Generate the implementation of the add chains.
-//     generateAddChain(Matrix, AddChainOps, AddChainResultName, Output);
-// 
-//     MatrixRowType Row;
-//     for (unsigned j = 0; j < ColNum; ++j) {
-//       std::string DotName = AddChainResultName + "[" + utostr_32(j) + "]";
-//       Row.push_back(std::make_pair(DotName, std::make_pair(AddChainResultTime, 0)));
-//     }
-// 
-//     NewMatrix.push_back(Row);
-//   }
-//   // All operands that are not included in add chain will be compressed later.
-//   for (unsigned i = 0; i < RowNum; ++i) {
-//     // Ignore the operands in add chain.
-//     if (OpsInAddChain.count(i))
-//       continue;
-// 
-//     NewMatrix.push_back(Matrix[i]);
-//   }
-// 
-//   // Compress the NewMatrix.
-//   MatrixType TMatrix = transportMatrix(NewMatrix, NewMatrix.size(), ColNum);
-//   float ResultArrivalTime = compressMatrix(TMatrix, MatrixName, NewMatrix.size(), ColNum, Output);
+  Output << ".sum(" << OutputName << ")";
 
-  // Compress the NewMatrix.
-  MatrixType TMatrix = transportMatrix(Matrix, Matrix.size(), ColNum);
-  float ResultArrivalTime = compressMatrix(TMatrix, MatrixName, Matrix.size(), ColNum, Output);
-
-  return ResultArrivalTime;
-}
-
-void SIRAddMulChain::replaceWithCompressor() {
-  SIRDatapathBuilder Builder(SM, *TD);
-
-  typedef std::map<IntrinsicInst *, std::vector<IntrinsicInst *> >::iterator iterator;
-  for (iterator I = ChainMap.begin(), E = ChainMap.end(); I != E; ++I) {
-    Value *CompressorVal = Builder.createCompressorInst(I->first);
-
-    SM->indexKeepVal(CompressorVal);
-
-    IntrinsicInst *Compressor = dyn_cast<IntrinsicInst>(CompressorVal);
-    ChainRoot2Compressor.insert(std::make_pair(I->first, Compressor));
-    Compressor2ChainRoot.insert(std::make_pair(Compressor, I->first));
-  }
-}
-
-void SIRAddMulChain::printAllChain() {
-  std::string ChainFile = LuaI::GetString("Chain");
-  std::string Error;
-  raw_fd_ostream ChainOutput(ChainFile.c_str(), Error);
-
-  unsigned OptNum = 0;
-  typedef std::map<IntrinsicInst *, std::vector<IntrinsicInst *> >::iterator iterator;
-  for (iterator I = ChainMap.begin(), E = ChainMap.end(); I != E; ++I) {
-    IntrinsicInst *II = I->first;
-    std::vector<IntrinsicInst *> Chain = I->second;
-
-    ChainOutput << "Root instruction is " << II->getName();
-    ChainOutput << "\n";
-
-    typedef std::vector<IntrinsicInst *>::iterator chain_iterator;
-    for (chain_iterator I = Chain.begin(), E = Chain.end(); I != E; ++I) {
-      IntrinsicInst *ChainInst = *I;
-
-      if (ChainInst->hasOneUse())
-        ChainOutput.indent(2) << "(*****)";
-      else {
-        ChainOutput.indent(2) << "(";
-        typedef Value::use_iterator use_iterator;
-        for (use_iterator UI = ChainInst->use_begin(), UE = ChainInst->use_end(); UI != UE; ++UI) {
-          Value *UserInst = *UI;
-
-          if (!UserInst->use_empty())
-            ChainOutput << UserInst->getName() << ", ";
-        }
-        ChainOutput << ")  ";
-      }
-
-      ChainInst->print(ChainOutput.indent(2));
-      ChainOutput << "\n";
-    }
-
-    ChainOutput << "\n\n";
-
-    OptNum += Chain.size();
-  }
+  Output << ");\n";
 }
