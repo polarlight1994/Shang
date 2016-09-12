@@ -1502,7 +1502,7 @@ void SIRMOAOpt::initLibrary() {
   initGPCs();
 
   // Initialize the AddChains.
-  initAddChains();
+  //initAddChains();
 }
 
 MatrixType
@@ -1660,9 +1660,9 @@ unsigned
     unsigned CompressedDotNum = RealInputDotNum > RealOutputDotNum ? 
                                   RealInputDotNum - RealOutputDotNum : 0;
     float RealDelay
-      = CriticalDelay + NET_DELAY + LatestInputArrivalTime - EarliestInputArrivalTime;
-    //float Performance = (CompressedDotNum * CompressedDotNum) / (RealDelay * Area);
-    float Performance = CompressedDotNum / (RealDelay * Area);
+      = CriticalDelay + NET_DELAY/* + LatestInputArrivalTime - EarliestInputArrivalTime*/;
+    float Performance = (CompressedDotNum * CompressedDotNum) / (RealDelay * Area);
+    //float Performance = CompressedDotNum / (RealDelay * Area);
 
     PriorityList.push_back(std::make_pair(i, std::make_pair(Performance,
                                                             InputDotNums[0])));
