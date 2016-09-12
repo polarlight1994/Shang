@@ -1607,8 +1607,8 @@ bool sortComponent(std::pair<unsigned, std::pair<float, unsigned> > OpA,
 }
 
 unsigned
-  SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
-                                         unsigned RowNo, unsigned Stage) {
+SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
+                                       unsigned RowNo, unsigned Stage) {
   unsigned HighestPriorityGPCIdx;
 
   // Get information of TMatrix.
@@ -1616,7 +1616,7 @@ unsigned
     = getBitNumInCurrentStageListInTMatrix(TMatrix, Stage);
 
   // Try all library and evaluate its priority which is considered in two
-  // aspects: 1) performance 2) input dot num in row 0.
+  // aspects: 1) performance 2) input dot number in row 0.
   std::vector<std::pair<unsigned, std::pair<float, unsigned> > > PriorityList;
   for (unsigned i = 0; i < Library.size(); ++i) {
     CompressComponent Component = Library[i];
@@ -1627,42 +1627,31 @@ unsigned
     float CriticalDelay = Component.getCriticalDelay();
     unsigned Area = Component.getArea();
 
-    // Get the real input dots number and output dot number.
+    // Ignore the invalid component and calculate the sum of
+    // input dot numbers.
     unsigned RealInputDotNum = 0;
-    for (unsigned j = 0; j < InputDotNums.size(); ++j) {
-      if (RowNo + j < TMatrix.size()) {
-        RealInputDotNum += std::min(InputDotNums[j],
-                                    BitNumInCurrentStageList[RowNo + j]);
+    bool ComponentValid = true;
+    if (RowNo + InputDotNums.size() > TMatrix.size())
+      ComponentValid = false;
+    else {
+      for (unsigned j = 0; j < InputDotNums.size(); ++j) {
+        if (InputDotNums[j] > BitNumInCurrentStageList[RowNo + j])
+          ComponentValid = false;
+
+        RealInputDotNum += InputDotNums[j];
       }
     }
+    if (!ComponentValid)
+      continue;
+
     unsigned RealOutputDotNum = std::min(OutputDotNum, TMatrix.size() - RowNo + 1);
-
-    // Get the earliest and latest input arrival time.
-    float EarliestInputArrivalTime = 9999.9999f;
-    float LatestInputArrivalTime = 0.0f;
-    for (unsigned j = 0; j < InputDotNums.size(); ++j) {
-      if (RowNo + j < TMatrix.size()) {
-        unsigned InputDotNum
-          = std::min(InputDotNums[j], BitNumInCurrentStageList[RowNo + j]);
-
-        for (unsigned k = 0; k < InputDotNum; ++k) {
-          // The earliest input arrival time is only considered in first row.
-          if (j == 0)
-            EarliestInputArrivalTime = std::min(EarliestInputArrivalTime,
-                                                TMatrix[RowNo + j][k].second.first);
-          LatestInputArrivalTime = std::max(LatestInputArrivalTime,
-                                            TMatrix[RowNo + j][k].second.first);
-        }
-      }
-    }
 
     // Evaluate the performance.
     unsigned CompressedDotNum = RealInputDotNum > RealOutputDotNum ? 
                                   RealInputDotNum - RealOutputDotNum : 0;
     float RealDelay
-      = CriticalDelay + NET_DELAY/* + LatestInputArrivalTime - EarliestInputArrivalTime*/;
+      = CriticalDelay + NET_DELAY;
     float Performance = (CompressedDotNum * CompressedDotNum) / (RealDelay * Area);
-    //float Performance = CompressedDotNum / (RealDelay * Area);
 
     PriorityList.push_back(std::make_pair(i, std::make_pair(Performance,
                                                             InputDotNums[0])));
