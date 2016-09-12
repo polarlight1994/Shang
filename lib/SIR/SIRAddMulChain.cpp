@@ -119,7 +119,7 @@ struct SIRMOAOpt : public SIRPass {
   std::vector<unsigned>
     getSignBitNumListInMatrix(MatrixType Matrix);
   std::vector<unsigned>
-    getBitNumInCurrentStageListInTMatrix(MatrixType TMatrix, unsigned Stage);
+    getActiveBitNumListInTMatrix(MatrixType TMatrix, unsigned Stage);
   MatrixType
     transportMatrix(MatrixType Matrix, unsigned RowNum, unsigned ColumnNum);
 
@@ -1045,31 +1045,29 @@ std::vector<unsigned> SIRMOAOpt::getBitNumListInTMatrix(MatrixType TMatrix) {
 }
 
 std::vector<unsigned>
-SIRMOAOpt::getBitNumInCurrentStageListInTMatrix(MatrixType TMatrix,
-                                                     unsigned Stage) {
-  std::vector<unsigned> BitNumInCurrentStageList;
+SIRMOAOpt::getActiveBitNumListInTMatrix(MatrixType TMatrix,
+                                        unsigned Stage) {
+  std::vector<unsigned> ActiveBitNumList;
 
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
     MatrixRowType Row = TMatrix[i];
 
     // If there are no dot in current row.
     if (Row.size() == 0) {
-      BitNumInCurrentStageList.push_back(0);
+      ActiveBitNumList.push_back(0);
       continue;
     }
 
     unsigned BitNum = 0;
     for (unsigned j = 0; j < Row.size(); ++j) {
-      assert(Row[j].second.second >= Stage && "Unexpected stage!");
-
-      if (Row[j].first != "1'b0" && Row[j].second.second == Stage)
+      if (Row[j].first != "1'b0" && Row[j].second.second <= Stage)
         ++BitNum;
     }
 
-    BitNumInCurrentStageList.push_back(BitNum);
+    ActiveBitNumList.push_back(BitNum);
   }
 
-  return BitNumInCurrentStageList;
+  return ActiveBitNumList;
 }
 
 MatrixType SIRMOAOpt::simplifyTMatrix(MatrixType TMatrix) {
@@ -1511,8 +1509,8 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
                                          unsigned RowNo, unsigned Stage,
                                          raw_fd_ostream &Output) {
   // Get information of TMatrix.
-  std::vector<unsigned> BitNumInCurrentStageList
-    = getBitNumInCurrentStageListInTMatrix(TMatrix, Stage);
+  std::vector<unsigned> ActiveBitNumList
+    = getActiveBitNumListInTMatrix(TMatrix, Stage);
 
   // Get the Component to be used.
   CompressComponent Component = Library[ComponentIdx];
@@ -1528,7 +1526,7 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
     std::vector<DotType> InputDotRow;
     if (RowNo + i < TMatrix.size()) {
       for (unsigned j = 0; j < InputDotNum; ++j) {
-        if (j < BitNumInCurrentStageList[RowNo + i]) {
+        if (j < ActiveBitNumList[RowNo + i]) {
           DotType Dot = TMatrix[RowNo + i][j];
           InputDotRow.push_back(Dot);
 
@@ -1536,7 +1534,7 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
           InputArrivalTime = std::max(InputArrivalTime, Dot.second.first);
 
           // Make sure we compress the dots in right stage.
-          assert(Dot.second.second == Stage && "Unexpected dot stage!");
+          assert(Dot.second.second <= Stage && "Unexpected dot stage!");
         }
         else {
           InputDotRow.push_back(std::make_pair("1'b0", std::make_pair(0.0f, Stage)));
@@ -1559,7 +1557,7 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
       // The dots to be compressed in current row in TMatrix.
       std::vector<DotType> InputDotRow;
       for (unsigned j = 0; j < InputDotNum; ++j)
-        if (j < BitNumInCurrentStageList[RowNo + i])
+        if (j < ActiveBitNumList[RowNo + i])
           TMatrix[RowNo + i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
     }
   }
@@ -1612,8 +1610,8 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
   unsigned HighestPriorityGPCIdx;
 
   // Get information of TMatrix.
-  std::vector<unsigned> BitNumInCurrentStageList
-    = getBitNumInCurrentStageListInTMatrix(TMatrix, Stage);
+  std::vector<unsigned> ActiveBitNumList
+    = getActiveBitNumListInTMatrix(TMatrix, Stage);
 
   // Try all library and evaluate its priority which is considered in two
   // aspects: 1) performance 2) input dot number in row 0.
@@ -1635,7 +1633,7 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
       ComponentValid = false;
     else {
       for (unsigned j = 0; j < InputDotNums.size(); ++j) {
-        if (InputDotNums[j] > BitNumInCurrentStageList[RowNo + j])
+        if (InputDotNums[j] > ActiveBitNumList[RowNo + j])
           ComponentValid = false;
 
         RealInputDotNum += InputDotNums[j];
@@ -1679,55 +1677,14 @@ MatrixType SIRMOAOpt::compressTMatrixInStage(MatrixType TMatrix,
                                              raw_fd_ostream &Output) {
   // Get the informations of the TMatrix.
   std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
-  std::vector<unsigned> BitNumInCurrentStageList
-    = getBitNumInCurrentStageListInTMatrix(TMatrix, Stage);
-
-  // Compress the final row using XOR gate.
-  if (BitNumInCurrentStageList[TMatrix.size() - 1] >= 2) {
-    std::vector<DotType> CompressCouple;
-
-    // Collect the compressed bits into CompressCouple
-    // and clear the compressed bits in TMatrix.
-    for (unsigned i = 0; i < BitNumInCurrentStageList[TMatrix.size() - 1]; ++i) {
-      CompressCouple.push_back(TMatrix.back()[i]);
-      TMatrix.back()[i] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
-    }
-
-    // Get the information of the result.
-    std::string ResultName = "result_" + utostr_32(TMatrix.size() - 1) +
-                             "_" + utostr_32(Stage);
-
-    float ResultDelay = 0.0f;
-    for (unsigned i = 0; i < CompressCouple.size(); ++i) {
-      ResultDelay = std::max(ResultDelay, CompressCouple[i].second.first);
-    }
-
-    // Insert the result into TMatrix.
-    // To be fixed.
-    TMatrix.back().push_back(std::make_pair(ResultName,
-                                            std::make_pair(0.0f, Stage + 1)));
-
-    // Generate the XOR gate to compress the final row.
-    Output << "wire " << ResultName << " = ";
-    for (unsigned i = 0; i < CompressCouple.size(); ++i) {
-      Output << CompressCouple[i].first;
-
-      if (i != CompressCouple.size() - 1)
-        Output << " ^ ";
-    }
-    Output << ";\n\n";
-
-    // After compress this row, do some clean up and optimize work.
-    TMatrix = eliminateOneBitInTMatrix(TMatrix);
-    TMatrix = simplifyTMatrix(TMatrix);
-    TMatrix = sortTMatrix(TMatrix);
-  }
+  std::vector<unsigned> ActiveBitNumList
+    = getActiveBitNumListInTMatrix(TMatrix, Stage);
 
   // Compress row by row. To be noted that, the last row is ignored since
   // it can be compressed using XOR gate.
-  for (unsigned i = 0; i < TMatrix.size() - 1; ++i) {
+  for (unsigned i = 0; i < TMatrix.size(); ++i) {
     // Compress current row if it has more than target final bit numbers.
-    while (BitNumList[i] > 3 && BitNumInCurrentStageList[i] >= 3) {
+    while (BitNumList[i] > 3 && ActiveBitNumList[i] >= 3) {
       unsigned ComponentIdx = getHighestPriorityComponent(TMatrix, i, Stage);
       TMatrix = compressTMatrixUsingComponent(TMatrix, ComponentIdx, i, Stage, Output);
 
@@ -1738,17 +1695,7 @@ MatrixType SIRMOAOpt::compressTMatrixInStage(MatrixType TMatrix,
 
       // Update the informations of the TMatrix.
       BitNumList = getBitNumListInTMatrix(TMatrix);
-      BitNumInCurrentStageList = getBitNumInCurrentStageListInTMatrix(TMatrix, Stage);
-    }
-  }
-
-  // Increase the stage number of all remaining bits of current stage.
-  for (unsigned i = 0; i < TMatrix.size() - 1; ++i) {
-    MatrixRowType Row = TMatrix[i];
-
-    for (unsigned j = 0; j < Row.size(); ++j) {
-      if (Row[j].second.second == Stage)
-        TMatrix[i][j].second.second++;
+      ActiveBitNumList = getActiveBitNumListInTMatrix(TMatrix, Stage);
     }
   }
 
