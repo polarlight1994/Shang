@@ -143,8 +143,9 @@ struct SIRMOAOpt : public SIRPass {
                                            raw_fd_ostream &Output);
   unsigned getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
                                        unsigned Stage);
-  MatrixType compressTMatrixInStage(MatrixType TMatrix,
-                                    unsigned Stage, raw_fd_ostream &Output);
+  MatrixType compressTMatrixInStage(MatrixType TMatrix, unsigned Stage,
+                                    unsigned TargetHeight, unsigned AppointedComponentIdx,
+                                    raw_fd_ostream &Output);
   float compressMatrix(MatrixType TMatrix, std::string MatrixName,
                        unsigned OperandNum, unsigned OperandWidth,
                        raw_fd_ostream &Output);
@@ -1674,19 +1675,23 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
 
 MatrixType SIRMOAOpt::compressTMatrixInStage(MatrixType TMatrix,
                                              unsigned Stage,
+                                             unsigned TargetHeight,
+                                             unsigned AppointedComponentIdx,
                                              raw_fd_ostream &Output) {
   // Get the informations of the TMatrix.
   std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
   std::vector<unsigned> ActiveBitNumList
     = getActiveBitNumListInTMatrix(TMatrix, Stage);
 
-  // Compress row by row. To be noted that, the last row is ignored since
-  // it can be compressed using XOR gate.
+  // Compress row by row.
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
     // Compress current row if it has more than target final bit numbers.
-    while (BitNumList[i] > 3 && ActiveBitNumList[i] >= 3) {
-      unsigned ComponentIdx = getHighestPriorityComponent(TMatrix, i, Stage);
-      TMatrix = compressTMatrixUsingComponent(TMatrix, ComponentIdx, i, Stage, Output);
+    while (BitNumList[i] > TargetHeight && ActiveBitNumList[i] >= 3) {
+      unsigned ComponentIdx = AppointedComponentIdx;
+      if (AppointedComponentIdx == UINT_MAX)
+        ComponentIdx = getHighestPriorityComponent(TMatrix, i, Stage);
+      TMatrix = compressTMatrixUsingComponent(TMatrix, ComponentIdx, i,
+                                              Stage, Output);
 
       // Do some clean up and optimize work.
       TMatrix = eliminateOneBitInTMatrix(TMatrix);
@@ -1722,22 +1727,46 @@ float SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
   printTMatrixForDebug(TMatrix);
 
   /// Start to compress the TMatrix
-  bool Continue = true;
   unsigned Stage = 0;
-  while (Continue) {
-    TMatrix = compressTMatrixInStage(TMatrix, Stage, Output);
+  // First, we use the highest priority GPC to compress the TMatrix
+  // until the length of each row is less than BH.
+  unsigned BH = 6;
+  {
+    bool Continue = true;
+    while (Continue) {
+      TMatrix = compressTMatrixInStage(TMatrix, Stage, BH, 9, Output);
 
-    // Determine if we need to continue compressing.
-    std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
-    Continue = false;
-    for (unsigned i = 0; i < TMatrix.size(); ++i) {
-      if (BitNumList[i] > 3)
-        Continue = true;
+      // Determine if we need to continue compressing.
+      std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
+      Continue = false;
+      for (unsigned i = 0; i < TMatrix.size(); ++i) {
+        if (BitNumList[i] > BH)
+          Continue = true;
+      }
+
+      // Increase the stage and start next compress progress.
+      if (Continue)
+        ++Stage;
     }
+  }
+  // Then, compress the TMatrix by choosing GPC according to particular case.
+  {
+    bool Continue = true;
+    while (Continue) {
+      TMatrix = compressTMatrixInStage(TMatrix, Stage, 3, UINT_MAX, Output);
 
-    // Increase the stage and start next compress progress.
-    if (Continue)
-      ++Stage;
+      // Determine if we need to continue compressing.
+      std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
+      Continue = false;
+      for (unsigned i = 0; i < TMatrix.size(); ++i) {
+        if (BitNumList[i] > 3)
+          Continue = true;
+      }
+
+      // Increase the stage and start next compress progress.
+      if (Continue)
+        ++Stage;
+    }
   }
 
   /// Finish the compress by sum the left-behind bits using ternary CPA.
