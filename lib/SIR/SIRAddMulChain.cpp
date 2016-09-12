@@ -463,9 +463,9 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
 }
 
 std::vector<Value *>
-  SIRMOAOpt::eliminateIdenticalOperands(std::vector<Value *> Operands,
-                                        Value *MOA, unsigned BitWidth) {
-  // The operans after elimination
+SIRMOAOpt::eliminateIdenticalOperands(std::vector<Value *> Operands,
+                                      Value *MOA, unsigned BitWidth) {
+  // The operands after elimination
   std::vector<Value *> FinalOperands;
 
   std::set<Value *> Visited;
@@ -627,8 +627,8 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
 }
 
 std::vector<Value *>
-  SIRMOAOpt::OptimizeOperands(std::vector<Value *> Operands,
-                              Value *MOA, unsigned BitWidth) {
+SIRMOAOpt::OptimizeOperands(std::vector<Value *> Operands,
+                            Value *MOA, unsigned BitWidth) {
   // Eliminate the identical operands in add chain.
   std::vector<Value *>
     OptOperands = eliminateIdenticalOperands(Operands, MOA, BitWidth);
@@ -1208,9 +1208,9 @@ MatrixType SIRMOAOpt::eliminateOneBitInTMatrix(MatrixType TMatrix) {
 }
 
 SIRMOAOpt::CompressComponent
-  SIRMOAOpt::createAddChainComponent(std::string Name, unsigned OpNum,
-                                     unsigned BitWidth, unsigned Area,
-                                     float CriticalDelay) {
+SIRMOAOpt::createAddChainComponent(std::string Name, unsigned OpNum,
+                                   unsigned BitWidth, unsigned Area,
+                                   float CriticalDelay) {
   // Inputs
   std::vector<unsigned> AddChain_InputsVector;
   for (unsigned i = 0; i < BitWidth; ++i)
@@ -1506,10 +1506,10 @@ void SIRMOAOpt::initLibrary() {
 }
 
 MatrixType
-  SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
-                                           unsigned ComponentIdx,
-                                           unsigned RowNo, unsigned Stage,
-                                           raw_fd_ostream &Output) {
+SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
+                                         unsigned ComponentIdx,
+                                         unsigned RowNo, unsigned Stage,
+                                         raw_fd_ostream &Output) {
   // Get information of TMatrix.
   std::vector<unsigned> BitNumInCurrentStageList
     = getBitNumInCurrentStageListInTMatrix(TMatrix, Stage);
@@ -2089,11 +2089,11 @@ void SIRMOAOpt::printCompressComponent(raw_fd_ostream &Output) {
 }
 
 void
-  SIRMOAOpt::printComponentInstance(unsigned ComponentIdx,
-                                    std::vector<std::vector<DotType> > InputDots,
-                                    std::string OutputName,
-                                    float OutputArrivalTime,
-                                    raw_fd_ostream &Output) {
+SIRMOAOpt::printComponentInstance(unsigned ComponentIdx,
+                                  std::vector<std::vector<DotType> > InputDots,
+                                  std::string OutputName,
+                                  float OutputArrivalTime,
+                                  raw_fd_ostream &Output) {
   // Get the Component to be used and its information.
   CompressComponent Component = Library[ComponentIdx];
   std::vector<unsigned> InputDotNums = Component.getInputDotNums();
