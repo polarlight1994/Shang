@@ -144,7 +144,6 @@ struct SIRMOAOpt : public SIRPass {
   unsigned getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
                                        unsigned Stage);
   MatrixType compressTMatrixInStage(MatrixType TMatrix, unsigned Stage,
-                                    unsigned TargetHeight, unsigned AppointedComponentIdx,
                                     raw_fd_ostream &Output);
   float compressMatrix(MatrixType TMatrix, std::string MatrixName,
                        unsigned OperandNum, unsigned OperandWidth,
@@ -160,8 +159,7 @@ struct SIRMOAOpt : public SIRPass {
   void printCompressComponent(raw_fd_ostream &Output);
   void printComponentInstance(unsigned ComponentIdx,
                               std::vector<std::vector<DotType> > InputDots,
-                              std::string OutputName, float OutputArrivalTime,
-                              raw_fd_ostream &Output);
+                              std::string OutputName, raw_fd_ostream &Output);
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     SIRPass::getAnalysisUsage(AU);
@@ -602,10 +600,10 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
             }
             else if (Mask.isSameKnownAt(j)) {
               if (SameBit.size() != 0)
-                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
+                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(0.0f, 0));
               else {
                 SameBit = Mangle(OpName) + "[" + utostr_32(j) + "]";
-                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
+                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(0.0f, 0));
               }
               continue;
             }
@@ -613,12 +611,12 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
 
           // Or use the form like operand[0], operand[1]...
           std::string DotName = Mangle(OpName) + "[" + utostr_32(j) + "]";
-          Matrix[i][j] = std::make_pair(DotName, std::make_pair(ArrivalTime, 0));
+          Matrix[i][j] = std::make_pair(DotName, std::make_pair(0.0f, 0));
         }
         // When the dot position is beyond the range of operand bit width,
         // we need to pad zero into the matrix.
         else {
-          Matrix[i][j] = std::make_pair("1'b0", std::make_pair(ArrivalTime, 0));
+          Matrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
         }
       }
     }
@@ -1566,8 +1564,6 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
   // Get name and delay for output dots.
   std::string OutputName
     = "gpc_result_" + utostr_32(Component_NUM++) + "_" + utostr_32(Stage);
-  float OutputArrivalTime
-    = InputArrivalTime + (Component.getCriticalDelay() + NET_DELAY) / VFUs::Period;
 
   // Insert the output dots into TMatrix.
   unsigned OutputDotNum = Component.getOutputDotNum();
@@ -1578,13 +1574,13 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
 
     std::string OutputDotName = OutputName + "[" + utostr_32(i) + "]";
     TMatrix[RowNo + i].push_back(std::make_pair(OutputDotName,
-                                                std::make_pair(OutputArrivalTime,
+                                                std::make_pair(0.0f,
                                                                Stage + 1)));
   }
 
   // Generate component instance.
-  printComponentInstance(ComponentIdx, InputDots, OutputName,
-                         OutputArrivalTime, Output);
+  printComponentInstance(ComponentIdx, InputDots,
+                         OutputName, Output);
 
   printTMatrixForDebug(TMatrix);
 
@@ -1626,8 +1622,7 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
     float CriticalDelay = Component.getCriticalDelay();
     unsigned Area = Component.getArea();
 
-    // Ignore the invalid component and calculate the sum of
-    // input dot numbers.
+    // Ignore the invalid component.
     unsigned RealInputDotNum = 0;
     bool ComponentValid = true;
     if (RowNo + InputDotNums.size() > TMatrix.size())
@@ -1675,8 +1670,6 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
 
 MatrixType SIRMOAOpt::compressTMatrixInStage(MatrixType TMatrix,
                                              unsigned Stage,
-                                             unsigned TargetHeight,
-                                             unsigned AppointedComponentIdx,
                                              raw_fd_ostream &Output) {
   // Get the informations of the TMatrix.
   std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
@@ -1686,10 +1679,11 @@ MatrixType SIRMOAOpt::compressTMatrixInStage(MatrixType TMatrix,
   // Compress row by row.
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
     // Compress current row if it has more than target final bit numbers.
-    while (BitNumList[i] > TargetHeight && ActiveBitNumList[i] >= 3) {
-      unsigned ComponentIdx = AppointedComponentIdx;
-      if (AppointedComponentIdx == UINT_MAX)
+    while (BitNumList[i] > 3 && ActiveBitNumList[i] >= 3) {
+      unsigned ComponentIdx = 9;
+      if (ActiveBitNumList[i] <= 6)
         ComponentIdx = getHighestPriorityComponent(TMatrix, i, Stage);
+
       TMatrix = compressTMatrixUsingComponent(TMatrix, ComponentIdx, i,
                                               Stage, Output);
 
@@ -1728,45 +1722,21 @@ float SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
 
   /// Start to compress the TMatrix
   unsigned Stage = 0;
-  // First, we use the highest priority GPC to compress the TMatrix
-  // until the length of each row is less than BH.
-  unsigned BH = 6;
-  {
-    bool Continue = true;
-    while (Continue) {
-      TMatrix = compressTMatrixInStage(TMatrix, Stage, BH, 9, Output);
+  bool Continue = true;
+  while (Continue) {
+    TMatrix = compressTMatrixInStage(TMatrix, Stage, Output);
 
-      // Determine if we need to continue compressing.
-      std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
-      Continue = false;
-      for (unsigned i = 0; i < TMatrix.size(); ++i) {
-        if (BitNumList[i] > BH)
-          Continue = true;
-      }
-
-      // Increase the stage and start next compress progress.
-      if (Continue)
-        ++Stage;
+    // Determine if we need to continue compressing.
+    std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
+    Continue = false;
+    for (unsigned i = 0; i < TMatrix.size(); ++i) {
+      if (BitNumList[i] > 3)
+        Continue = true;
     }
-  }
-  // Then, compress the TMatrix by choosing GPC according to particular case.
-  {
-    bool Continue = true;
-    while (Continue) {
-      TMatrix = compressTMatrixInStage(TMatrix, Stage, 3, UINT_MAX, Output);
 
-      // Determine if we need to continue compressing.
-      std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
-      Continue = false;
-      for (unsigned i = 0; i < TMatrix.size(); ++i) {
-        if (BitNumList[i] > 3)
-          Continue = true;
-      }
-
-      // Increase the stage and start next compress progress.
-      if (Continue)
-        ++Stage;
-    }
+    // Increase the stage and start next compress progress.
+    if (Continue)
+      ++Stage;
   }
 
   /// Finish the compress by sum the left-behind bits using ternary CPA.
@@ -1862,7 +1832,7 @@ void SIRMOAOpt::printTMatrixForDebug(MatrixType TMatrix) {
     for (unsigned j = 0; j < Row.size(); ++j) {
       DotType Dot = Row[j];
 
-      DebugOutput << Dot.first/* << "--" << Dot.second*/;
+      DebugOutput << Dot.first/* << "--" << Dot.second.first*/;
 
       if (j != Row.size() - 1)
         DebugOutput << "  ";
@@ -2057,7 +2027,6 @@ void
 SIRMOAOpt::printComponentInstance(unsigned ComponentIdx,
                                   std::vector<std::vector<DotType> > InputDots,
                                   std::string OutputName,
-                                  float OutputArrivalTime,
                                   raw_fd_ostream &Output) {
   // Get the Component to be used and its information.
   CompressComponent Component = Library[ComponentIdx];
