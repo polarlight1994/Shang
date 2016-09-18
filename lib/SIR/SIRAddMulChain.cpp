@@ -1913,60 +1913,60 @@ void SIRMOAOpt::printGPCModule(raw_fd_ostream &Output) {
   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + 2 * (col1[0] + col1[1]);\n\n";
   Output << "endmodule\n\n";
 
-  // Generate the 506-5 compressor.
-  Output << "module GPC_506_5(\n";
-  Output << "\tinput wire[5:0] col0,\n";
-  Output << "\tinput wire[4:0] col2,\n";
-  Output << "\toutput wire[4:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
-  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4]);\n\n";
-  Output << "endmodule\n\n";
-
-  // Generate the 606-5 compressor.
-  Output << "module GPC_606_5(\n";
-  Output << "\tinput wire[5:0] col0,\n";
-  Output << "\tinput wire[5:0] col2,\n";
-  Output << "\toutput wire[4:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
-  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4] + col2[5]);\n\n";
-  Output << "endmodule\n\n";
-
-  // Generate the 1325-5 compressor.
-  Output << "module GPC_1325_5(\n";
-  Output << "\tinput wire[4:0] col0,\n";
-  Output << "\tinput wire[1:0] col1,\n";
-  Output << "\tinput wire[2:0] col2,\n";
-  Output << "\tinput wire col3,\n";
-  Output << "\toutput wire[4:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
-  Output << "+ 2 * (col1[0] + col1[1]) + 4 * (col2[0] + col2[1] + col2[2]) + 8 * col3;\n\n";
-  Output << "endmodule\n\n";
-
-  // Generate the 1406-5 compressor.
-  Output << "module GPC_1406_5(\n";
-  Output << "\tinput wire[5:0] col0,\n";
-  Output << "\tinput wire[3:0] col2,\n";
-  Output << "\tinput wire col3,\n";
-  Output << "\toutput wire[4:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
-  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
-  Output << "endmodule\n\n";
-
-  // Generate the 1415-5 compressor.
-  Output << "module GPC_1415_5(\n";
-  Output << "\tinput wire[4:0] col0,\n";
-  Output << "\tinput wire col1,\n";
-  Output << "\tinput wire[3:0] col2,\n";
-  Output << "\tinput wire col3,\n";
-  Output << "\toutput wire[4:0] sum\n";
-  Output << ");\n\n";
-  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
-  Output << "+ 2 * col1 + 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
-  Output << "endmodule\n\n";
+//   // Generate the 506-5 compressor.
+//   Output << "module GPC_506_5(\n";
+//   Output << "\tinput wire[5:0] col0,\n";
+//   Output << "\tinput wire[4:0] col2,\n";
+//   Output << "\toutput wire[4:0] sum\n";
+//   Output << ");\n\n";
+//   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
+//   Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4]);\n\n";
+//   Output << "endmodule\n\n";
+// 
+//   // Generate the 606-5 compressor.
+//   Output << "module GPC_606_5(\n";
+//   Output << "\tinput wire[5:0] col0,\n";
+//   Output << "\tinput wire[5:0] col2,\n";
+//   Output << "\toutput wire[4:0] sum\n";
+//   Output << ");\n\n";
+//   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
+//   Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4] + col2[5]);\n\n";
+//   Output << "endmodule\n\n";
+// 
+//   // Generate the 1325-5 compressor.
+//   Output << "module GPC_1325_5(\n";
+//   Output << "\tinput wire[4:0] col0,\n";
+//   Output << "\tinput wire[1:0] col1,\n";
+//   Output << "\tinput wire[2:0] col2,\n";
+//   Output << "\tinput wire col3,\n";
+//   Output << "\toutput wire[4:0] sum\n";
+//   Output << ");\n\n";
+//   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
+//   Output << "+ 2 * (col1[0] + col1[1]) + 4 * (col2[0] + col2[1] + col2[2]) + 8 * col3;\n\n";
+//   Output << "endmodule\n\n";
+// 
+//   // Generate the 1406-5 compressor.
+//   Output << "module GPC_1406_5(\n";
+//   Output << "\tinput wire[5:0] col0,\n";
+//   Output << "\tinput wire[3:0] col2,\n";
+//   Output << "\tinput wire col3,\n";
+//   Output << "\toutput wire[4:0] sum\n";
+//   Output << ");\n\n";
+//   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
+//   Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
+//   Output << "endmodule\n\n";
+// 
+//   // Generate the 1415-5 compressor.
+//   Output << "module GPC_1415_5(\n";
+//   Output << "\tinput wire[4:0] col0,\n";
+//   Output << "\tinput wire col1,\n";
+//   Output << "\tinput wire[3:0] col2,\n";
+//   Output << "\tinput wire col3,\n";
+//   Output << "\toutput wire[4:0] sum\n";
+//   Output << ");\n\n";
+//   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
+//   Output << "+ 2 * col1 + 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
+//   Output << "endmodule\n\n";
 }
 
 void SIRMOAOpt::printAddChainModule(unsigned OpNum, unsigned BitWidth,
@@ -2015,12 +2015,12 @@ void SIRMOAOpt::printCompressComponent(raw_fd_ostream &Output) {
   /// Print the module of compress components.
   // GPCs
   printGPCModule(Output);
-  // AddChains
-  for (unsigned i = 2; i < 10; ++i) {
-    printAddChainModule(i, 16, Output);
-    printAddChainModule(i, 32, Output);
-    printAddChainModule(i, 64, Output);
-  }
+//   // AddChains
+//   for (unsigned i = 2; i < 10; ++i) {
+//     printAddChainModule(i, 16, Output);
+//     printAddChainModule(i, 32, Output);
+//     printAddChainModule(i, 64, Output);
+//   }
 }
 
 void
