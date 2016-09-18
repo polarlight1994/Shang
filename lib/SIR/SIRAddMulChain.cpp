@@ -587,27 +587,27 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
         // we get the name of dot considering the bit mask.
         if (j < OpWidth) {
           // If it is a known bit, then use the known value.
-          if (SM->hasBitMask(Operand)) {
-            SIRBitMask Mask = SM->getBitMask(Operand);
-
-            if (Mask.isOneKnownAt(j)) {
-              Matrix[i][j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
-              continue;
-            }
-            else if (Mask.isZeroKnownAt(j)) {
-              Matrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
-              continue;
-            }
-            else if (Mask.isSameKnownAt(j)) {
-              if (SameBit.size() != 0)
-                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(0.0f, 0));
-              else {
-                SameBit = Mangle(OpName) + "[" + utostr_32(j) + "]";
-                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(0.0f, 0));
-              }
-              continue;
-            }
-          }
+//           if (SM->hasBitMask(Operand)) {
+//             SIRBitMask Mask = SM->getBitMask(Operand);
+// 
+//             if (Mask.isOneKnownAt(j)) {
+//               Matrix[i][j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
+//               continue;
+//             }
+//             else if (Mask.isZeroKnownAt(j)) {
+//               Matrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+//               continue;
+//             }
+//             else if (Mask.isSameKnownAt(j)) {
+//               if (SameBit.size() != 0)
+//                 Matrix[i][j] = std::make_pair(SameBit, std::make_pair(0.0f, 0));
+//               else {
+//                 SameBit = Mangle(OpName) + "[" + utostr_32(j) + "]";
+//                 Matrix[i][j] = std::make_pair(SameBit, std::make_pair(0.0f, 0));
+//               }
+//               continue;
+//             }
+//           }
 
           // Or use the form like operand[0], operand[1]...
           std::string DotName = Mangle(OpName) + "[" + utostr_32(j) + "]";
@@ -1303,55 +1303,55 @@ void SIRMOAOpt::initGPCs() {
                                  3, 2, 0.043f);
   Library.push_back(GPC_15_3_LUT);
 
-  /// GPC_506_5
-  // Inputs & Outputs
-  unsigned GPC_506_5_Inputs[3] = { 6, 0, 5 };
-  std::vector<unsigned> GPC_506_5_InputsVector(GPC_506_5_Inputs,
-                                               GPC_506_5_Inputs + 3);
-
-  CompressComponent GPC_506_5("GPC_506_5", GPC_506_5_InputsVector,
-                              5, 4, 0.355f);
-  Library.push_back(GPC_506_5);
-
-  // GPC_606_5
-  // Inputs & Outputs
-  unsigned GPC_606_5_Inputs[3] = { 6, 0, 6 };
-  std::vector<unsigned> GPC_606_5_InputsVector(GPC_606_5_Inputs,
-                                               GPC_606_5_Inputs + 3);
-
-  CompressComponent GPC_606_5("GPC_606_5", GPC_606_5_InputsVector,
-                              5, 4, 0.355f);
-  Library.push_back(GPC_606_5);
-
-  // GPC_1325_5
-  // Inputs & Outputs
-  unsigned GPC_1325_5_Inputs[4] = { 5, 2, 3, 1 };
-  std::vector<unsigned> GPC_1325_5_InputsVector(GPC_1325_5_Inputs,
-                                                GPC_1325_5_Inputs + 4);
-
-  CompressComponent GPC_1325_5("GPC_1325_5", GPC_1325_5_InputsVector,
-                               5, 4, 0.355f);
-  Library.push_back(GPC_1325_5);
-
-  // GPC_1406_5
-  // Inputs & Outputs
-  unsigned GPC_1406_5_Inputs[4] = { 6, 0, 4, 1 };
-  std::vector<unsigned> GPC_1406_5_InputsVector(GPC_1406_5_Inputs,
-                                                GPC_1406_5_Inputs + 4);
-
-  CompressComponent GPC_1406_5("GPC_1406_5", GPC_1406_5_InputsVector,
-                               5, 4, 0.355f);
-  Library.push_back(GPC_1406_5);
-
-  // GPC_1415_5
-  // Inputs & Outputs
-  unsigned GPC_1415_5_Inputs[4] = { 5, 1, 4, 1 };
-  std::vector<unsigned> GPC_1415_5_InputsVector(GPC_1415_5_Inputs,
-                                                GPC_1415_5_Inputs + 4);
-
-  CompressComponent GPC_1415_5("GPC_1415_5", GPC_1415_5_InputsVector,
-                               5, 4, 0.355f);
-  Library.push_back(GPC_1415_5);
+//   /// GPC_506_5
+//   // Inputs & Outputs
+//   unsigned GPC_506_5_Inputs[3] = { 6, 0, 5 };
+//   std::vector<unsigned> GPC_506_5_InputsVector(GPC_506_5_Inputs,
+//                                                GPC_506_5_Inputs + 3);
+// 
+//   CompressComponent GPC_506_5("GPC_506_5", GPC_506_5_InputsVector,
+//                               5, 4, 0.355f);
+//   Library.push_back(GPC_506_5);
+// 
+//   // GPC_606_5
+//   // Inputs & Outputs
+//   unsigned GPC_606_5_Inputs[3] = { 6, 0, 6 };
+//   std::vector<unsigned> GPC_606_5_InputsVector(GPC_606_5_Inputs,
+//                                                GPC_606_5_Inputs + 3);
+// 
+//   CompressComponent GPC_606_5("GPC_606_5", GPC_606_5_InputsVector,
+//                               5, 4, 0.355f);
+//   Library.push_back(GPC_606_5);
+// 
+//   // GPC_1325_5
+//   // Inputs & Outputs
+//   unsigned GPC_1325_5_Inputs[4] = { 5, 2, 3, 1 };
+//   std::vector<unsigned> GPC_1325_5_InputsVector(GPC_1325_5_Inputs,
+//                                                 GPC_1325_5_Inputs + 4);
+// 
+//   CompressComponent GPC_1325_5("GPC_1325_5", GPC_1325_5_InputsVector,
+//                                5, 4, 0.355f);
+//   Library.push_back(GPC_1325_5);
+// 
+//   // GPC_1406_5
+//   // Inputs & Outputs
+//   unsigned GPC_1406_5_Inputs[4] = { 6, 0, 4, 1 };
+//   std::vector<unsigned> GPC_1406_5_InputsVector(GPC_1406_5_Inputs,
+//                                                 GPC_1406_5_Inputs + 4);
+// 
+//   CompressComponent GPC_1406_5("GPC_1406_5", GPC_1406_5_InputsVector,
+//                                5, 4, 0.355f);
+//   Library.push_back(GPC_1406_5);
+// 
+//   // GPC_1415_5
+//   // Inputs & Outputs
+//   unsigned GPC_1415_5_Inputs[4] = { 5, 1, 4, 1 };
+//   std::vector<unsigned> GPC_1415_5_InputsVector(GPC_1415_5_Inputs,
+//                                                 GPC_1415_5_Inputs + 4);
+// 
+//   CompressComponent GPC_1415_5("GPC_1415_5", GPC_1415_5_InputsVector,
+//                                5, 4, 0.355f);
+//   Library.push_back(GPC_1415_5);
 }
 
 void SIRMOAOpt::initAddChains() {
@@ -1680,7 +1680,7 @@ MatrixType SIRMOAOpt::compressTMatrixInStage(MatrixType TMatrix,
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
     // Compress current row if it has more than target final bit numbers.
     while (BitNumList[i] > 3 && ActiveBitNumList[i] >= 3) {
-      unsigned ComponentIdx = 9;
+      unsigned ComponentIdx = 3;
       if (ActiveBitNumList[i] <= 6)
         ComponentIdx = getHighestPriorityComponent(TMatrix, i, Stage);
 
