@@ -587,31 +587,31 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
         // we get the name of dot considering the bit mask.
         if (j < OpWidth) {
           // If it is a known bit, then use the known value.
-//           if (SM->hasBitMask(Operand)) {
-//             SIRBitMask Mask = SM->getBitMask(Operand);
-// 
-//             if (Mask.isOneKnownAt(j)) {
-//               Matrix[i][j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
-//               continue;
-//             }
-//             else if (Mask.isZeroKnownAt(j)) {
-//               Matrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
-//               continue;
-//             }
-//             else if (Mask.isSameKnownAt(j)) {
-//               if (SameBit.size() != 0)
-//                 Matrix[i][j] = std::make_pair(SameBit, std::make_pair(0.0f, 0));
-//               else {
-//                 SameBit = Mangle(OpName) + "[" + utostr_32(j) + "]";
-//                 Matrix[i][j] = std::make_pair(SameBit, std::make_pair(0.0f, 0));
-//               }
-//               continue;
-//             }
-//           }
+          if (SM->hasBitMask(Operand)) {
+            SIRBitMask Mask = SM->getBitMask(Operand);
+
+            if (Mask.isOneKnownAt(j)) {
+              Matrix[i][j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
+              continue;
+            }
+            else if (Mask.isZeroKnownAt(j)) {
+              Matrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+              continue;
+            }
+            else if (Mask.isSameKnownAt(j)) {
+              if (SameBit.size() != 0)
+                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
+              else {
+                SameBit = Mangle(OpName) + "[" + utostr_32(j) + "]";
+                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
+              }
+              continue;
+            }
+          }
 
           // Or use the form like operand[0], operand[1]...
           std::string DotName = Mangle(OpName) + "[" + utostr_32(j) + "]";
-          Matrix[i][j] = std::make_pair(DotName, std::make_pair(0.0f, 0));
+          Matrix[i][j] = std::make_pair(DotName, std::make_pair(ArrivalTime, 0));
         }
         // When the dot position is beyond the range of operand bit width,
         // we need to pad zero into the matrix.
@@ -1564,6 +1564,7 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
   // Get name and delay for output dots.
   std::string OutputName
     = "gpc_result_" + utostr_32(Component_NUM++) + "_" + utostr_32(Stage);
+  float OutputArrivalTime = InputArrivalTime + Component.getCriticalDelay() + NET_DELAY;
 
   // Insert the output dots into TMatrix.
   unsigned OutputDotNum = Component.getOutputDotNum();
@@ -1574,7 +1575,7 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
 
     std::string OutputDotName = OutputName + "[" + utostr_32(i) + "]";
     TMatrix[RowNo + i].push_back(std::make_pair(OutputDotName,
-                                                std::make_pair(0.0f,
+                                                std::make_pair(OutputArrivalTime,
                                                                Stage + 1)));
   }
 
