@@ -573,7 +573,7 @@ void SIRControlPathPrinter::printInitializeFile(SIRMemoryBank *SMB) {
 }
 
 void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned BytesPerGV,
-                                                unsigned ByteAddrWidth, unsigned NumWords) {
+  unsigned ByteAddrWidth, unsigned NumWords) {
   vlang_raw_ostream VOS(OS);
 
   SIRRegister *Addr = SMB->getAddr();
@@ -1092,6 +1092,9 @@ void SIRDatapathPrinter::visitBitCastInst(BitCastInst &I) {
 void SIRDatapathPrinter::visitBasicBlock(BasicBlock *BB) {
   typedef BasicBlock::iterator iterator;
   for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
+    if (!SM->hasKeepVal(I))
+      continue;
+
     visit(I);
   }
 }
@@ -1177,6 +1180,17 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
     Port->printDecl(Out.indent(4));
   }
 
+  typedef SIR::register_iterator reg_iterator;
+  for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
+    SIRRegister *Reg = I;
+
+    if (!SM.hasKeepVal(Reg->getLLVMValue()))
+      continue;
+
+    Out << ",\n input wire [" << utostr_32(Reg->getBitWidth() - 1) << ":0] "
+      << Mangle(Reg->getName()) + "_wire";
+  }
+
   // Get the enableCosimulation property from the Lua file.
   bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
 
@@ -1195,10 +1209,12 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
   Out << ");\n\n\n";
 
   // Print code for register declaration.
-  typedef SIR::register_iterator reg_iterator;
   for (reg_iterator I = SM.registers_begin(), E = SM.registers_end();
   I != E; ++I) {
     SIRRegister *Reg = I;
+
+    if (!SM.hasKeepVal(Reg->getLLVMValue()))
+      continue;
 
     // Do not need to declaration registers for the output and FUInOut,
     // since we have do it in MemoryBank declaration part.
@@ -1212,21 +1228,34 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
 
   Out << "\n";
 
-  if (!enableCoSimulation) {
-    // If we are running the co-simulation, then all registers used in memory bank will
-    // have been declared in Ports, then we do need to re-declared it.
-    typedef SIR::const_submodulebase_iterator submod_iterator;
-    for (submod_iterator I = SM.const_submodules_begin(), E = SM.const_submodules_end();
-    I != E; ++I) {
-      if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) {
-        // Do not need to print declaration for SIRMemoryBank#0,
-        // since it is a interface in HW/SW co-simulation and
-        // have been declared in ports.
-        if (SMB->getNum() != 0)
-          SMB->printDecl(Out.indent(2));
-      }
-    }
+  Out << "always@(posedge clk) begin\n";
+  for (reg_iterator I = SM.registers_begin(), E = SM.registers_end();
+  I != E; ++I) {
+    SIRRegister *Reg = I;
+
+    if (!SM.hasKeepVal(Reg->getLLVMValue()))
+      continue;
+
+    Out << "\t" << Mangle(Reg->getName()) << " <= " << Mangle(Reg->getName()) + "_wire;\n";
   }
+  Out << "end\n\n";
+
+
+  //   if (!enableCoSimulation) {
+  //     // If we are running the co-simulation, then all registers used in memory bank will
+  //     // have been declared in Ports, then we do need to re-declared it.
+  //     typedef SIR::const_submodulebase_iterator submod_iterator;
+  //     for (submod_iterator I = SM.const_submodules_begin(), E = SM.const_submodules_end();
+  //     I != E; ++I) {
+  //       if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) {
+  //         // Do not need to print declaration for SIRMemoryBank#0,
+  //         // since it is a interface in HW/SW co-simulation and
+  //         // have been declared in ports.
+  //         if (SMB->getNum() != 0)
+  //           SMB->printDecl(Out.indent(2));
+  //       }
+  //     }
+  //   }
 
   Out << "\n";
 
@@ -1238,6 +1267,9 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
     typedef BasicBlock::iterator inst_iterator;
     for (inst_iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
       Instruction *Inst = I;
+
+      if (!SM.hasKeepVal(Inst))
+        continue;
 
       if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst)) {
         if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
@@ -1534,10 +1566,10 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
   Out << "\n\n";
 
   // Generate the code for control-path.
-  generateCodeForControlpath(SM, TD);
+  //generateCodeForControlpath(SM, TD);
 
   // Generate the code for memory bank.
-  generateCodeForMemoryBank(SM, TD);
+  //generateCodeForMemoryBank(SM, TD);
 
   Out.module_end();
 
@@ -1562,15 +1594,15 @@ Pass *llvm::createSIR2RTLPass() {
 //===----------------------------------------------------------------------===//
 
 INITIALIZE_PASS_BEGIN(SIR2RTL, "shang-sir-verilog-writer",
-                      "Write the RTL verilog code to output file.",
-                      false, true)
+  "Write the RTL verilog code to output file.",
+  false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(SIRScheduling)
   INITIALIZE_PASS_DEPENDENCY(SIRMOAOpt)
   INITIALIZE_PASS_DEPENDENCY(SIRBitMaskAnalysis)
   INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForCodeGen)
   INITIALIZE_PASS_DEPENDENCY(SIRTimingScriptGen)
-INITIALIZE_PASS_END(SIR2RTL, "shang-sir-verilog-writer",
-                    "Write the RTL verilog code to output file.",
-                    false, true)
+  INITIALIZE_PASS_END(SIR2RTL, "shang-sir-verilog-writer",
+    "Write the RTL verilog code to output file.",
+    false, true)
 
