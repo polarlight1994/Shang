@@ -1575,7 +1575,7 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
 
     std::string OutputDotName = OutputName + "[" + utostr_32(i) + "]";
     TMatrix[RowNo + i].push_back(std::make_pair(OutputDotName,
-                                                std::make_pair(OutputArrivalTime,
+                                                std::make_pair(0.0f,
                                                                Stage + 1)));
   }
 
@@ -1831,7 +1831,7 @@ void SIRMOAOpt::printTMatrixForDebug(MatrixType TMatrix) {
     for (unsigned j = 0; j < Row.size(); ++j) {
       DotType Dot = Row[j];
 
-      DebugOutput << Dot.first/* << "--" << Dot.second.first*/;
+      DebugOutput << Dot.first << "--" << Dot.second.first;
 
       if (j != Row.size() - 1)
         DebugOutput << "  ";
