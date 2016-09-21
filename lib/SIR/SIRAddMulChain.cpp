@@ -1223,6 +1223,16 @@ SIRMOAOpt::createAddChainComponent(std::string Name, unsigned OpNum,
 }
 
 void SIRMOAOpt::initGPCs() {
+//   /// GPC_2_2_LUT
+//   // Inputs & Outputs
+//   unsigned GPC_2_2_LUT_Inputs[1] = { 2 };
+//   std::vector<unsigned> GPC_2_2_LUT_InputsVector(GPC_2_2_LUT_Inputs,
+//                                                  GPC_2_2_LUT_Inputs + 1);
+// 
+//   CompressComponent GPC_2_2_LUT("GPC_2_2_LUT", GPC_2_2_LUT_InputsVector,
+//                                 2, 1, 0.052f);
+//   Library.push_back(GPC_2_2_LUT);
+
   /// GPC_3_2_LUT
   // Inputs & Outputs
   unsigned GPC_3_2_LUT_Inputs[1] = { 3 };
@@ -1831,7 +1841,7 @@ void SIRMOAOpt::printTMatrixForDebug(MatrixType TMatrix) {
     for (unsigned j = 0; j < Row.size(); ++j) {
       DotType Dot = Row[j];
 
-      DebugOutput << Dot.first << "--" << Dot.second.first;
+      DebugOutput << Dot.first/* << "--" << Dot.second.first*/;
 
       if (j != Row.size() - 1)
         DebugOutput << "  ";
