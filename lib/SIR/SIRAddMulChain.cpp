@@ -600,10 +600,10 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
             }
             else if (Mask.isSameKnownAt(j)) {
               if (SameBit.size() != 0)
-                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
+                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(0.0f, 0));
               else {
                 SameBit = Mangle(OpName) + "[" + utostr_32(j) + "]";
-                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
+                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(0.0f, 0));
               }
               continue;
             }
@@ -611,7 +611,7 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
 
           // Or use the form like operand[0], operand[1]...
           std::string DotName = Mangle(OpName) + "[" + utostr_32(j) + "]";
-          Matrix[i][j] = std::make_pair(DotName, std::make_pair(ArrivalTime, 0));
+          Matrix[i][j] = std::make_pair(DotName, std::make_pair(0.0f, 0));
         }
         // When the dot position is beyond the range of operand bit width,
         // we need to pad zero into the matrix.
