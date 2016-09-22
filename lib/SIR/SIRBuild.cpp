@@ -1553,12 +1553,21 @@ Value *SIRDatapathBuilder::createSSExtInst(Value *U, unsigned DstBitWidth,
   Value *ExtendBits = createSBitRepeatInst(SignBit, NumExtendBits + 1,
                                            createIntegerType(NumExtendBits + 1),
                                            InsertPosition, true);
-  Value *ExtractedU = createSBitExtractInst(U, SrcBitWidth - 1, 0,
-                                            createIntegerType(SrcBitWidth - 1),
-                                            InsertPosition, true);
 
-  Value *Ops[] = { ExtendBits, ExtractedU };
-  return createSBitCatInst(Ops, RetTy, InsertPosition, UsedAsArg);
+  if (SrcBitWidth > 1) {
+    Value *ExtractedU = createSBitExtractInst(U, SrcBitWidth - 1, 0,
+      createIntegerType(SrcBitWidth - 1),
+      InsertPosition, true);
+
+    Value *Ops[] = { ExtendBits, ExtractedU };
+    return createSBitCatInst(Ops, RetTy, InsertPosition, UsedAsArg);
+  }
+  else {
+    if (!UsedAsArg)
+      InsertPosition->replaceAllUsesWith(ExtendBits);
+
+    return ExtendBits;
+  }
 }
 
 Value *SIRDatapathBuilder::createSSExtInstOrSelf(Value *U, unsigned DstBitWidth,
