@@ -1223,16 +1223,6 @@ SIRMOAOpt::createAddChainComponent(std::string Name, unsigned OpNum,
 }
 
 void SIRMOAOpt::initGPCs() {
-//   /// GPC_2_2_LUT
-//   // Inputs & Outputs
-//   unsigned GPC_2_2_LUT_Inputs[1] = { 2 };
-//   std::vector<unsigned> GPC_2_2_LUT_InputsVector(GPC_2_2_LUT_Inputs,
-//                                                  GPC_2_2_LUT_Inputs + 1);
-// 
-//   CompressComponent GPC_2_2_LUT("GPC_2_2_LUT", GPC_2_2_LUT_InputsVector,
-//                                 2, 1, 0.052f);
-//   Library.push_back(GPC_2_2_LUT);
-
   /// GPC_3_2_LUT
   // Inputs & Outputs
   unsigned GPC_3_2_LUT_Inputs[1] = { 3 };
@@ -1250,7 +1240,7 @@ void SIRMOAOpt::initGPCs() {
                                                  GPC_4_3_LUT_Inputs + 1);
 
   CompressComponent GPC_4_3_LUT("GPC_4_3_LUT", GPC_4_3_LUT_InputsVector,
-                                3, 2, 0.052f);
+                                3, 2, 0.051f);
   Library.push_back(GPC_4_3_LUT);
 
   /// GPC_5_3_LUT
@@ -1260,7 +1250,7 @@ void SIRMOAOpt::initGPCs() {
                                                  GPC_5_3_LUT_Inputs + 1);
 
   CompressComponent GPC_5_3_LUT("GPC_5_3_LUT", GPC_5_3_LUT_InputsVector,
-                                3, 2, 0.052f);
+                                3, 2, 0.049f);
   Library.push_back(GPC_5_3_LUT);
 
   /// GPC_6_3_LUT
@@ -1270,7 +1260,7 @@ void SIRMOAOpt::initGPCs() {
                                                  GPC_6_3_LUT_Inputs + 1);
 
   CompressComponent GPC_6_3_LUT("GPC_6_3_LUT", GPC_6_3_LUT_InputsVector,
-                                3, 2, 0.043f);
+                                3, 3, 0.043f);
   Library.push_back(GPC_6_3_LUT);
 
   /// GPC_13_3_LUT
@@ -1280,7 +1270,7 @@ void SIRMOAOpt::initGPCs() {
                                                   GPC_13_3_LUT_Inputs + 2);
 
   CompressComponent GPC_13_3_LUT("GPC_13_3_LUT", GPC_13_3_LUT_InputsVector,
-                                 3, 2, 0.052f);
+                                 3, 2, 0.051f);
   Library.push_back(GPC_13_3_LUT);
 
   /// GPC_23_3_LUT
@@ -1290,7 +1280,7 @@ void SIRMOAOpt::initGPCs() {
                                                   GPC_23_3_LUT_Inputs + 2);
 
   CompressComponent GPC_23_3_LUT("GPC_23_3_LUT", GPC_23_3_LUT_InputsVector,
-                                 3, 2, 0.052f);
+                                 3, 2, 0.051f);
   Library.push_back(GPC_23_3_LUT);
 
   /// GPC_14_3_LUT
@@ -1300,7 +1290,7 @@ void SIRMOAOpt::initGPCs() {
                                                   GPC_14_3_LUT_Inputs + 2);
 
   CompressComponent GPC_14_3_LUT("GPC_14_3_LUT", GPC_14_3_LUT_InputsVector,
-                                 3, 2, 0.052f);
+                                 3, 2, 0.049f);
   Library.push_back(GPC_14_3_LUT);
 
   /// GPC_15_3_LUT
@@ -1310,7 +1300,7 @@ void SIRMOAOpt::initGPCs() {
                                                   GPC_15_3_LUT_Inputs + 2);
 
   CompressComponent GPC_15_3_LUT("GPC_15_3_LUT", GPC_15_3_LUT_InputsVector,
-                                 3, 2, 0.043f);
+                                 3, 3, 0.043f);
   Library.push_back(GPC_15_3_LUT);
 
   /// GPC_506_5
@@ -1320,7 +1310,7 @@ void SIRMOAOpt::initGPCs() {
                                                GPC_506_5_Inputs + 3);
 
   CompressComponent GPC_506_5("GPC_506_5", GPC_506_5_InputsVector,
-                              5, 4, 0.355f);
+                              5, 4, 0.31f);
   Library.push_back(GPC_506_5);
 
   // GPC_606_5
@@ -1330,7 +1320,7 @@ void SIRMOAOpt::initGPCs() {
                                                GPC_606_5_Inputs + 3);
 
   CompressComponent GPC_606_5("GPC_606_5", GPC_606_5_InputsVector,
-                              5, 4, 0.355f);
+                              5, 4, 0.31f);
   Library.push_back(GPC_606_5);
 
   // GPC_1325_5
@@ -1340,7 +1330,7 @@ void SIRMOAOpt::initGPCs() {
                                                 GPC_1325_5_Inputs + 4);
 
   CompressComponent GPC_1325_5("GPC_1325_5", GPC_1325_5_InputsVector,
-                               5, 4, 0.355f);
+                               5, 4, 0.302f);
   Library.push_back(GPC_1325_5);
 
   // GPC_1406_5
@@ -1350,7 +1340,7 @@ void SIRMOAOpt::initGPCs() {
                                                 GPC_1406_5_Inputs + 4);
 
   CompressComponent GPC_1406_5("GPC_1406_5", GPC_1406_5_InputsVector,
-                               5, 4, 0.355f);
+                               5, 4, 0.31f);
   Library.push_back(GPC_1406_5);
 
   // GPC_1415_5
@@ -1360,7 +1350,7 @@ void SIRMOAOpt::initGPCs() {
                                                 GPC_1415_5_Inputs + 4);
 
   CompressComponent GPC_1415_5("GPC_1415_5", GPC_1415_5_InputsVector,
-                               5, 4, 0.355f);
+                               5, 4, 0.31f);
   Library.push_back(GPC_1415_5);
 }
 
