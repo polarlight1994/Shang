@@ -317,11 +317,8 @@ SIRBitMask SIRBitMaskAnalysis::computeShl(SIRBitMask LHS, SIRBitMask RHS) {
 }
 
 SIRBitMask SIRBitMaskAnalysis::computeLshr(SIRBitMask LHS, SIRBitMask RHS) {
-  unsigned RHSMaxWidth = std::min(Log2_32_Ceil(LHS.getMaskWidth()),
-    RHS.getMaskWidth());
-
   SIRBitMask R = LHS;
-  for (unsigned i = 0; i < RHSMaxWidth && R.hasAnyBitKnown(); ++i) {
+  for (unsigned i = 0; i < RHS.getMaskWidth(); ++i) {
     // If the i-th bit is known one in RHS, we always add the shifted
     // LHS to the result in this case.
     if (RHS.isOneKnownAt(i))
@@ -625,14 +622,16 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
   case Intrinsic::shang_reg_assign: {
     assert(Masks.size() == 2 && "Unexpected numbers of operands!");
 
-    SIRRegister *Reg = SM->lookupSIRReg(Inst);
-    if (Reg->isFUInOut()) {
-      return SIRBitMask(Masks[0].getMaskWidth());
-    }
+    //SIRRegister *Reg = SM->lookupSIRReg(Inst);
+    //if (Reg->isFUInOut()) {
+    //  return SIRBitMask(Masks[0].getMaskWidth());
+    //}
 
-    return SIRBitMask(Masks[0].getKnownZeros(),
-                      APInt::getNullValue(Masks[0].getMaskWidth()),
-                      APInt::getNullValue(Masks[0].getMaskWidth()));
+    //return SIRBitMask(Masks[0].getKnownZeros(),
+    //                  APInt::getNullValue(Masks[0].getMaskWidth()),
+    //                  APInt::getNullValue(Masks[0].getMaskWidth()));
+
+    return SIRBitMask(Masks[0].getMaskWidth());
   }
   }
 }
