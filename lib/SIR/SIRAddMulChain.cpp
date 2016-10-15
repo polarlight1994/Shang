@@ -657,6 +657,8 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
   std::string MatrixName = Mangle(PseudoHybridTreeInst->getName());
   MatrixType
     Matrix = createDotMatrix(OptOperands, MatrixRowNum, MatrixColNum);
+
+  DebugOutput << "---------- Matrix for " << MatrixName << " ------------\n";
   printTMatrixForDebug(Matrix);
 
 //   // Code for debug
@@ -904,7 +906,7 @@ std::vector<unsigned> SIRMOAOpt::getSignBitNumListInMatrix(MatrixType Matrix) {
     DotType SignBit = Row.back();
 
     // Ignore the 0 sign bit.
-    if (SignBit.first == "1'b0") {
+    if (SignBit.first == "1'b0" || SignBit.first == "1'b1") {
       SignBitNumList.push_back(1);
       continue;
     }
@@ -1253,15 +1255,15 @@ void SIRMOAOpt::initGPCs() {
                                 3, 2, 0.049f);
   Library.push_back(GPC_5_3_LUT);
 
-  /// GPC_6_3_LUT
+  /// GPC_6_3
   // Inputs & Outputs
-  unsigned GPC_6_3_LUT_Inputs[1] = { 6 };
-  std::vector<unsigned> GPC_6_3_LUT_InputsVector(GPC_6_3_LUT_Inputs,
-                                                 GPC_6_3_LUT_Inputs + 1);
+  unsigned GPC_6_3_Inputs[1] = { 6 };
+  std::vector<unsigned> GPC_6_3_InputsVector(GPC_6_3_Inputs,
+                                             GPC_6_3_Inputs + 1);
 
-  CompressComponent GPC_6_3_LUT("GPC_6_3_LUT", GPC_6_3_LUT_InputsVector,
-                                3, 3, 0.043f);
-  Library.push_back(GPC_6_3_LUT);
+  CompressComponent GPC_6_3("GPC_6_3", GPC_6_3_InputsVector,
+                            3, 2, 0.293f);
+  Library.push_back(GPC_6_3);
 
   /// GPC_13_3_LUT
   // Inputs & Outputs
@@ -1293,15 +1295,15 @@ void SIRMOAOpt::initGPCs() {
                                  3, 2, 0.049f);
   Library.push_back(GPC_14_3_LUT);
 
-  /// GPC_15_3_LUT
+  /// GPC_15_3
   // Inputs & Outputs
-  unsigned GPC_15_3_LUT_Inputs[2] = { 5, 1 };
-  std::vector<unsigned> GPC_15_3_LUT_InputsVector(GPC_15_3_LUT_Inputs,
-                                                  GPC_15_3_LUT_Inputs + 2);
+  unsigned GPC_15_3_Inputs[2] = { 5, 1 };
+  std::vector<unsigned> GPC_15_3_InputsVector(GPC_15_3_Inputs,
+                                              GPC_15_3_Inputs + 2);
 
-  CompressComponent GPC_15_3_LUT("GPC_15_3_LUT", GPC_15_3_LUT_InputsVector,
-                                 3, 3, 0.043f);
-  Library.push_back(GPC_15_3_LUT);
+  CompressComponent GPC_15_3("GPC_15_3", GPC_15_3_InputsVector,
+                             3, 2, 0.274f);
+  Library.push_back(GPC_15_3);
 
   /// GPC_506_5
   // Inputs & Outputs
@@ -1588,8 +1590,8 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
   return TMatrix;
 }
 
-bool sortComponent(std::pair<unsigned, std::pair<float, unsigned> > OpA,
-                   std::pair<unsigned, std::pair<float, unsigned> > OpB) {
+bool sortComponent(std::pair<unsigned, std::pair<float, float> > OpA,
+                   std::pair<unsigned, std::pair<float, float> > OpB) {
   if (OpA.second.first < OpB.second.first)
     return true;
   else if (OpA.second.first > OpB.second.first)
@@ -1613,7 +1615,7 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
 
   // Try all library and evaluate its priority which is considered in two
   // aspects: 1) performance 2) input dot number in row 0.
-  std::vector<std::pair<unsigned, std::pair<float, unsigned> > > PriorityList;
+  std::vector<std::pair<unsigned, std::pair<float, float> > > PriorityList;
   for (unsigned i = 0; i < Library.size(); ++i) {
     CompressComponent Component = Library[i];
 
@@ -1644,12 +1646,14 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
     // Evaluate the performance.
     unsigned CompressedDotNum = RealInputDotNum > RealOutputDotNum ? 
                                   RealInputDotNum - RealOutputDotNum : 0;
-    float RealDelay
-      = CriticalDelay + NET_DELAY;
-    float Performance = (CompressedDotNum * CompressedDotNum) / (RealDelay * Area);
+    //float RealDelay
+    //  = CriticalDelay + NET_DELAY;
+    //float Performance = (CompressedDotNum * CompressedDotNum) / (RealDelay * Area);
+
+    float Performance = CompressedDotNum / CriticalDelay;
 
     PriorityList.push_back(std::make_pair(i, std::make_pair(Performance,
-                                                            InputDotNums[0])));
+                                                            0.0f - CriticalDelay)));
   }
 
   // Sort the PriorityList and get the highest one.
