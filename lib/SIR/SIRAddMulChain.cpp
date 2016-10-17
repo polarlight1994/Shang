@@ -22,7 +22,7 @@ typedef std::vector<MatrixRowType> MatrixType;
 
 static unsigned Component_NUM = 0;
 
-static float NET_DELAY = 0.500;
+static float NET_DELAY = 0.400;
 
 static float ADD_CHAIN_16_DELAY[9] = { 0.521, 0.59, 0.706, 1.584, 1.715, 1.822, 2.101, 2.183, 2.183 };
 static float ADD_CHAIN_32_DELAY[23] = { 0.816, 0.876, 1.163, 2.199, 2.343,
@@ -1646,11 +1646,10 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
     // Evaluate the performance.
     unsigned CompressedDotNum = RealInputDotNum > RealOutputDotNum ? 
                                   RealInputDotNum - RealOutputDotNum : 0;
-    //float RealDelay
-    //  = CriticalDelay + NET_DELAY;
-    //float Performance = (CompressedDotNum * CompressedDotNum) / (RealDelay * Area);
+    float RealDelay = CriticalDelay + NET_DELAY;
+    float Performance = ((float) (CompressedDotNum * CompressedDotNum)) / (RealDelay * Area);
 
-    float Performance = ((float)CompressedDotNum) / Area;
+    //float Performance = ((float)CompressedDotNum) / Area;
 
     PriorityList.push_back(std::make_pair(i, std::make_pair(Performance,
                                                             0.0f - CriticalDelay)));
