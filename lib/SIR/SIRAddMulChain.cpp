@@ -56,7 +56,15 @@ struct SIRMOAOpt : public SIRPass {
   // 1) GPCs
   // 2) AddChains
   class CompressComponent {
+  public:
+    enum Type {
+      GPC,
+      GPCWithExtraOne,
+      AddChain
+    };
+
   private:
+    Type T;
     std::string Name;
 
     // Input dots & Output dots.
@@ -70,17 +78,40 @@ struct SIRMOAOpt : public SIRPass {
 
   public:
     // Default constructor
-    CompressComponent(std::string Name, std::vector<unsigned> InputDotNums,
+    CompressComponent(Type T, std::string Name, std::vector<unsigned> InputDotNums,
                       unsigned OutputDotNum, unsigned Area, float CriticalDelay)
-      : Name(Name), InputDotNums(InputDotNums), OutputDotNum(OutputDotNum),
+      : T(T), Name(Name), InputDotNums(InputDotNums), OutputDotNum(OutputDotNum),
         Area(Area), CriticalDelay(CriticalDelay) {}
 
     std::string getName() { return Name; }
     std::vector<unsigned> getInputDotNums() { return InputDotNums; }
     unsigned getOutputDotNum() { return OutputDotNum; }
-    // To be fixed.
     float getCriticalDelay() { return CriticalDelay;  }
     unsigned getArea() { return Area; }
+    Type getType() const { return T; }
+  };
+
+  // Special GPCs built to sum extra 1'b1 without extra area cost.
+  class GPC_with_extra_One : public CompressComponent {
+  private:
+    unsigned ExtraOneRank;
+
+  public:
+    // Default constructor
+    GPC_with_extra_One(std::string Name, std::vector<unsigned> InputDotNums,
+                       unsigned OutputDotNum, unsigned Area, float CriticalDelay,
+                       unsigned ExtraOneRank)
+      : CompressComponent(GPCWithExtraOne, Name, InputDotNums,
+                          OutputDotNum, Area, CriticalDelay),
+      ExtraOneRank(ExtraOneRank) {}
+
+    unsigned getRankOfExtraOne() { return ExtraOneRank; }
+
+    // Methods for support type inquiry through isa, cast and dyn_cast.
+    static inline bool classof(const GPC_with_extra_One *Component) { return true;  }
+    static inline bool classof(const CompressComponent *Component) {
+      return Component->getType() == GPCWithExtraOne;
+    }
   };
 
   // The library of compress components.
@@ -1218,20 +1249,24 @@ SIRMOAOpt::createAddChainComponent(std::string Name, unsigned OpNum,
   // Output
   unsigned OutputBitWidth = BitWidth + std::ceil(log(OpNum) / log(2));
 
-  CompressComponent AddChain(Name, AddChain_InputsVector,
-                             OutputBitWidth, Area, CriticalDelay);
+  CompressComponent AddChain(CompressComponent::AddChain, Name,
+                             AddChain_InputsVector, OutputBitWidth,
+                             Area, CriticalDelay);
 
   return AddChain;
 }
 
 void SIRMOAOpt::initGPCs() {
+  CompressComponent::Type GPCType = CompressComponent::GPC;
+  CompressComponent::Type GPCWithExtraOneType = CompressComponent::GPCWithExtraOne;
+
   /// GPC_3_2_LUT
   // Inputs & Outputs
   unsigned GPC_3_2_LUT_Inputs[1] = { 3 };
   std::vector<unsigned> GPC_3_2_LUT_InputsVector(GPC_3_2_LUT_Inputs,
                                                  GPC_3_2_LUT_Inputs + 1);
 
-  CompressComponent GPC_3_2_LUT("GPC_3_2_LUT", GPC_3_2_LUT_InputsVector,
+  CompressComponent GPC_3_2_LUT(GPCType, "GPC_3_2_LUT", GPC_3_2_LUT_InputsVector,
                                 2, 1, 0.052f);
   Library.push_back(GPC_3_2_LUT);
 
@@ -1241,7 +1276,7 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_4_3_LUT_InputsVector(GPC_4_3_LUT_Inputs,
                                                  GPC_4_3_LUT_Inputs + 1);
 
-  CompressComponent GPC_4_3_LUT("GPC_4_3_LUT", GPC_4_3_LUT_InputsVector,
+  CompressComponent GPC_4_3_LUT(GPCType, "GPC_4_3_LUT", GPC_4_3_LUT_InputsVector,
                                 3, 2, 0.051f);
   Library.push_back(GPC_4_3_LUT);
 
@@ -1251,7 +1286,7 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_5_3_LUT_InputsVector(GPC_5_3_LUT_Inputs,
                                                  GPC_5_3_LUT_Inputs + 1);
 
-  CompressComponent GPC_5_3_LUT("GPC_5_3_LUT", GPC_5_3_LUT_InputsVector,
+  CompressComponent GPC_5_3_LUT(GPCType, "GPC_5_3_LUT", GPC_5_3_LUT_InputsVector,
                                 3, 2, 0.049f);
   Library.push_back(GPC_5_3_LUT);
 
@@ -1261,7 +1296,7 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_6_3_InputsVector(GPC_6_3_Inputs,
                                              GPC_6_3_Inputs + 1);
 
-  CompressComponent GPC_6_3("GPC_6_3", GPC_6_3_InputsVector,
+  CompressComponent GPC_6_3(GPCType, "GPC_6_3", GPC_6_3_InputsVector,
                             3, 2, 0.293f);
   Library.push_back(GPC_6_3);
 
@@ -1271,7 +1306,7 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_13_3_LUT_InputsVector(GPC_13_3_LUT_Inputs,
                                                   GPC_13_3_LUT_Inputs + 2);
 
-  CompressComponent GPC_13_3_LUT("GPC_13_3_LUT", GPC_13_3_LUT_InputsVector,
+  CompressComponent GPC_13_3_LUT(GPCType, "GPC_13_3_LUT", GPC_13_3_LUT_InputsVector,
                                  3, 2, 0.051f);
   Library.push_back(GPC_13_3_LUT);
 
@@ -1281,7 +1316,7 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_23_3_LUT_InputsVector(GPC_23_3_LUT_Inputs,
                                                   GPC_23_3_LUT_Inputs + 2);
 
-  CompressComponent GPC_23_3_LUT("GPC_23_3_LUT", GPC_23_3_LUT_InputsVector,
+  CompressComponent GPC_23_3_LUT(GPCType, "GPC_23_3_LUT", GPC_23_3_LUT_InputsVector,
                                  3, 2, 0.051f);
   Library.push_back(GPC_23_3_LUT);
 
@@ -1291,9 +1326,16 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_14_3_LUT_InputsVector(GPC_14_3_LUT_Inputs,
                                                   GPC_14_3_LUT_Inputs + 2);
 
-  CompressComponent GPC_14_3_LUT("GPC_14_3_LUT", GPC_14_3_LUT_InputsVector,
+  CompressComponent GPC_14_3_LUT(GPCType, "GPC_14_3_LUT", GPC_14_3_LUT_InputsVector,
                                  3, 2, 0.049f);
   Library.push_back(GPC_14_3_LUT);
+
+  /// GPC_14_3_LUT with extra 1'b1 in rank of 0
+  // Inputs & Outputs
+  GPC_with_extra_One GPC_14_3_LUT_ExtraOne_Rank0("GPC_14_3_LUT_ExtraOne_Rank0",
+                                                 GPC_14_3_LUT_InputsVector,
+                                                 3, 2, 0.049f, 0);
+  Library.push_back(GPC_14_3_LUT_ExtraOne_Rank0);
 
   /// GPC_15_3
   // Inputs & Outputs
@@ -1301,7 +1343,7 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_15_3_InputsVector(GPC_15_3_Inputs,
                                               GPC_15_3_Inputs + 2);
 
-  CompressComponent GPC_15_3("GPC_15_3", GPC_15_3_InputsVector,
+  CompressComponent GPC_15_3(GPCType, "GPC_15_3", GPC_15_3_InputsVector,
                              3, 2, 0.274f);
   Library.push_back(GPC_15_3);
 
@@ -1311,9 +1353,16 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_506_5_InputsVector(GPC_506_5_Inputs,
                                                GPC_506_5_Inputs + 3);
 
-  CompressComponent GPC_506_5("GPC_506_5", GPC_506_5_InputsVector,
+  CompressComponent GPC_506_5(GPCType, "GPC_506_5", GPC_506_5_InputsVector,
                               5, 4, 0.31f);
   Library.push_back(GPC_506_5);
+
+  /// GPC_506_5 with extra 1'b1 in rank of 0
+  // Inputs & Outputs
+  GPC_with_extra_One GPC_506_5_ExtraOne_Rank0("GPC_506_5_ExtraOne_Rank0",
+                                              GPC_506_5_InputsVector,
+                                              5, 4, 0.31f, 0);
+  Library.push_back(GPC_506_5_ExtraOne_Rank0);
 
   // GPC_606_5
   // Inputs & Outputs
@@ -1321,9 +1370,16 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_606_5_InputsVector(GPC_606_5_Inputs,
                                                GPC_606_5_Inputs + 3);
 
-  CompressComponent GPC_606_5("GPC_606_5", GPC_606_5_InputsVector,
+  CompressComponent GPC_606_5(GPCType, "GPC_606_5", GPC_606_5_InputsVector,
                               5, 4, 0.31f);
   Library.push_back(GPC_606_5);
+
+  /// GPC_606_5 with extra 1'b1 in rank of 0
+  // Inputs & Outputs
+  GPC_with_extra_One GPC_606_5_ExtraOne_Rank0("GPC_606_5_ExtraOne_Rank0",
+                                              GPC_606_5_InputsVector,
+                                              5, 4, 0.31f, 0);
+  Library.push_back(GPC_606_5_ExtraOne_Rank0);
 
   // GPC_1325_5
   // Inputs & Outputs
@@ -1331,9 +1387,16 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_1325_5_InputsVector(GPC_1325_5_Inputs,
                                                 GPC_1325_5_Inputs + 4);
 
-  CompressComponent GPC_1325_5("GPC_1325_5", GPC_1325_5_InputsVector,
+  CompressComponent GPC_1325_5(GPCType, "GPC_1325_5", GPC_1325_5_InputsVector,
                                5, 4, 0.302f);
   Library.push_back(GPC_1325_5);
+
+  /// GPC_1325_5 with extra 1'b1 in rank of 1
+  // Inputs & Outputs
+  GPC_with_extra_One GPC_1325_5_ExtraOne_Rank1("GPC_1325_5_ExtraOne_Rank1",
+                                               GPC_1325_5_InputsVector,
+                                               5, 4, 0.31f, 1);
+  Library.push_back(GPC_1325_5_ExtraOne_Rank1);
 
   // GPC_1406_5
   // Inputs & Outputs
@@ -1341,9 +1404,16 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_1406_5_InputsVector(GPC_1406_5_Inputs,
                                                 GPC_1406_5_Inputs + 4);
 
-  CompressComponent GPC_1406_5("GPC_1406_5", GPC_1406_5_InputsVector,
+  CompressComponent GPC_1406_5(GPCType, "GPC_1406_5", GPC_1406_5_InputsVector,
                                5, 4, 0.31f);
   Library.push_back(GPC_1406_5);
+
+  /// GPC_1406_5 with extra 1'b1 in rank of 0
+  // Inputs & Outputs
+  GPC_with_extra_One GPC_1406_5_ExtraOne_Rank0("GPC_1406_5_ExtraOne_Rank0",
+                                               GPC_1406_5_InputsVector,
+                                               5, 4, 0.31f, 0);
+  Library.push_back(GPC_1406_5_ExtraOne_Rank0);
 
   // GPC_1415_5
   // Inputs & Outputs
@@ -1351,7 +1421,7 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_1415_5_InputsVector(GPC_1415_5_Inputs,
                                                 GPC_1415_5_Inputs + 4);
 
-  CompressComponent GPC_1415_5("GPC_1415_5", GPC_1415_5_InputsVector,
+  CompressComponent GPC_1415_5(GPCType, "GPC_1415_5", GPC_1415_5_InputsVector,
                                5, 4, 0.31f);
   Library.push_back(GPC_1415_5);
 }
