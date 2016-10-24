@@ -1648,8 +1648,8 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
                                   RealInputDotNum - RealOutputDotNum : 0;
     float RealDelay = CriticalDelay + NET_DELAY;
     //float Performance = ((float) (CompressedDotNum * CompressedDotNum)) / (RealDelay * Area);
-    float Performance = ((float)CompressedDotNum) / RealDelay;
-    //float Performance = ((float)CompressedDotNum) / Area;
+    //float Performance = ((float)CompressedDotNum) / RealDelay;
+    float Performance = ((float)CompressedDotNum) / Area;
 
     PriorityList.push_back(std::make_pair(i, std::make_pair(Performance,
                                                             0.0f - CriticalDelay)));
