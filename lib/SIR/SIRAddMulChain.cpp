@@ -115,7 +115,7 @@ struct SIRMOAOpt : public SIRPass {
   };
 
   // The library of compress components.
-  std::vector<CompressComponent> Library;
+  std::vector<CompressComponent *> Library;
 
   SIRMOAOpt() : SIRPass(ID), DebugOutput("DebugMatrix.txt", Error) {
     initializeSIRMOAOptPass(*PassRegistry::getPassRegistry());
@@ -1266,8 +1266,9 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_3_2_LUT_InputsVector(GPC_3_2_LUT_Inputs,
                                                  GPC_3_2_LUT_Inputs + 1);
 
-  CompressComponent GPC_3_2_LUT(GPCType, "GPC_3_2_LUT", GPC_3_2_LUT_InputsVector,
-                                2, 1, 0.052f);
+  CompressComponent *GPC_3_2_LUT
+    = new CompressComponent(GPCType, "GPC_3_2_LUT",
+                            GPC_3_2_LUT_InputsVector, 2, 1, 0.052f);
   Library.push_back(GPC_3_2_LUT);
 
   /// GPC_4_3_LUT
@@ -1276,8 +1277,9 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_4_3_LUT_InputsVector(GPC_4_3_LUT_Inputs,
                                                  GPC_4_3_LUT_Inputs + 1);
 
-  CompressComponent GPC_4_3_LUT(GPCType, "GPC_4_3_LUT", GPC_4_3_LUT_InputsVector,
-                                3, 2, 0.051f);
+  CompressComponent *GPC_4_3_LUT
+    = new CompressComponent(GPCType, "GPC_4_3_LUT",
+                            GPC_4_3_LUT_InputsVector, 3, 2, 0.051f);
   Library.push_back(GPC_4_3_LUT);
 
   /// GPC_5_3_LUT
@@ -1286,8 +1288,9 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_5_3_LUT_InputsVector(GPC_5_3_LUT_Inputs,
                                                  GPC_5_3_LUT_Inputs + 1);
 
-  CompressComponent GPC_5_3_LUT(GPCType, "GPC_5_3_LUT", GPC_5_3_LUT_InputsVector,
-                                3, 2, 0.049f);
+  CompressComponent *GPC_5_3_LUT
+    = new CompressComponent(GPCType, "GPC_5_3_LUT",
+                            GPC_5_3_LUT_InputsVector, 3, 2, 0.049f);
   Library.push_back(GPC_5_3_LUT);
 
   /// GPC_6_3
@@ -1296,8 +1299,9 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_6_3_InputsVector(GPC_6_3_Inputs,
                                              GPC_6_3_Inputs + 1);
 
-  CompressComponent GPC_6_3(GPCType, "GPC_6_3", GPC_6_3_InputsVector,
-                            3, 2, 0.293f);
+  CompressComponent *GPC_6_3
+    = new CompressComponent(GPCType, "GPC_6_3",
+                            GPC_6_3_InputsVector, 3, 2, 0.293f);
   Library.push_back(GPC_6_3);
 
   /// GPC_13_3_LUT
@@ -1306,8 +1310,9 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_13_3_LUT_InputsVector(GPC_13_3_LUT_Inputs,
                                                   GPC_13_3_LUT_Inputs + 2);
 
-  CompressComponent GPC_13_3_LUT(GPCType, "GPC_13_3_LUT", GPC_13_3_LUT_InputsVector,
-                                 3, 2, 0.051f);
+  CompressComponent *GPC_13_3_LUT
+    = new CompressComponent(GPCType, "GPC_13_3_LUT",
+                            GPC_13_3_LUT_InputsVector, 3, 2, 0.051f);
   Library.push_back(GPC_13_3_LUT);
 
   /// GPC_23_3_LUT
@@ -1316,8 +1321,9 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_23_3_LUT_InputsVector(GPC_23_3_LUT_Inputs,
                                                   GPC_23_3_LUT_Inputs + 2);
 
-  CompressComponent GPC_23_3_LUT(GPCType, "GPC_23_3_LUT", GPC_23_3_LUT_InputsVector,
-                                 3, 2, 0.051f);
+  CompressComponent *GPC_23_3_LUT
+    = new CompressComponent(GPCType, "GPC_23_3_LUT",
+                            GPC_23_3_LUT_InputsVector, 3, 2, 0.051f);
   Library.push_back(GPC_23_3_LUT);
 
   /// GPC_14_3_LUT
@@ -1326,15 +1332,15 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_14_3_LUT_InputsVector(GPC_14_3_LUT_Inputs,
                                                   GPC_14_3_LUT_Inputs + 2);
 
-  CompressComponent GPC_14_3_LUT(GPCType, "GPC_14_3_LUT", GPC_14_3_LUT_InputsVector,
-                                 3, 2, 0.049f);
+  CompressComponent *GPC_14_3_LUT
+    = new CompressComponent(GPCType, "GPC_14_3_LUT",
+                            GPC_14_3_LUT_InputsVector, 3, 2, 0.049f);
   Library.push_back(GPC_14_3_LUT);
 
   /// GPC_14_3_LUT with extra 1'b1 in rank of 0
   // Inputs & Outputs
-  GPC_with_extra_One GPC_14_3_LUT_ExtraOne_Rank0("GPC_14_3_LUT_ExtraOne_Rank0",
-                                                 GPC_14_3_LUT_InputsVector,
-                                                 3, 2, 0.049f, 0);
+  GPC_with_extra_One *GPC_14_3_LUT_ExtraOne_Rank0
+    = new GPC_with_extra_One("GPC_14_3_LUT_ExtraOne_Rank0", { 5, 1 }, 3, 2, 0.049f, 0);
   Library.push_back(GPC_14_3_LUT_ExtraOne_Rank0);
 
   /// GPC_15_3
@@ -1343,8 +1349,9 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_15_3_InputsVector(GPC_15_3_Inputs,
                                               GPC_15_3_Inputs + 2);
 
-  CompressComponent GPC_15_3(GPCType, "GPC_15_3", GPC_15_3_InputsVector,
-                             3, 2, 0.274f);
+  CompressComponent *GPC_15_3
+    = new CompressComponent(GPCType, "GPC_15_3",
+                            GPC_15_3_InputsVector, 3, 2, 0.274f);
   Library.push_back(GPC_15_3);
 
   /// GPC_506_5
@@ -1353,15 +1360,15 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_506_5_InputsVector(GPC_506_5_Inputs,
                                                GPC_506_5_Inputs + 3);
 
-  CompressComponent GPC_506_5(GPCType, "GPC_506_5", GPC_506_5_InputsVector,
-                              5, 4, 0.31f);
+  CompressComponent *GPC_506_5
+    = new CompressComponent(GPCType, "GPC_506_5",
+                            GPC_506_5_InputsVector, 5, 4, 0.31f);
   Library.push_back(GPC_506_5);
 
   /// GPC_506_5 with extra 1'b1 in rank of 0
   // Inputs & Outputs
-  GPC_with_extra_One GPC_506_5_ExtraOne_Rank0("GPC_506_5_ExtraOne_Rank0",
-                                              GPC_506_5_InputsVector,
-                                              5, 4, 0.31f, 0);
+  GPC_with_extra_One *GPC_506_5_ExtraOne_Rank0
+    = new GPC_with_extra_One("GPC_506_5_ExtraOne_Rank0", { 7, 0, 5}, 5, 4, 0.31f, 0);
   Library.push_back(GPC_506_5_ExtraOne_Rank0);
 
   // GPC_606_5
@@ -1370,15 +1377,15 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_606_5_InputsVector(GPC_606_5_Inputs,
                                                GPC_606_5_Inputs + 3);
 
-  CompressComponent GPC_606_5(GPCType, "GPC_606_5", GPC_606_5_InputsVector,
-                              5, 4, 0.31f);
+  CompressComponent *GPC_606_5
+    = new CompressComponent(GPCType, "GPC_606_5",
+                            GPC_606_5_InputsVector, 5, 4, 0.31f);
   Library.push_back(GPC_606_5);
 
   /// GPC_606_5 with extra 1'b1 in rank of 0
   // Inputs & Outputs
-  GPC_with_extra_One GPC_606_5_ExtraOne_Rank0("GPC_606_5_ExtraOne_Rank0",
-                                              GPC_606_5_InputsVector,
-                                              5, 4, 0.31f, 0);
+  GPC_with_extra_One *GPC_606_5_ExtraOne_Rank0
+    = new GPC_with_extra_One("GPC_606_5_ExtraOne_Rank0", { 7, 0, 6}, 5, 4, 0.31f, 0);
   Library.push_back(GPC_606_5_ExtraOne_Rank0);
 
   // GPC_1325_5
@@ -1387,15 +1394,15 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_1325_5_InputsVector(GPC_1325_5_Inputs,
                                                 GPC_1325_5_Inputs + 4);
 
-  CompressComponent GPC_1325_5(GPCType, "GPC_1325_5", GPC_1325_5_InputsVector,
-                               5, 4, 0.302f);
+  CompressComponent *GPC_1325_5
+    = new CompressComponent(GPCType, "GPC_1325_5",
+                            GPC_1325_5_InputsVector, 5, 4, 0.302f);
   Library.push_back(GPC_1325_5);
 
   /// GPC_1325_5 with extra 1'b1 in rank of 1
   // Inputs & Outputs
-  GPC_with_extra_One GPC_1325_5_ExtraOne_Rank1("GPC_1325_5_ExtraOne_Rank1",
-                                               GPC_1325_5_InputsVector,
-                                               5, 4, 0.31f, 1);
+  GPC_with_extra_One *GPC_1325_5_ExtraOne_Rank1
+    = new GPC_with_extra_One("GPC_1325_5_ExtraOne_Rank1", {6, 2, 3, 1}, 5, 4, 0.31f, 1);
   Library.push_back(GPC_1325_5_ExtraOne_Rank1);
 
   // GPC_1406_5
@@ -1404,15 +1411,15 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_1406_5_InputsVector(GPC_1406_5_Inputs,
                                                 GPC_1406_5_Inputs + 4);
 
-  CompressComponent GPC_1406_5(GPCType, "GPC_1406_5", GPC_1406_5_InputsVector,
-                               5, 4, 0.31f);
+  CompressComponent *GPC_1406_5
+    = new CompressComponent(GPCType, "GPC_1406_5",
+                            GPC_1406_5_InputsVector, 5, 4, 0.31f);
   Library.push_back(GPC_1406_5);
 
   /// GPC_1406_5 with extra 1'b1 in rank of 0
   // Inputs & Outputs
-  GPC_with_extra_One GPC_1406_5_ExtraOne_Rank0("GPC_1406_5_ExtraOne_Rank0",
-                                               GPC_1406_5_InputsVector,
-                                               5, 4, 0.31f, 0);
+  GPC_with_extra_One *GPC_1406_5_ExtraOne_Rank0
+    = new GPC_with_extra_One("GPC_1406_5_ExtraOne_Rank0", {7, 0, 4, 1}, 5, 4, 0.31f, 0);
   Library.push_back(GPC_1406_5_ExtraOne_Rank0);
 
   // GPC_1415_5
@@ -1421,149 +1428,150 @@ void SIRMOAOpt::initGPCs() {
   std::vector<unsigned> GPC_1415_5_InputsVector(GPC_1415_5_Inputs,
                                                 GPC_1415_5_Inputs + 4);
 
-  CompressComponent GPC_1415_5(GPCType, "GPC_1415_5", GPC_1415_5_InputsVector,
-                               5, 4, 0.31f);
+  CompressComponent *GPC_1415_5
+    = new CompressComponent(GPCType, "GPC_1415_5",
+                            GPC_1415_5_InputsVector, 5, 4, 0.31f);
   Library.push_back(GPC_1415_5);
 }
 
 void SIRMOAOpt::initAddChains() {
-  /// AddChain with bitwidth of 16
-  // AddChain_2_16
-  CompressComponent
-    AddChain_2_16 = createAddChainComponent("AddChain_2_16", 2, 16, 16, 0.521);
-  Library.push_back(AddChain_2_16);
-
-  // AddChain_3_16
-  CompressComponent
-    AddChain_3_16 = createAddChainComponent("AddChain_3_16", 3, 16, 16, 0.59);
-  Library.push_back(AddChain_3_16);
-
-  // AddChain_4_16
-  CompressComponent
-    AddChain_4_16 = createAddChainComponent("AddChain_4_16", 4, 16, 44, 0.706);
-  Library.push_back(AddChain_4_16);
-
-  // AddChain_5_16
-  CompressComponent
-    AddChain_5_16 = createAddChainComponent("AddChain_5_16", 5, 16, 32, 1.584);
-  Library.push_back(AddChain_5_16);
-
-  // AddChain_6_16
-  CompressComponent
-    AddChain_6_16 = createAddChainComponent("AddChain_6_16", 6, 16, 60, 1.715);
-  Library.push_back(AddChain_6_16);
-
-  // AddChain_7_16
-  CompressComponent
-    AddChain_7_16 = createAddChainComponent("AddChain_7_16", 7, 16, 48, 1.822);
-  Library.push_back(AddChain_7_16);
-
-  // AddChain_8_16
-  CompressComponent
-    AddChain_8_16 = createAddChainComponent("AddChain_8_16", 8, 16, 76, 2.101);
-  Library.push_back(AddChain_8_16);
-
-  // AddChain_9_16
-  CompressComponent
-    AddChain_9_16 = createAddChainComponent("AddChain_9_16", 9, 16, 64, 2.183);
-  Library.push_back(AddChain_9_16);
-
-  // AddChain_10_16
-  CompressComponent
-    AddChain_10_16 = createAddChainComponent("AddChain_10_16", 10, 16, 92, 2.009);
-  Library.push_back(AddChain_10_16);
-
-  /// AddChain with bitwidth of 32
-  // AddChain_2_32
-  CompressComponent
-    AddChain_2_32 = createAddChainComponent("AddChain_2_32", 2, 32, 32, 0.816);
-  Library.push_back(AddChain_2_32);
-
-  // AddChain_3_32
-  CompressComponent
-    AddChain_3_32 = createAddChainComponent("AddChain_3_32", 3, 32, 32, 0.876);
-  Library.push_back(AddChain_3_32);
-
-  // AddChain_4_32
-  CompressComponent
-    AddChain_4_32 = createAddChainComponent("AddChain_4_32", 4, 32, 92, 1.163);
-  Library.push_back(AddChain_4_32);
-
-  // AddChain_5_32
-  CompressComponent
-    AddChain_5_32 = createAddChainComponent("AddChain_5_32", 5, 32, 64, 2.199);
-  Library.push_back(AddChain_5_32);
-
-  // AddChain_6_32
-  CompressComponent
-    AddChain_6_32 = createAddChainComponent("AddChain_6_32", 6, 32, 124, 2.343);
-  Library.push_back(AddChain_6_32);
-
-  // AddChain_7_32
-  CompressComponent
-    AddChain_7_32 = createAddChainComponent("AddChain_7_32", 7, 32, 96, 2.343);
-  Library.push_back(AddChain_7_32);
-
-  // AddChain_8_32
-  CompressComponent
-    AddChain_8_32 = createAddChainComponent("AddChain_8_32", 8, 32, 156, 2.047);
-  Library.push_back(AddChain_8_32);
-
-  // AddChain_9_32
-  CompressComponent
-    AddChain_9_32 = createAddChainComponent("AddChain_9_32", 9, 32, 128, 2.265);
-  Library.push_back(AddChain_9_32);
-
-  // AddChain_10_32
-  CompressComponent
-    AddChain_10_32 = createAddChainComponent("AddChain_10_32", 10, 32, 188, 2.504);
-  Library.push_back(AddChain_10_32);
-
-  /// AddChain with bitwidth of 64
-  // AddChain_2_64
-  CompressComponent
-    AddChain_2_64 = createAddChainComponent("AddChain_2_64", 2, 64, 64, 1.24);
-  Library.push_back(AddChain_2_64);
-
-  // AddChain_3_64
-  CompressComponent
-    AddChain_3_64 = createAddChainComponent("AddChain_3_64", 3, 64, 64, 1.255);
-  Library.push_back(AddChain_3_64);
-
-  // AddChain_4_64
-  CompressComponent
-    AddChain_4_64 = createAddChainComponent("AddChain_4_64", 4, 64, 188, 1.574);
-  Library.push_back(AddChain_4_64);
-
-  // AddChain_5_64
-  CompressComponent
-    AddChain_5_64 = createAddChainComponent("AddChain_5_64", 5, 64, 128, 2.326);
-  Library.push_back(AddChain_5_64);
-
-  // AddChain_6_64
-  CompressComponent
-    AddChain_6_64 = createAddChainComponent("AddChain_6_64", 6, 64, 254, 2.784);
-  Library.push_back(AddChain_6_64);
-
-  // AddChain_7_64
-  CompressComponent
-    AddChain_7_64 = createAddChainComponent("AddChain_7_64", 7, 64, 192, 2.143);
-  Library.push_back(AddChain_7_64);
-
-  // AddChain_8_64
-  CompressComponent
-    AddChain_8_64 = createAddChainComponent("AddChain_8_64", 8, 64, 316, 2.9);
-  Library.push_back(AddChain_8_64);
-
-  // AddChain_9_64
-  CompressComponent
-    AddChain_9_64 = createAddChainComponent("AddChain_9_64", 9, 64, 256, 2.607);
-  Library.push_back(AddChain_9_64);
-
-  // AddChain_10_64
-  CompressComponent
-    AddChain_10_64 = createAddChainComponent("AddChain_10_64", 10, 64, 380, 3.033);
-  Library.push_back(AddChain_10_64);
+//   / AddChain with bitwidth of 16
+//     // AddChain_2_16
+//     CompressComponent
+//       AddChain_2_16 = createAddChainComponent("AddChain_2_16", 2, 16, 16, 0.521);
+//     Library.push_back(AddChain_2_16);
+//   
+//     // AddChain_3_16
+//     CompressComponent
+//       AddChain_3_16 = createAddChainComponent("AddChain_3_16", 3, 16, 16, 0.59);
+//     Library.push_back(AddChain_3_16);
+//   
+//     // AddChain_4_16
+//     CompressComponent
+//       AddChain_4_16 = createAddChainComponent("AddChain_4_16", 4, 16, 44, 0.706);
+//     Library.push_back(AddChain_4_16);
+//   
+//     // AddChain_5_16
+//     CompressComponent
+//       AddChain_5_16 = createAddChainComponent("AddChain_5_16", 5, 16, 32, 1.584);
+//     Library.push_back(AddChain_5_16);
+//   
+//     // AddChain_6_16
+//     CompressComponent
+//       AddChain_6_16 = createAddChainComponent("AddChain_6_16", 6, 16, 60, 1.715);
+//     Library.push_back(AddChain_6_16);
+//   
+//     // AddChain_7_16
+//     CompressComponent
+//       AddChain_7_16 = createAddChainComponent("AddChain_7_16", 7, 16, 48, 1.822);
+//     Library.push_back(AddChain_7_16);
+//   
+//     // AddChain_8_16
+//     CompressComponent
+//       AddChain_8_16 = createAddChainComponent("AddChain_8_16", 8, 16, 76, 2.101);
+//     Library.push_back(AddChain_8_16);
+//   
+//     // AddChain_9_16
+//     CompressComponent
+//       AddChain_9_16 = createAddChainComponent("AddChain_9_16", 9, 16, 64, 2.183);
+//     Library.push_back(AddChain_9_16);
+//   
+//     // AddChain_10_16
+//     CompressComponent
+//       AddChain_10_16 = createAddChainComponent("AddChain_10_16", 10, 16, 92, 2.009);
+//     Library.push_back(AddChain_10_16);
+//   
+//     /// AddChain with bitwidth of 32
+//     // AddChain_2_32
+//     CompressComponent
+//       AddChain_2_32 = createAddChainComponent("AddChain_2_32", 2, 32, 32, 0.816);
+//     Library.push_back(AddChain_2_32);
+//   
+//     // AddChain_3_32
+//     CompressComponent
+//       AddChain_3_32 = createAddChainComponent("AddChain_3_32", 3, 32, 32, 0.876);
+//     Library.push_back(AddChain_3_32);
+//   
+//     // AddChain_4_32
+//     CompressComponent
+//       AddChain_4_32 = createAddChainComponent("AddChain_4_32", 4, 32, 92, 1.163);
+//     Library.push_back(AddChain_4_32);
+//   
+//     // AddChain_5_32
+//     CompressComponent
+//       AddChain_5_32 = createAddChainComponent("AddChain_5_32", 5, 32, 64, 2.199);
+//     Library.push_back(AddChain_5_32);
+//   
+//     // AddChain_6_32
+//     CompressComponent
+//       AddChain_6_32 = createAddChainComponent("AddChain_6_32", 6, 32, 124, 2.343);
+//     Library.push_back(AddChain_6_32);
+//   
+//     // AddChain_7_32
+//     CompressComponent
+//       AddChain_7_32 = createAddChainComponent("AddChain_7_32", 7, 32, 96, 2.343);
+//     Library.push_back(AddChain_7_32);
+//   
+//     // AddChain_8_32
+//     CompressComponent
+//       AddChain_8_32 = createAddChainComponent("AddChain_8_32", 8, 32, 156, 2.047);
+//     Library.push_back(AddChain_8_32);
+//   
+//     // AddChain_9_32
+//     CompressComponent
+//       AddChain_9_32 = createAddChainComponent("AddChain_9_32", 9, 32, 128, 2.265);
+//     Library.push_back(AddChain_9_32);
+//   
+//     // AddChain_10_32
+//     CompressComponent
+//       AddChain_10_32 = createAddChainComponent("AddChain_10_32", 10, 32, 188, 2.504);
+//     Library.push_back(AddChain_10_32);
+//   
+//     /// AddChain with bitwidth of 64
+//     // AddChain_2_64
+//     CompressComponent
+//       AddChain_2_64 = createAddChainComponent("AddChain_2_64", 2, 64, 64, 1.24);
+//     Library.push_back(AddChain_2_64);
+//   
+//     // AddChain_3_64
+//     CompressComponent
+//       AddChain_3_64 = createAddChainComponent("AddChain_3_64", 3, 64, 64, 1.255);
+//     Library.push_back(AddChain_3_64);
+//   
+//     // AddChain_4_64
+//     CompressComponent
+//       AddChain_4_64 = createAddChainComponent("AddChain_4_64", 4, 64, 188, 1.574);
+//     Library.push_back(AddChain_4_64);
+//   
+//     // AddChain_5_64
+//     CompressComponent
+//       AddChain_5_64 = createAddChainComponent("AddChain_5_64", 5, 64, 128, 2.326);
+//     Library.push_back(AddChain_5_64);
+//   
+//     // AddChain_6_64
+//     CompressComponent
+//       AddChain_6_64 = createAddChainComponent("AddChain_6_64", 6, 64, 254, 2.784);
+//     Library.push_back(AddChain_6_64);
+//   
+//     // AddChain_7_64
+//     CompressComponent
+//       AddChain_7_64 = createAddChainComponent("AddChain_7_64", 7, 64, 192, 2.143);
+//     Library.push_back(AddChain_7_64);
+//   
+//     // AddChain_8_64
+//     CompressComponent
+//       AddChain_8_64 = createAddChainComponent("AddChain_8_64", 8, 64, 316, 2.9);
+//     Library.push_back(AddChain_8_64);
+//   
+//     // AddChain_9_64
+//     CompressComponent
+//       AddChain_9_64 = createAddChainComponent("AddChain_9_64", 9, 64, 256, 2.607);
+//     Library.push_back(AddChain_9_64);
+//   
+//     // AddChain_10_64
+//     CompressComponent
+//       AddChain_10_64 = createAddChainComponent("AddChain_10_64", 10, 64, 380, 3.033);
+//     Library.push_back(AddChain_10_64);
 }
 
 void SIRMOAOpt::initLibrary() {
@@ -1584,12 +1592,20 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
     = getActiveBitNumListInTMatrix(TMatrix, Stage);
 
   // Get the Component to be used.
-  CompressComponent Component = Library[ComponentIdx];
+  CompressComponent *Component = Library[ComponentIdx];
+
+  // Identify if the component is GPC with extra one type.
+  bool IsSpecialGPC = isa<GPC_with_extra_One>(Component);
+  unsigned RankOfExtraOne = 0;
+  if (IsSpecialGPC) {
+    GPC_with_extra_One *SpecialGPC = dyn_cast<GPC_with_extra_One>(Component);
+    RankOfExtraOne = SpecialGPC->getRankOfExtraOne();
+  }    
 
   // Collect input dots.
   float InputArrivalTime = 0.0f;
   std::vector<std::vector<DotType> > InputDots;
-  std::vector<unsigned> InputDotNums = Component.getInputDotNums();
+  std::vector<unsigned> InputDotNums = Component->getInputDotNums();
   for (unsigned i = 0; i < InputDotNums.size(); ++i) {
     unsigned InputDotNum = InputDotNums[i];
 
@@ -1636,10 +1652,10 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
   // Get name and delay for output dots.
   std::string OutputName
     = "gpc_result_" + utostr_32(Component_NUM++) + "_" + utostr_32(Stage);
-  float OutputArrivalTime = InputArrivalTime + Component.getCriticalDelay() + NET_DELAY;
+  float OutputArrivalTime = InputArrivalTime + Component->getCriticalDelay() + NET_DELAY;
 
   // Insert the output dots into TMatrix.
-  unsigned OutputDotNum = Component.getOutputDotNum();
+  unsigned OutputDotNum = Component->getOutputDotNum();
   for (unsigned i = 0; i < OutputDotNum; ++i) {
     // Do not insert if exceed the range of TMatrix.
     if (RowNo + i >= TMatrix.size())
@@ -1660,17 +1676,23 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
   return TMatrix;
 }
 
-bool sortComponent(std::pair<unsigned, std::pair<float, float> > OpA,
-                   std::pair<unsigned, std::pair<float, float> > OpB) {
+bool sortComponent(std::pair<unsigned, std::pair<float, std::pair<float, unsigned> > > OpA,
+                   std::pair<unsigned, std::pair<float, std::pair<float, unsigned> > > OpB) {
   if (OpA.second.first < OpB.second.first)
     return true;
   else if (OpA.second.first > OpB.second.first)
     return false;
   else {
-    if (OpA.second.second < OpB.second.second)
+    if (OpA.second.second.first < OpB.second.second.first)
       return true;
-    else
+    else if (OpA.second.second.first > OpB.second.second.first)
       return false;
+    else {
+      if (OpA.second.second.second < OpB.second.second.second)
+        return true;
+      else
+        return false;
+    }
   }
 }
 
@@ -1683,19 +1705,20 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
   std::vector<unsigned> ActiveBitNumList
     = getActiveBitNumListInTMatrix(TMatrix, Stage);
 
-  // Try all library and evaluate its priority which is considered in two
-  // aspects: 1) performance 2) input dot number in row 0.
-  std::vector<std::pair<unsigned, std::pair<float, float> > > PriorityList;
+  // Try all library and evaluate its priority.
+  typedef std::pair<float, std::pair<float, unsigned> > GPCPriority;
+  std::vector<std::pair<unsigned, GPCPriority> > PriorityList;
   for (unsigned i = 0; i < Library.size(); ++i) {
-    CompressComponent Component = Library[i];
+    CompressComponent *Component = Library[i];
 
     // Get the information of current GPC.
-    std::vector<unsigned> InputDotNums = Component.getInputDotNums();
-    unsigned OutputDotNum = Component.getOutputDotNum();
-    float CriticalDelay = Component.getCriticalDelay();
-    unsigned Area = Component.getArea();
+    std::vector<unsigned> InputDotNums = Component->getInputDotNums();
+    unsigned OutputDotNum = Component->getOutputDotNum();
+    float CriticalDelay = Component->getCriticalDelay();
+    unsigned Area = Component->getArea();
 
-    // Ignore the invalid component.
+    /// Ignore the invalid component.
+    // Check if all inputs of component can be fulfilled.
     unsigned RealInputDotNum = 0;
     bool ComponentValid = true;
     if (RowNo + InputDotNums.size() > TMatrix.size())
@@ -1710,33 +1733,47 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
     }
     if (!ComponentValid)
       continue;
+    // Check if there exists the needed 1'b1 if the component
+    // is the GPCWithExtraOne.
+    if (GPC_with_extra_One *SpecialGPC
+      = dyn_cast<GPC_with_extra_One>(Component)) {
+      unsigned ExtraOneRank = SpecialGPC->getRankOfExtraOne();
+
+      MatrixRowType TargetRow = TMatrix[RowNo + ExtraOneRank];
+      if (TargetRow[0].first != "1'b1")
+        ComponentValid = false;
+    }
+    if (!ComponentValid)
+      continue;
 
     unsigned RealOutputDotNum = std::min(OutputDotNum, TMatrix.size() - RowNo + 1);
 
     // Evaluate the performance.
     unsigned CompressedDotNum = RealInputDotNum > RealOutputDotNum ? 
                                   RealInputDotNum - RealOutputDotNum : 0;
+
     float RealDelay = CriticalDelay + NET_DELAY;
     //float Performance = ((float) (CompressedDotNum * CompressedDotNum)) / (RealDelay * Area);
     //float Performance = ((float)CompressedDotNum) / RealDelay;
     float Performance = ((float)CompressedDotNum) / Area;
 
-    PriorityList.push_back(std::make_pair(i, std::make_pair(Performance,
-                                                            0.0f - CriticalDelay)));
+    GPCPriority Priority = std::make_pair(Performance,
+                                          std::make_pair(0.0f - CriticalDelay, InputDotNums[0]));
+    PriorityList.push_back(std::make_pair(i, Priority));
   }
 
   // Sort the PriorityList and get the highest one.
   std::sort(PriorityList.begin(), PriorityList.end(), sortComponent);
 
   // Debug
-//   errs() << "Component performance list is as follows:\n";
-//   for (unsigned i = 0; i < PriorityList.size(); ++i) {
-//     unsigned ComponentIdx = PriorityList[i].first;
-// 
-//     CompressComponent Component = Library[ComponentIdx];
-// 
-//     errs() << Component.getName() << "--" << PriorityList[i].second.first << "\n";
-//   }
+  errs() << "Component performance list is as follows:\n";
+  for (unsigned i = 0; i < PriorityList.size(); ++i) {
+    unsigned ComponentIdx = PriorityList[i].first;
+
+    CompressComponent *Component = Library[ComponentIdx];
+
+    errs() << Component->getName() << "--" << PriorityList[i].second.first << "\n";
+  }
 
 
   return PriorityList.back().first;
@@ -1967,6 +2004,15 @@ void SIRMOAOpt::printGPCModule(raw_fd_ostream &Output) {
   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + 2 * col1;\n\n";
   Output << "endmodule\n\n";
 
+  // Generate the 14-3_ExtraOne_Rank0 compressor.
+  Output << "module GPC_14_3_LUT_ExtraOne_Rank0(\n";
+  Output << "\tinput wire[3:0] col0,\n";
+  Output << "\tinput wire col1,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + 1'b1 + 2 * col1;\n\n";
+  Output << "endmodule\n\n";
+
   // Generate the 15-3 compressor.
   Output << "module GPC_15_3_LUT(\n";
   Output << "\tinput wire[4:0] col0,\n";
@@ -1974,6 +2020,15 @@ void SIRMOAOpt::printGPCModule(raw_fd_ostream &Output) {
   Output << "\toutput wire[2:0] sum\n";
   Output << ");\n\n";
   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + 2 * col1;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 15-3_ExtraOne_Rank0 compressor.
+  Output << "module GPC_15_3_LUT_ExtraOne_Rank0(\n";
+  Output << "\tinput wire[4:0] col0,\n";
+  Output << "\tinput wire col1,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + 1'b1 + 2 * col1;\n\n";
   Output << "endmodule\n\n";
 
   // Generate the 23-3 compressor.
@@ -1985,60 +2040,103 @@ void SIRMOAOpt::printGPCModule(raw_fd_ostream &Output) {
   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + 2 * (col1[0] + col1[1]);\n\n";
   Output << "endmodule\n\n";
 
-//   // Generate the 506-5 compressor.
-//   Output << "module GPC_506_5(\n";
-//   Output << "\tinput wire[5:0] col0,\n";
-//   Output << "\tinput wire[4:0] col2,\n";
-//   Output << "\toutput wire[4:0] sum\n";
-//   Output << ");\n\n";
-//   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
-//   Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4]);\n\n";
-//   Output << "endmodule\n\n";
-// 
-//   // Generate the 606-5 compressor.
-//   Output << "module GPC_606_5(\n";
-//   Output << "\tinput wire[5:0] col0,\n";
-//   Output << "\tinput wire[5:0] col2,\n";
-//   Output << "\toutput wire[4:0] sum\n";
-//   Output << ");\n\n";
-//   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
-//   Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4] + col2[5]);\n\n";
-//   Output << "endmodule\n\n";
-// 
-//   // Generate the 1325-5 compressor.
-//   Output << "module GPC_1325_5(\n";
-//   Output << "\tinput wire[4:0] col0,\n";
-//   Output << "\tinput wire[1:0] col1,\n";
-//   Output << "\tinput wire[2:0] col2,\n";
-//   Output << "\tinput wire col3,\n";
-//   Output << "\toutput wire[4:0] sum\n";
-//   Output << ");\n\n";
-//   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
-//   Output << "+ 2 * (col1[0] + col1[1]) + 4 * (col2[0] + col2[1] + col2[2]) + 8 * col3;\n\n";
-//   Output << "endmodule\n\n";
-// 
-//   // Generate the 1406-5 compressor.
-//   Output << "module GPC_1406_5(\n";
-//   Output << "\tinput wire[5:0] col0,\n";
-//   Output << "\tinput wire[3:0] col2,\n";
-//   Output << "\tinput wire col3,\n";
-//   Output << "\toutput wire[4:0] sum\n";
-//   Output << ");\n\n";
-//   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
-//   Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
-//   Output << "endmodule\n\n";
-// 
-//   // Generate the 1415-5 compressor.
-//   Output << "module GPC_1415_5(\n";
-//   Output << "\tinput wire[4:0] col0,\n";
-//   Output << "\tinput wire col1,\n";
-//   Output << "\tinput wire[3:0] col2,\n";
-//   Output << "\tinput wire col3,\n";
-//   Output << "\toutput wire[4:0] sum\n";
-//   Output << ");\n\n";
-//   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
-//   Output << "+ 2 * col1 + 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
-//   Output << "endmodule\n\n";
+  // Generate the 506-5 compressor.
+  Output << "module GPC_506_5(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\tinput wire[4:0] col2,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
+  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4]);\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 506-5_ExtraOne_Rank0 compressor.
+  Output << "module GPC_506_5_ExtraOne_Rank0(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\tinput wire[4:0] col2,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] + 1'b1";
+  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4]);\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 606-5 compressor.
+  Output << "module GPC_606_5(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\tinput wire[5:0] col2,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
+  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4] + col2[5]);\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 606-5_ExtraOne_Rank0 compressor.
+  Output << "module GPC_606_5_ExtraOne_Rank0(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\tinput wire[5:0] col2,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] + 1'b1";
+  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3] + col2[4] + col2[5]);\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 1325-5 compressor.
+  Output << "module GPC_1325_5(\n";
+  Output << "\tinput wire[4:0] col0,\n";
+  Output << "\tinput wire[1:0] col1,\n";
+  Output << "\tinput wire[2:0] col2,\n";
+  Output << "\tinput wire col3,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
+  Output << "+ 2 * (col1[0] + col1[1]) + 4 * (col2[0] + col2[1] + col2[2]) + 8 * col3;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 1325-5_ExtraOne_Rank1 compressor.
+  Output << "module GPC_1325_5_ExtraOne_Rank1(\n";
+  Output << "\tinput wire[4:0] col0,\n";
+  Output << "\tinput wire[1:0] col1,\n";
+  Output << "\tinput wire[2:0] col2,\n";
+  Output << "\tinput wire col3,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
+  Output << "+ 2 * (col1[0] + col1[1] + 1'b1) + 4 * (col2[0] + col2[1] + col2[2]) + 8 * col3;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 1406-5 compressor.
+  Output << "module GPC_1406_5(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\tinput wire[3:0] col2,\n";
+  Output << "\tinput wire col3,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] ";
+  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 1406-5_ExtraOne_Rank0 compressor.
+  Output << "module GPC_1406_5_ExtraOne_Rank0(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\tinput wire[3:0] col2,\n";
+  Output << "\tinput wire col3,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] + 1'b1";
+  Output << "+ 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 1415-5 compressor.
+  Output << "module GPC_1415_5(\n";
+  Output << "\tinput wire[4:0] col0,\n";
+  Output << "\tinput wire col1,\n";
+  Output << "\tinput wire[3:0] col2,\n";
+  Output << "\tinput wire col3,\n";
+  Output << "\toutput wire[4:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] ";
+  Output << "+ 2 * col1 + 4 * (col2[0] + col2[1] + col2[2] + col2[3]) + 8 * col3;\n\n";
+  Output << "endmodule\n\n";
 }
 
 void SIRMOAOpt::printAddChainModule(unsigned OpNum, unsigned BitWidth,
@@ -2101,10 +2199,18 @@ SIRMOAOpt::printComponentInstance(unsigned ComponentIdx,
                                   std::string OutputName,
                                   raw_fd_ostream &Output) {
   // Get the Component to be used and its information.
-  CompressComponent Component = Library[ComponentIdx];
-  std::vector<unsigned> InputDotNums = Component.getInputDotNums();
-  unsigned OutputDotNum = Component.getOutputDotNum();
-  std::string ComponentName = Component.getName();
+  CompressComponent *Component = Library[ComponentIdx];
+  std::vector<unsigned> InputDotNums = Component->getInputDotNums();
+  unsigned OutputDotNum = Component->getOutputDotNum();
+  std::string ComponentName = Component->getName();
+
+  // Identify the special GPC component.
+  bool IsSpecialGPC = isa<GPC_with_extra_One>(Component);
+  unsigned RankOfExtraOne = 0;
+  if (IsSpecialGPC) {
+    GPC_with_extra_One *SpecialGPC = dyn_cast<GPC_with_extra_One>(Component);
+    RankOfExtraOne = SpecialGPC->getRankOfExtraOne();
+  }
 
   // Print the declaration of the result.  
   Output << "wire [" << utostr_32(OutputDotNum - 1) << ":0] " << OutputName << ";\n";
@@ -2124,6 +2230,10 @@ SIRMOAOpt::printComponentInstance(unsigned ComponentIdx,
     assert(InputDotRow.size() == InputDotNums[i] || InputDotRow.size() == 0
       && "Unexpected input dot number!");
     for (unsigned j = 0; j < InputDotRow.size(); ++j) {
+      // If this is a special GPC, then do not print the extra 1'b1 input.
+      if (IsSpecialGPC && i == RankOfExtraOne && j == 0)
+        continue;
+
       Output << InputDotRow[j].first;
 
       if (j != InputDotRow.size() - 1)
