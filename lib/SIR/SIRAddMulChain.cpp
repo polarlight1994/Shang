@@ -1304,6 +1304,16 @@ void SIRMOAOpt::initGPCs() {
                             GPC_6_3_InputsVector, 3, 2, 0.293f);
   Library.push_back(GPC_6_3);
 
+  /// GPC_6_3 with extra 1'b1 in rank of 0
+  // Inputs & Outputs
+  unsigned GPC_6_3_SP_Inputs[2] = { 7 };
+  std::vector<unsigned> GPC_6_3_SP_InputsVector(GPC_6_3_SP_Inputs,
+                                                    GPC_6_3_SP_Inputs + 1);
+  GPC_with_extra_One *GPC_6_3_ExtraOne_Rank0
+    = new GPC_with_extra_One("GPC_6_3_ExtraOne_Rank0",
+                             GPC_6_3_SP_InputsVector, 3, 2, 0.293f, 0);
+  Library.push_back(GPC_6_3_ExtraOne_Rank0);
+
   /// GPC_13_3_LUT
   // Inputs & Outputs
   unsigned GPC_13_3_LUT_Inputs[2] = { 3, 1 };
@@ -1339,8 +1349,12 @@ void SIRMOAOpt::initGPCs() {
 
   /// GPC_14_3_LUT with extra 1'b1 in rank of 0
   // Inputs & Outputs
+  unsigned GPC_14_3_LUT_SP_Inputs[2] = { 5, 1 };
+  std::vector<unsigned> GPC_14_3_LUT_SP_InputsVector(GPC_14_3_LUT_SP_Inputs,
+                                                     GPC_14_3_LUT_SP_Inputs + 2);
   GPC_with_extra_One *GPC_14_3_LUT_ExtraOne_Rank0
-    = new GPC_with_extra_One("GPC_14_3_LUT_ExtraOne_Rank0", { 5, 1 }, 3, 2, 0.049f, 0);
+    = new GPC_with_extra_One("GPC_14_3_LUT_ExtraOne_Rank0",
+                             GPC_14_3_LUT_SP_InputsVector, 3, 2, 0.049f, 0);
   Library.push_back(GPC_14_3_LUT_ExtraOne_Rank0);
 
   /// GPC_15_3
@@ -1367,8 +1381,12 @@ void SIRMOAOpt::initGPCs() {
 
   /// GPC_506_5 with extra 1'b1 in rank of 0
   // Inputs & Outputs
+  unsigned GPC_506_5_LUT_SP_Inputs[3] = { 7, 0, 5 };
+  std::vector<unsigned> GPC_506_5_LUT_SP_InputsVector(GPC_506_5_LUT_SP_Inputs,
+                                                      GPC_506_5_LUT_SP_Inputs + 3);
   GPC_with_extra_One *GPC_506_5_ExtraOne_Rank0
-    = new GPC_with_extra_One("GPC_506_5_ExtraOne_Rank0", { 7, 0, 5}, 5, 4, 0.31f, 0);
+    = new GPC_with_extra_One("GPC_506_5_ExtraOne_Rank0",
+                             GPC_506_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
   Library.push_back(GPC_506_5_ExtraOne_Rank0);
 
   // GPC_606_5
@@ -1384,8 +1402,12 @@ void SIRMOAOpt::initGPCs() {
 
   /// GPC_606_5 with extra 1'b1 in rank of 0
   // Inputs & Outputs
+  unsigned GPC_606_5_LUT_SP_Inputs[3] = { 7, 0, 6 };
+  std::vector<unsigned> GPC_606_5_LUT_SP_InputsVector(GPC_606_5_LUT_SP_Inputs,
+                                                      GPC_606_5_LUT_SP_Inputs + 3);
   GPC_with_extra_One *GPC_606_5_ExtraOne_Rank0
-    = new GPC_with_extra_One("GPC_606_5_ExtraOne_Rank0", { 7, 0, 6}, 5, 4, 0.31f, 0);
+    = new GPC_with_extra_One("GPC_606_5_ExtraOne_Rank0",
+                             GPC_606_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
   Library.push_back(GPC_606_5_ExtraOne_Rank0);
 
   // GPC_1325_5
@@ -1401,8 +1423,12 @@ void SIRMOAOpt::initGPCs() {
 
   /// GPC_1325_5 with extra 1'b1 in rank of 1
   // Inputs & Outputs
+  unsigned GPC_1325_5_LUT_SP_Inputs[4] = { 5, 3, 3, 1 };
+  std::vector<unsigned> GPC_1325_5_LUT_SP_InputsVector(GPC_1325_5_LUT_SP_Inputs,
+                                                       GPC_1325_5_LUT_SP_Inputs + 4);
   GPC_with_extra_One *GPC_1325_5_ExtraOne_Rank1
-    = new GPC_with_extra_One("GPC_1325_5_ExtraOne_Rank1", {6, 2, 3, 1}, 5, 4, 0.31f, 1);
+    = new GPC_with_extra_One("GPC_1325_5_ExtraOne_Rank1",
+                             GPC_1325_5_LUT_SP_InputsVector, 5, 4, 0.31f, 1);
   Library.push_back(GPC_1325_5_ExtraOne_Rank1);
 
   // GPC_1406_5
@@ -1418,8 +1444,12 @@ void SIRMOAOpt::initGPCs() {
 
   /// GPC_1406_5 with extra 1'b1 in rank of 0
   // Inputs & Outputs
+  unsigned GPC_1406_5_LUT_SP_Inputs[4] = { 7, 0, 4, 1 };
+  std::vector<unsigned> GPC_1406_5_LUT_SP_InputsVector(GPC_1406_5_LUT_SP_Inputs,
+                                                       GPC_1406_5_LUT_SP_Inputs + 4);
   GPC_with_extra_One *GPC_1406_5_ExtraOne_Rank0
-    = new GPC_with_extra_One("GPC_1406_5_ExtraOne_Rank0", {7, 0, 4, 1}, 5, 4, 0.31f, 0);
+    = new GPC_with_extra_One("GPC_1406_5_ExtraOne_Rank0",
+                             GPC_1406_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
   Library.push_back(GPC_1406_5_ExtraOne_Rank0);
 
   // GPC_1415_5
@@ -1600,6 +1630,9 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
   if (IsSpecialGPC) {
     GPC_with_extra_One *SpecialGPC = dyn_cast<GPC_with_extra_One>(Component);
     RankOfExtraOne = SpecialGPC->getRankOfExtraOne();
+
+    // Code for debug
+    errs() << "Use the special GPC: " << SpecialGPC->getName() << "\n";
   }    
 
   // Collect input dots.
@@ -1613,9 +1646,26 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
     std::vector<DotType> InputDotRow;
     if (RowNo + i < TMatrix.size()) {
       for (unsigned j = 0; j < InputDotNum; ++j) {
-        if (j < ActiveBitNumList[RowNo + i]) {
-          DotType Dot = TMatrix[RowNo + i][j];
+        unsigned DotIdx = j;
+
+        // Reserve the 1'b1 dot so it may be summed by GPC with extra
+        // one in process of next row.
+        if (i != RankOfExtraOne && TMatrix[RowNo + i][0].first == "1'b1" &&
+            InputDotNum < ActiveBitNumList[RowNo + i]) {
+          ++DotIdx;
+        }
+
+        if (DotIdx < ActiveBitNumList[RowNo + i]) {
+          DotType Dot = TMatrix[RowNo + i][DotIdx];
+
+          // Make sure the input is valid if it is a GPC with extra one.
+          if (IsSpecialGPC && i == RankOfExtraOne && DotIdx == 0)
+            assert(Dot.first == "1'b1" && "Unexpected input dot!");
+
           InputDotRow.push_back(Dot);
+
+          // Clear input dots in TMatrix.
+          TMatrix[RowNo + i][DotIdx] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
 
           // Collect the arrival time of each input dot.
           InputArrivalTime = std::max(InputArrivalTime, Dot.second.first);
@@ -1634,19 +1684,6 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
     }
 
     InputDots.push_back(InputDotRow);
-  }
-
-  // Clear input dots in TMatrix.
-  for (unsigned i = 0; i < InputDotNums.size(); ++i) {
-    if (RowNo + i < TMatrix.size()) {
-      unsigned InputDotNum = InputDotNums[i];
-
-      // The dots to be compressed in current row in TMatrix.
-      std::vector<DotType> InputDotRow;
-      for (unsigned j = 0; j < InputDotNum; ++j)
-        if (j < ActiveBitNumList[RowNo + i])
-          TMatrix[RowNo + i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
-    }
   }
 
   // Get name and delay for output dots.
@@ -1766,14 +1803,14 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
   std::sort(PriorityList.begin(), PriorityList.end(), sortComponent);
 
   // Debug
-  errs() << "Component performance list is as follows:\n";
-  for (unsigned i = 0; i < PriorityList.size(); ++i) {
-    unsigned ComponentIdx = PriorityList[i].first;
-
-    CompressComponent *Component = Library[ComponentIdx];
-
-    errs() << Component->getName() << "--" << PriorityList[i].second.first << "\n";
-  }
+//   errs() << "Component performance list is as follows:\n";
+//   for (unsigned i = 0; i < PriorityList.size(); ++i) {
+//     unsigned ComponentIdx = PriorityList[i].first;
+// 
+//     CompressComponent *Component = Library[ComponentIdx];
+// 
+//     errs() << Component->getName() << "--" << PriorityList[i].second.first << "\n";
+//   }
 
 
   return PriorityList.back().first;
@@ -1979,11 +2016,19 @@ void SIRMOAOpt::printGPCModule(raw_fd_ostream &Output) {
   Output << "endmodule\n\n";
 
   // Generate the 6-3 compressor.
-  Output << "module GPC_6_3_LUT(\n";
+  Output << "module GPC_6_3(\n";
   Output << "\tinput wire[5:0] col0,\n";
   Output << "\toutput wire[2:0] sum\n";
   Output << ");\n\n";
   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5];\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 6-3_ExtraOne_Rank0 compressor.
+  Output << "module GPC_6_3_ExtraOne_Rank0(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5] + 1'b1;\n\n";
   Output << "endmodule\n\n";
 
   // Generate the 13-3 compressor.
@@ -2014,7 +2059,7 @@ void SIRMOAOpt::printGPCModule(raw_fd_ostream &Output) {
   Output << "endmodule\n\n";
 
   // Generate the 15-3 compressor.
-  Output << "module GPC_15_3_LUT(\n";
+  Output << "module GPC_15_3(\n";
   Output << "\tinput wire[4:0] col0,\n";
   Output << "\tinput wire col1,\n";
   Output << "\toutput wire[2:0] sum\n";
