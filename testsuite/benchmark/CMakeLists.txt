@@ -21,6 +21,6 @@ endmacro(add_hls_target)
 
 #add_subdirectory(DSPStone)
 add_subdirectory(CHStone)
-#add_subdirectory(DFGs)
+add_subdirectory(DFGs)
 #add_subdirectory(Mutil_Operand_Adder)
 #add_subdirectory(legup_chstone)
