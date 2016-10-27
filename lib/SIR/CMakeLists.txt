@@ -20,12 +20,11 @@ SIRRTLCodeGen.cpp
 )
 
 include_directories(${LPSOLVE_INCLUDE_DIR})
-include_directories(${PYTHON_INCLUDE_DIR})
 
 if (MSVC)
-  target_link_libraries(ShangSIR LLVMLinker ${LPSOLVE_LIBRARY} ${PYTHON_LIBRARY})
+  target_link_libraries(ShangSIR LLVMLinker ${LPSOLVE_LIBRARY})
 endif ()
 
 if (NOT MSVC)
-  target_link_libraries(ShangSIR LLVMLinker ${LPSOLVE_LIBRARY} ${PYTHON_LIBRARY} ${UTIL_LIBRARY})
+  target_link_libraries(ShangSIR LLVMLinker ${LPSOLVE_LIBRARY})
 endif ()

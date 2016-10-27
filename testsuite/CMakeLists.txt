@@ -97,10 +97,6 @@ macro(add_synthesis_test test_name)
 		"${SIR_SOURCE_ROOT}/verilog_synthesis_altera.tcl.in"
 		"${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl"
 	)
-	configure_file(
-		"${SIR_SOURCE_ROOT}/hybrid_tree_codegen.py"
-		"${TEST_BINARY_ROOT}/hybrid_tree_codegen.py"
-	)
 
 	#Compile the source file to IR.
   add_custom_command(OUTPUT ${TEST_BC} ${TEST_LL}
@@ -194,10 +190,6 @@ macro(add_cosimulation_test test_name)
 	configure_file(
 		"${SIR_SOURCE_ROOT}/XC7K70TFBV676.lua"
 		"${TEST_BINARY_ROOT}/XC7K70TFBV676.lua"
-	)
-	configure_file(
-		"${SIR_SOURCE_ROOT}/hybrid_tree_codegen.py"
-		"${TEST_BINARY_ROOT}/hybrid_tree_codegen.py"
 	)
 
 	#Compile the source file to IR.
@@ -348,10 +340,6 @@ macro(add_high_level_synthesis test_name)
 	configure_file(
 		"${SIR_SOURCE_ROOT}/verilog_synthesis_altera.tcl.in"
 		"${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl"
-	)
-	configure_file(
-		"${SIR_SOURCE_ROOT}/booth_mul_codegen.py"
-		"${TEST_BINARY_ROOT}/booth_mul_codegen.py"
 	)
 
 	#Compile the source file to IR.

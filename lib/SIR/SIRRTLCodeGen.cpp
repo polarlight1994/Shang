@@ -42,8 +42,6 @@
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/Debug.h"
 
-#include "Python.h"
-
 using namespace llvm;
 // To use the LUA in VAST
 using namespace vast;
@@ -1128,8 +1126,6 @@ namespace {
     void generateCodeForSCIFScript(SIR &SM, DataLayout &TD);
     void generateCodeForTestsuite(SIR &SM, DataLayout &TD);
 
-    void generateCodeForCompressor(SIR &SM, DataLayout &TD);
-
     bool runOnSIR(SIR &SM);
 
     void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -1492,23 +1488,6 @@ void SIR2RTL::generateCodeForTestsuite(SIR &SM, DataLayout &TD) {
     generateCodeForSCIFScript(SM, TD);
 }
 
-void SIR2RTL::generateCodeForCompressor(SIR &SM, DataLayout &TD) {
-  Py_Initialize();
-
-  assert(Py_IsInitialized() && "Python module not initialized!");
-
-  FILE *fp = NULL;
-  std::string CompressorPath = LuaI::GetString("CompressorPath") + "/hybrid_tree_codegen.py";
-
-  fp = fopen(CompressorPath.c_str(), "rb");
-
-  assert(fp && "Python file not found!");
-
-  PyRun_SimpleFile(fp, "hybrid_tree_codegen.py");
-
-  Py_Finalize();
-}
-
 bool SIR2RTL::runOnSIR(SIR &SM) {
   // Remove the dead SIR instruction before the CodeGen.
   SM.gc();
@@ -1546,8 +1525,6 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
 
   // Generate the code for testsuite.
   generateCodeForTestsuite(SM, TD);
-
-  //generateCodeForCompressor(SM, TD);
 
   return false;
 }
