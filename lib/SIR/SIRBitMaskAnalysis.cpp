@@ -609,6 +609,66 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
 
     return computeSgt(Masks[0], Masks[1]);
   }
+  case Intrinsic::shang_eq: {
+    bool UnEqual = false;
+    bool UnKnown = false;
+
+    unsigned BitWidth = Masks[0].getMaskWidth();
+    assert(BitWidth == Masks[1].getMaskWidth() && "Unexpected bitwidth!");
+
+    for (unsigned i = 0; i < BitWidth; ++i) {
+      if (Masks[0].isOneKnownAt(i) && Masks[1].isZeroKnownAt(i)) {
+        UnEqual = true;
+        break;
+      }
+
+      if (Masks[0].isZeroKnownAt(i) && Masks[1].isOneKnownAt(i)) {
+        UnEqual = true;
+        break;
+      }
+
+      if (!Masks[0].isBitKnownAt(i) || !Masks[0].isBitKnownAt(i))
+        UnKnown = true;
+
+    }
+
+    if (UnEqual)
+      return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
+    else if (!UnEqual && UnKnown)
+      return SIRBitMask(1);
+    else
+      return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
+  }
+  case Intrinsic::shang_ne: {
+    bool UnEqual = false;
+    bool UnKnown = false;
+
+    unsigned BitWidth = Masks[0].getMaskWidth();
+    assert(BitWidth == Masks[1].getMaskWidth() && "Unexpected bitwidth!");
+
+    for (unsigned i = 0; i < BitWidth; ++i) {
+      if (Masks[0].isOneKnownAt(i) && Masks[1].isZeroKnownAt(i)) {
+        UnEqual = true;
+        break;
+      }
+
+      if (Masks[0].isZeroKnownAt(i) && Masks[1].isOneKnownAt(i)) {
+        UnEqual = true;
+        break;
+      }
+
+      if (!Masks[0].isBitKnownAt(i) || !Masks[0].isBitKnownAt(i))
+        UnKnown = true;
+
+    }
+
+    if (UnEqual)
+      return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
+    else if (!UnEqual && UnKnown)
+      return SIRBitMask(1);
+    else
+      return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
+  }
   case Intrinsic::shang_udiv: {
     assert(Masks.size() == 2 && "Unexpected numbers of operands!");
 

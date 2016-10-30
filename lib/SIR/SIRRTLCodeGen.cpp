@@ -981,6 +981,10 @@ bool SIRDatapathPrinter::printExpr(IntrinsicInst &I) {
     printBitExtract(Ops); break;
   case Intrinsic::shang_bit_cat:
     printBitCat(Ops); break;
+  case Intrinsic::shang_eq:
+    printSimpleOp(Ops, " == "); break;
+  case Intrinsic::shang_ne:
+    printSimpleOp(Ops, " != "); break;
 
 
   default: llvm_unreachable("Unknown datapath opcode!"); break;
@@ -1022,6 +1026,8 @@ void SIRDatapathPrinter::visitIntrinsicInst(IntrinsicInst &I) {
   case Intrinsic::shang_bit_repeat:
   case Intrinsic::shang_bit_extract:
   case Intrinsic::shang_bit_cat:
+  case Intrinsic::shang_eq:
+  case Intrinsic::shang_ne:
     if (printExpr(I)) return;
     break;
   }

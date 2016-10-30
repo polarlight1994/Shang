@@ -1609,16 +1609,18 @@ Value *SIRDatapathBuilder::createSNEInst(ArrayRef<Value *> Ops, Type *RetTy,
   assert(getBitWidth(Ops[0]) == getBitWidth(Ops[1]) == TD.getTypeSizeInBits(RetTy)
          && "RetTy not matches!");
 
-  // Get the bitwise difference by Xor.
-  Value *BitWissDiff = createSXorInst(Ops, Ops[0]->getType(), InsertPosition, true);
-  // If there is any bitwise difference, then LHS and RHS is not equal.
-  return createSROrInst(BitWissDiff, RetTy, InsertPosition, UsedAsArg);
+  assert(TD.getTypeSizeInBits(RetTy) == 1 && "RetTy not matches!");
+
+  return createShangInstPattern(Ops, RetTy, InsertPosition,
+                                Intrinsic::shang_ne, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSEQInst(ArrayRef<Value *> Ops, Type *RetTy,
                                          Value *InsertPosition, bool UsedAsArg) {
-  return createSNotInst(createSNEInst(Ops, RetTy, InsertPosition, true),
-                        RetTy, InsertPosition, UsedAsArg);
+  assert(TD.getTypeSizeInBits(RetTy) == 1 && "RetTy not matches!");
+
+  return createShangInstPattern(Ops, RetTy, InsertPosition,
+                                Intrinsic::shang_eq, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSEQInst(Value *LHS, Value *RHS, Type *RetTy,
@@ -2002,29 +2004,29 @@ Value *SIRDatapathBuilder::createSShiftInst(ArrayRef<Value *> Ops, Type *RetTy,
 
   assert(LHS->getType() == RetTy && "RetTy not matches!");
 
-//   if (ConstantInt *RHSCI = dyn_cast<ConstantInt>(RHS)) {
-//     unsigned RHSCIVal = RHSCI->getValue().getZExtValue();
-// 
-//     unsigned LHSBitWidth = getBitWidth(LHS);
-// 
-//     if (FuncID == Intrinsic::shang_shl) {
-//       Value *ExtractResult = createSBitExtractInst(LHS, LHSBitWidth - RHSCIVal, 0, createIntegerType(LHSBitWidth - RHSCIVal), InsertPosition, true);
-//       Value *PaddingBits = createIntegerValue(RHSCIVal, 0);
-// 
-//       return createSBitCatInst(ExtractResult, PaddingBits, RetTy, InsertPosition, UsedAsArg);
-//     } else if (FuncID == Intrinsic::shang_lshr) {
-//       Value *ExtractResult = createSBitExtractInst(LHS, LHSBitWidth, RHSCIVal, createIntegerType(LHSBitWidth - RHSCIVal), InsertPosition, true);
-//       Value *PaddingBits = createIntegerValue(RHSCIVal, 0);
-// 
-//       return createSBitCatInst(PaddingBits, ExtractResult, RetTy, InsertPosition, UsedAsArg);
-//     } else if (FuncID == Intrinsic::shang_ashr) {
-//       Value *ExtractResult = createSBitExtractInst(LHS, LHSBitWidth, RHSCIVal, createIntegerType(LHSBitWidth - RHSCIVal), InsertPosition, true);
-//       Value *PaddingBit = createSBitExtractInst(LHS, LHSBitWidth, LHSBitWidth - 1, createIntegerType(1), InsertPosition, true);
-//       Value *PaddingBits = createSBitRepeatInst(PaddingBit, RHSCIVal, createIntegerType(RHSCIVal), InsertPosition, true);
-// 
-//       return createSBitCatInst(PaddingBits, ExtractResult, RetTy, InsertPosition, UsedAsArg);
-//     }
-//   }
+  if (ConstantInt *RHSCI = dyn_cast<ConstantInt>(RHS)) {
+    unsigned RHSCIVal = RHSCI->getValue().getZExtValue();
+
+    unsigned LHSBitWidth = getBitWidth(LHS);
+
+    if (FuncID == Intrinsic::shang_shl) {
+      Value *ExtractResult = createSBitExtractInst(LHS, LHSBitWidth - RHSCIVal, 0, createIntegerType(LHSBitWidth - RHSCIVal), InsertPosition, true);
+      Value *PaddingBits = createIntegerValue(RHSCIVal, 0);
+
+      return createSBitCatInst(ExtractResult, PaddingBits, RetTy, InsertPosition, UsedAsArg);
+    } else if (FuncID == Intrinsic::shang_lshr) {
+      Value *ExtractResult = createSBitExtractInst(LHS, LHSBitWidth, RHSCIVal, createIntegerType(LHSBitWidth - RHSCIVal), InsertPosition, true);
+      Value *PaddingBits = createIntegerValue(RHSCIVal, 0);
+
+      return createSBitCatInst(PaddingBits, ExtractResult, RetTy, InsertPosition, UsedAsArg);
+    } else if (FuncID == Intrinsic::shang_ashr) {
+      Value *ExtractResult = createSBitExtractInst(LHS, LHSBitWidth, RHSCIVal, createIntegerType(LHSBitWidth - RHSCIVal), InsertPosition, true);
+      Value *PaddingBit = createSBitExtractInst(LHS, LHSBitWidth, LHSBitWidth - 1, createIntegerType(1), InsertPosition, true);
+      Value *PaddingBits = createSBitRepeatInst(PaddingBit, RHSCIVal, createIntegerType(RHSCIVal), InsertPosition, true);
+
+      return createSBitCatInst(PaddingBits, ExtractResult, RetTy, InsertPosition, UsedAsArg);
+    }
+  }
 
   return createShangInstPattern(NewOps, RetTy, InsertPosition, FuncID, UsedAsArg);
 }
