@@ -325,8 +325,62 @@ float SIRMOAOpt::getLatency(Instruction *Inst) {
     return VFUs::LUTDelay + VFUs::WireDelay;
   }
 
-  case Intrinsic::shang_and:
-  case Intrinsic::shang_or:
+  case Intrinsic::shang_and: {
+    // To be noted that, in LLVM IR the return value
+    // is counted in Operands, so the real numbers
+    // of operands should be minus one.
+    unsigned IONums = II->getNumOperands() - 1;
+    assert(IONums == 2 && "Unexpected Num!");
+
+    unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
+    SIRBitMask OpBitMask_A = SM->getBitMask(II->getOperand(0));
+    SIRBitMask OpBitMask_B = SM->getBitMask(II->getOperand(1));
+
+    // Considering each bit of And operation, if there are known 1'b1 or 1'b0
+    // in any one of the two operands, the value of this bit will need no calculation.
+    // So if every bit of And operation meets the condition, then this And operation
+    // can be optimized.
+    bool CanBeOpt = true;
+    for (unsigned i = 0; i < BitWidth; ++i) {
+      if (!OpBitMask_A.isBitKnownAt(i) && !OpBitMask_B.isBitKnownAt(i)) {
+        CanBeOpt = false;
+        break;
+      }
+    }
+    if (CanBeOpt)
+      return 0.0f;
+
+    unsigned LogicLevels = LogCeiling(IONums, VFUs::MaxLutSize);
+    return LogicLevels * VFUs::LUTDelay + VFUs::WireDelay;
+  }
+  case Intrinsic::shang_or: {
+    // To be noted that, in LLVM IR the return value
+    // is counted in Operands, so the real numbers
+    // of operands should be minus one.
+    unsigned IONums = II->getNumOperands() - 1;
+    assert(IONums == 2 && "Unexpected Num!");
+
+    unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
+    SIRBitMask OpBitMask_A = SM->getBitMask(II->getOperand(0));
+    SIRBitMask OpBitMask_B = SM->getBitMask(II->getOperand(1));
+
+    // Considering each bit of Or operation, if there are known 1'b1 or 1'b0
+    // in any one of the two operands, the value of this bit will need no calculation.
+    // So if every bit of Or operation meets the condition, then this Or operation
+    // can be optimized.
+    bool CanBeOpt = true;
+    for (unsigned i = 0; i < BitWidth; ++i) {
+      if (!OpBitMask_A.isBitKnownAt(i) && !OpBitMask_B.isBitKnownAt(i)) {
+        CanBeOpt = false;
+        break;
+      }
+    }
+    if (CanBeOpt)
+      return 0.0f;
+
+    unsigned LogicLevels = LogCeiling(IONums, VFUs::MaxLutSize);
+    return LogicLevels * VFUs::LUTDelay + VFUs::WireDelay;
+  }
   case Intrinsic::shang_xor: {
     // To be noted that, in LLVM IR the return value
     // is counted in Operands, so the real numbers
@@ -334,13 +388,45 @@ float SIRMOAOpt::getLatency(Instruction *Inst) {
     unsigned IONums = II->getNumOperands() - 1;
     assert(IONums == 2 && "Unexpected Num!");
 
+    unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
+    SIRBitMask OpBitMask_A = SM->getBitMask(II->getOperand(0));
+    SIRBitMask OpBitMask_B = SM->getBitMask(II->getOperand(1));
+
+    // Considering each bit of Or operation, if there are known 1'b1 or 1'b0
+    // in any one of the two operands, the value of this bit will need no calculation.
+    // So if every bit of Or operation meets the condition, then this Or operation
+    // can be optimized.
+    bool CanBeOpt = true;
+    for (unsigned i = 0; i < BitWidth; ++i) {
+      if (!OpBitMask_A.isZeroKnownAt(i) && !OpBitMask_B.isZeroKnownAt(i)) {
+        CanBeOpt = false;
+        break;
+      }
+    }
+    if (CanBeOpt)
+      return 0.0f;
+
     unsigned LogicLevels = LogCeiling(IONums, VFUs::MaxLutSize);
-    return LogicLevels * VFUs::LUTDelay;
+    return LogicLevels * VFUs::LUTDelay + VFUs::WireDelay;
   }
 
   case Intrinsic::shang_rand: {
-    unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
-    return LuaI::Get<VFURAnd>()->lookupLatency(std::min(BitWidth, 64u));
+    SIRBitMask OpBitMask = SM->getBitMask(II->getOperand(0));
+    unsigned BitWidth = OpBitMask.getMaskWidth();
+
+    unsigned ValidBitWidth = BitWidth;
+    for (unsigned i = 0; i < BitWidth; ++i) {
+      if (OpBitMask.isZeroKnownAt(i)) {
+        ValidBitWidth = 0;
+        break;
+      }
+
+      if (OpBitMask.isOneKnownAt(i))
+        ValidBitWidth--;
+    }
+
+    unsigned LogicLevels = LogCeiling(ValidBitWidth, VFUs::MaxLutSize);
+    return LogicLevels * VFUs::LUTDelay + (LogicLevels - 1) * VFUs::WireDelay;
   }
 
   case Intrinsic::shang_add:
@@ -613,7 +699,7 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
                 Matrix[i][j] = std::make_pair(SameBit, std::make_pair(0.0f, 0));
               else {
                 SameBit = Mangle(OpName) + "[" + utostr_32(j) + "]";
-                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(0.0f, 0));
+                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
               }
               continue;
             }
@@ -621,7 +707,7 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
 
           // Or use the form like operand[0], operand[1]...
           std::string DotName = Mangle(OpName) + "[" + utostr_32(j) + "]";
-          Matrix[i][j] = std::make_pair(DotName, std::make_pair(0.0f, 0));
+          Matrix[i][j] = std::make_pair(DotName, std::make_pair(ArrivalTime, 0));
         }
         // When the dot position is beyond the range of operand bit width,
         // we need to pad zero into the matrix.
@@ -1950,7 +2036,7 @@ void SIRMOAOpt::printTMatrixForDebug(MatrixType TMatrix) {
     for (unsigned j = 0; j < Row.size(); ++j) {
       DotType Dot = Row[j];
 
-      DebugOutput << Dot.first/* << "--" << Dot.second.first*/;
+      DebugOutput << Dot.first << "--" << Dot.second.first;
 
       if (j != Row.size() - 1)
         DebugOutput << "  ";
