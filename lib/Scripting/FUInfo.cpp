@@ -78,6 +78,7 @@ using namespace llvm;
     unsigned RegCost = 4;
     unsigned MaxLutSize = 4;
     float LUTDelay = 0.5f;
+    float WireDelay = 0.5f;
     float RegDelay = 0.5f;
     float ClkEnDelay = 0.5f;
     double Period = 10.0;

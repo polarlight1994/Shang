@@ -68,6 +68,7 @@ namespace VFUs {
   extern double Period;
 
   extern float LUTDelay;
+  extern float WireDelay;
   extern float RegDelay;
   extern float ClkEnDelay;
 

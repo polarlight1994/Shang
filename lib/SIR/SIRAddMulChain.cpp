@@ -22,16 +22,6 @@ typedef std::vector<MatrixRowType> MatrixType;
 
 static unsigned Component_NUM = 0;
 
-static float NET_DELAY = 0.400;
-
-static float ADD_CHAIN_16_DELAY[9] = { 0.521, 0.59, 0.706, 1.584, 1.715, 1.822, 2.101, 2.183, 2.183 };
-static float ADD_CHAIN_32_DELAY[23] = { 0.816, 0.876, 1.163, 2.199, 2.343,
-                                        2.343, 2.047, 2.265, 2.504, 3.033,
-                                        2.724, 3.189, 2.985, 3.664, 3.553,
-                                        3.814, 3.905, 3.83, 4.072, 3.892,
-                                        3.915, 3.84, 4.455 };
-static float ADD_CHAIN_64_DELAY[9] = {1.24, 1.255, 1.574, 2.326, 2.784, 2.784, 2.9, 2.9, 3.033};
-
 namespace {
 struct SIRMOAOpt : public SIRPass {
   static char ID;
@@ -328,29 +318,16 @@ float SIRMOAOpt::getLatency(Instruction *Inst) {
   case Intrinsic::shang_bit_extract:
     return 0.0f;
 
-  case Intrinsic::shang_not:
-    return 0.0f;
+  case Intrinsic::shang_not: {
+    if (isa<ConstantInt>(II->getOperand(0)))
+      return 0.0f;
+
+    return VFUs::LUTDelay + VFUs::WireDelay;
+  }
 
   case Intrinsic::shang_and:
   case Intrinsic::shang_or:
   case Intrinsic::shang_xor: {
-    if (isa<ConstantInt>(II->getOperand(0)) || isa<ConstantInt>(II->getOperand(1)))
-      return 0.0f;
-
-    if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(II->getOperand(0))) {
-      if (OpII->getIntrinsicID() == Intrinsic::shang_not) {
-        if (isa<ConstantInt>(OpII->getOperand(0)))
-          return 0.0f;
-      }
-    }
-
-    if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(II->getOperand(1))) {
-      if (OpII->getIntrinsicID() == Intrinsic::shang_not) {
-        if (isa<ConstantInt>(OpII->getOperand(0)))
-          return 0.0f;
-      }
-    }
-
     // To be noted that, in LLVM IR the return value
     // is counted in Operands, so the real numbers
     // of operands should be minus one.
@@ -393,7 +370,9 @@ float SIRMOAOpt::getLatency(Instruction *Inst) {
   }
 
   case Intrinsic::shang_sgt:
-  case Intrinsic::shang_ugt: {
+  case Intrinsic::shang_ugt:
+  case Intrinsic::shang_eq:
+  case Intrinsic::shang_ne: {
     unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
     return LuaI::Get<VFUICmp>()->lookupLatency(std::min(BitWidth, 64u));
   }
@@ -1304,15 +1283,15 @@ void SIRMOAOpt::initGPCs() {
                             GPC_6_3_InputsVector, 3, 2, 0.293f);
   Library.push_back(GPC_6_3);
 
-  /// GPC_6_3 with extra 1'b1 in rank of 0
-  // Inputs & Outputs
-  unsigned GPC_6_3_SP_Inputs[2] = { 7 };
-  std::vector<unsigned> GPC_6_3_SP_InputsVector(GPC_6_3_SP_Inputs,
-                                                    GPC_6_3_SP_Inputs + 1);
-  GPC_with_extra_One *GPC_6_3_ExtraOne_Rank0
-    = new GPC_with_extra_One("GPC_6_3_ExtraOne_Rank0",
-                             GPC_6_3_SP_InputsVector, 3, 2, 0.293f, 0);
-  Library.push_back(GPC_6_3_ExtraOne_Rank0);
+//   /// GPC_6_3 with extra 1'b1 in rank of 0
+//   // Inputs & Outputs
+//   unsigned GPC_6_3_SP_Inputs[2] = { 7 };
+//   std::vector<unsigned> GPC_6_3_SP_InputsVector(GPC_6_3_SP_Inputs,
+//                                                     GPC_6_3_SP_Inputs + 1);
+//   GPC_with_extra_One *GPC_6_3_ExtraOne_Rank0
+//     = new GPC_with_extra_One("GPC_6_3_ExtraOne_Rank0",
+//                              GPC_6_3_SP_InputsVector, 3, 2, 0.293f, 0);
+//   Library.push_back(GPC_6_3_ExtraOne_Rank0);
 
   /// GPC_13_3_LUT
   // Inputs & Outputs
@@ -1347,15 +1326,15 @@ void SIRMOAOpt::initGPCs() {
                             GPC_14_3_LUT_InputsVector, 3, 2, 0.049f);
   Library.push_back(GPC_14_3_LUT);
 
-  /// GPC_14_3_LUT with extra 1'b1 in rank of 0
-  // Inputs & Outputs
-  unsigned GPC_14_3_LUT_SP_Inputs[2] = { 5, 1 };
-  std::vector<unsigned> GPC_14_3_LUT_SP_InputsVector(GPC_14_3_LUT_SP_Inputs,
-                                                     GPC_14_3_LUT_SP_Inputs + 2);
-  GPC_with_extra_One *GPC_14_3_LUT_ExtraOne_Rank0
-    = new GPC_with_extra_One("GPC_14_3_LUT_ExtraOne_Rank0",
-                             GPC_14_3_LUT_SP_InputsVector, 3, 2, 0.049f, 0);
-  Library.push_back(GPC_14_3_LUT_ExtraOne_Rank0);
+//   /// GPC_14_3_LUT with extra 1'b1 in rank of 0
+//   // Inputs & Outputs
+//   unsigned GPC_14_3_LUT_SP_Inputs[2] = { 5, 1 };
+//   std::vector<unsigned> GPC_14_3_LUT_SP_InputsVector(GPC_14_3_LUT_SP_Inputs,
+//                                                      GPC_14_3_LUT_SP_Inputs + 2);
+//   GPC_with_extra_One *GPC_14_3_LUT_ExtraOne_Rank0
+//     = new GPC_with_extra_One("GPC_14_3_LUT_ExtraOne_Rank0",
+//                              GPC_14_3_LUT_SP_InputsVector, 3, 2, 0.049f, 0);
+//   Library.push_back(GPC_14_3_LUT_ExtraOne_Rank0);
 
   /// GPC_15_3
   // Inputs & Outputs
@@ -1379,15 +1358,15 @@ void SIRMOAOpt::initGPCs() {
                             GPC_506_5_InputsVector, 5, 4, 0.31f);
   Library.push_back(GPC_506_5);
 
-  /// GPC_506_5 with extra 1'b1 in rank of 0
-  // Inputs & Outputs
-  unsigned GPC_506_5_LUT_SP_Inputs[3] = { 7, 0, 5 };
-  std::vector<unsigned> GPC_506_5_LUT_SP_InputsVector(GPC_506_5_LUT_SP_Inputs,
-                                                      GPC_506_5_LUT_SP_Inputs + 3);
-  GPC_with_extra_One *GPC_506_5_ExtraOne_Rank0
-    = new GPC_with_extra_One("GPC_506_5_ExtraOne_Rank0",
-                             GPC_506_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
-  Library.push_back(GPC_506_5_ExtraOne_Rank0);
+//   /// GPC_506_5 with extra 1'b1 in rank of 0
+//   // Inputs & Outputs
+//   unsigned GPC_506_5_LUT_SP_Inputs[3] = { 7, 0, 5 };
+//   std::vector<unsigned> GPC_506_5_LUT_SP_InputsVector(GPC_506_5_LUT_SP_Inputs,
+//                                                       GPC_506_5_LUT_SP_Inputs + 3);
+//   GPC_with_extra_One *GPC_506_5_ExtraOne_Rank0
+//     = new GPC_with_extra_One("GPC_506_5_ExtraOne_Rank0",
+//                              GPC_506_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
+//   Library.push_back(GPC_506_5_ExtraOne_Rank0);
 
   // GPC_606_5
   // Inputs & Outputs
@@ -1400,15 +1379,15 @@ void SIRMOAOpt::initGPCs() {
                             GPC_606_5_InputsVector, 5, 4, 0.31f);
   Library.push_back(GPC_606_5);
 
-  /// GPC_606_5 with extra 1'b1 in rank of 0
-  // Inputs & Outputs
-  unsigned GPC_606_5_LUT_SP_Inputs[3] = { 7, 0, 6 };
-  std::vector<unsigned> GPC_606_5_LUT_SP_InputsVector(GPC_606_5_LUT_SP_Inputs,
-                                                      GPC_606_5_LUT_SP_Inputs + 3);
-  GPC_with_extra_One *GPC_606_5_ExtraOne_Rank0
-    = new GPC_with_extra_One("GPC_606_5_ExtraOne_Rank0",
-                             GPC_606_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
-  Library.push_back(GPC_606_5_ExtraOne_Rank0);
+//   /// GPC_606_5 with extra 1'b1 in rank of 0
+//   // Inputs & Outputs
+//   unsigned GPC_606_5_LUT_SP_Inputs[3] = { 7, 0, 6 };
+//   std::vector<unsigned> GPC_606_5_LUT_SP_InputsVector(GPC_606_5_LUT_SP_Inputs,
+//                                                       GPC_606_5_LUT_SP_Inputs + 3);
+//   GPC_with_extra_One *GPC_606_5_ExtraOne_Rank0
+//     = new GPC_with_extra_One("GPC_606_5_ExtraOne_Rank0",
+//                              GPC_606_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
+//   Library.push_back(GPC_606_5_ExtraOne_Rank0);
 
   // GPC_1325_5
   // Inputs & Outputs
@@ -1421,15 +1400,15 @@ void SIRMOAOpt::initGPCs() {
                             GPC_1325_5_InputsVector, 5, 4, 0.302f);
   Library.push_back(GPC_1325_5);
 
-  /// GPC_1325_5 with extra 1'b1 in rank of 1
-  // Inputs & Outputs
-  unsigned GPC_1325_5_LUT_SP_Inputs[4] = { 5, 3, 3, 1 };
-  std::vector<unsigned> GPC_1325_5_LUT_SP_InputsVector(GPC_1325_5_LUT_SP_Inputs,
-                                                       GPC_1325_5_LUT_SP_Inputs + 4);
-  GPC_with_extra_One *GPC_1325_5_ExtraOne_Rank1
-    = new GPC_with_extra_One("GPC_1325_5_ExtraOne_Rank1",
-                             GPC_1325_5_LUT_SP_InputsVector, 5, 4, 0.31f, 1);
-  Library.push_back(GPC_1325_5_ExtraOne_Rank1);
+//   /// GPC_1325_5 with extra 1'b1 in rank of 1
+//   // Inputs & Outputs
+//   unsigned GPC_1325_5_LUT_SP_Inputs[4] = { 5, 3, 3, 1 };
+//   std::vector<unsigned> GPC_1325_5_LUT_SP_InputsVector(GPC_1325_5_LUT_SP_Inputs,
+//                                                        GPC_1325_5_LUT_SP_Inputs + 4);
+//   GPC_with_extra_One *GPC_1325_5_ExtraOne_Rank1
+//     = new GPC_with_extra_One("GPC_1325_5_ExtraOne_Rank1",
+//                              GPC_1325_5_LUT_SP_InputsVector, 5, 4, 0.31f, 1);
+//   Library.push_back(GPC_1325_5_ExtraOne_Rank1);
 
   // GPC_1406_5
   // Inputs & Outputs
@@ -1442,15 +1421,15 @@ void SIRMOAOpt::initGPCs() {
                             GPC_1406_5_InputsVector, 5, 4, 0.31f);
   Library.push_back(GPC_1406_5);
 
-  /// GPC_1406_5 with extra 1'b1 in rank of 0
-  // Inputs & Outputs
-  unsigned GPC_1406_5_LUT_SP_Inputs[4] = { 7, 0, 4, 1 };
-  std::vector<unsigned> GPC_1406_5_LUT_SP_InputsVector(GPC_1406_5_LUT_SP_Inputs,
-                                                       GPC_1406_5_LUT_SP_Inputs + 4);
-  GPC_with_extra_One *GPC_1406_5_ExtraOne_Rank0
-    = new GPC_with_extra_One("GPC_1406_5_ExtraOne_Rank0",
-                             GPC_1406_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
-  Library.push_back(GPC_1406_5_ExtraOne_Rank0);
+//   /// GPC_1406_5 with extra 1'b1 in rank of 0
+//   // Inputs & Outputs
+//   unsigned GPC_1406_5_LUT_SP_Inputs[4] = { 7, 0, 4, 1 };
+//   std::vector<unsigned> GPC_1406_5_LUT_SP_InputsVector(GPC_1406_5_LUT_SP_Inputs,
+//                                                        GPC_1406_5_LUT_SP_Inputs + 4);
+//   GPC_with_extra_One *GPC_1406_5_ExtraOne_Rank0
+//     = new GPC_with_extra_One("GPC_1406_5_ExtraOne_Rank0",
+//                              GPC_1406_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
+//   Library.push_back(GPC_1406_5_ExtraOne_Rank0);
 
   // GPC_1415_5
   // Inputs & Outputs
@@ -1689,7 +1668,7 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
   // Get name and delay for output dots.
   std::string OutputName
     = "gpc_result_" + utostr_32(Component_NUM++) + "_" + utostr_32(Stage);
-  float OutputArrivalTime = InputArrivalTime + Component->getCriticalDelay() + NET_DELAY;
+  float OutputArrivalTime = InputArrivalTime + Component->getCriticalDelay() + VFUs::WireDelay;
 
   // Insert the output dots into TMatrix.
   unsigned OutputDotNum = Component->getOutputDotNum();
@@ -1789,7 +1768,7 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
     unsigned CompressedDotNum = RealInputDotNum > RealOutputDotNum ? 
                                   RealInputDotNum - RealOutputDotNum : 0;
 
-    float RealDelay = CriticalDelay + NET_DELAY;
+    float RealDelay = CriticalDelay + VFUs::WireDelay;
     //float Performance = ((float) (CompressedDotNum * CompressedDotNum)) / (RealDelay * Area);
     //float Performance = ((float)CompressedDotNum) / RealDelay;
     float Performance = ((float)CompressedDotNum) / Area;
@@ -1957,14 +1936,7 @@ float SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
   Output << "\nendmodule\n\n";
 
   // Index the arrival time of the compressor result.
-  float CPADelay;
-  if (CPADataA.size() == 16)
-    CPADelay = ADD_CHAIN_16_DELAY[0];
-  else if (CPADataA.size() == 32)
-    CPADelay = ADD_CHAIN_32_DELAY[0];
-  else if (CPADataA.size() == 64)
-    CPADelay = ADD_CHAIN_64_DELAY[0];
-
+  float CPADelay = LuaI::Get<VFUAddSub>()->lookupLatency(std::min(CPADataA.size(), 64u));;
   float ResultArrivalTime = std::max(std::max(CPADataA_ArrivalTime, CPADataB_ArrivalTime),
                                      CPADataC_ArrivalTime) + CPADelay;
 
