@@ -470,12 +470,19 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
         unsigned SignBits = std::max(LeadingZeros, LeadingOnes);
         assert(SignBits > 0 && "Unexpected result!");
 
-        if (SignBits == 1)
-          Masks.push_back(SIRBitMask(~CIAPInt, CIAPInt, CIAPInt.getNullValue(CIAPInt.getBitWidth())));
+        if (SignBits == 1) {
+          SIRBitMask Mask = SIRBitMask(~CIAPInt, CIAPInt, CIAPInt.getNullValue(CIAPInt.getBitWidth()));
+          SM->IndexVal2BitMask(Op, Mask);
+
+          Masks.push_back(Mask);
+        }
         else {
           APInt KnownSignBits = APInt::getAllOnesValue(CIAPInt.getBitWidth());
           KnownSignBits = KnownSignBits.lshr(CIAPInt.getBitWidth() - SignBits);
           KnownSignBits = KnownSignBits.shl(CIAPInt.getBitWidth() - SignBits);
+
+          SIRBitMask Mask = SIRBitMask(~CIAPInt, CIAPInt, KnownSignBits);
+          SM->IndexVal2BitMask(Op, Mask);
 
           Masks.push_back(SIRBitMask(~CIAPInt, CIAPInt,KnownSignBits));
         }
