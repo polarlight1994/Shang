@@ -700,6 +700,144 @@ public:
 }
 
 namespace llvm {
+struct DFGNode : public ilist_node<DFGNode> {
+public:
+  enum NodeType {
+    /// the argument of design
+    Argument,
+    /// the constant values
+    ConstantInt,
+    GlobalVal,
+    /// normal datapath value type
+    Add,
+    Mul,
+    Div,
+    LShr,
+    AShr,
+    Shl,
+    Not,
+    And,
+    Or,
+    Xor,
+    RAnd,
+    GT,
+    LT,
+    EQ,
+    NE,
+    BitExtract,
+    BitCat,
+    BitRepeat,
+    TypeConversion,
+    Ret,
+    /// special datapath value type
+    CompressorTree,
+    LogicOperationChain,
+    /// sequential value type
+    Register,
+    /// invalid
+    InValid,
+  };
+
+private:
+  // Name
+  std::string Name;
+  // Corresponding llvm value in IR.
+  Value *Val;
+  // Node type.
+  NodeType Ty;
+  // BitWidth
+  unsigned BitWidth;
+  // Critical path delay.
+  float Latency;
+
+  std::vector<DFGNode *> Childs;
+  std::vector<DFGNode *> Parents;
+
+public:
+  // Construction for ilist node.
+  DFGNode() : Name(""), Val(NULL), Ty(InValid), BitWidth(0), Latency(0.0f) {}
+  // Construction for normal node. To be noted that, the latency is always
+  // initialized as 0.0f since it will be calculated after a series of
+  // DFG optimization.
+  DFGNode(std::string Name, Value *V, NodeType Ty, unsigned BitWidth)
+    : Name(Name), Val(V), Ty(Ty), BitWidth(BitWidth), Latency(0.0f) {}
+
+  Value *getValue() const { return Val; }
+  NodeType getType() const { return Ty; }
+  unsigned getBitWidth() const { return BitWidth; }
+  float getCriticalPathDelay() const { return Latency; }
+
+  typedef std::vector<DFGNode *>::iterator iterator;
+  typedef std::vector<DFGNode *>::const_iterator const_iterator;
+
+  // Childs.  
+  iterator child_begin() { return Childs.begin(); }
+  const_iterator child_begin() const { return Childs.begin(); }
+  iterator child_end() { return Childs.end(); }
+  const_iterator child_end() const { return Childs.end(); }
+  bool child_empty() const { return Childs.empty(); }
+  unsigned child_size() const { return Childs.size(); }
+
+  // Parents.
+  iterator parent_begin() { return Parents.begin(); }
+  const_iterator parent_begin() const { return Parents.begin(); }
+  iterator parent_end() { return Parents.end(); }
+  const_iterator parent_end() const { return Parents.end(); }
+  bool parent_empty() const { return Parents.empty(); }
+  unsigned parent_size() const { return Parents.size(); }
+
+  bool hasChildNode(DFGNode *ChildNode) const {
+    for (const_iterator I = child_begin(), E = child_end(); I != E; ++I)
+      if (ChildNode == *I)
+        return true;
+
+    return false;
+  }
+  bool hasParentNode(DFGNode *ParentNode) const {
+    for (const_iterator I = parent_begin(), E = parent_end(); I != E; ++I)
+      if (ParentNode == *I)
+        return true;
+
+    return false;
+  }
+
+  void addChildNode(DFGNode *ChildNode) {
+    ChildNode->Parents.push_back(this);
+    Childs.push_back(ChildNode);
+  }
+};
+
+template<> struct GraphTraits<DFGNode *> {
+  typedef DFGNode NodeType;
+  typedef NodeType::iterator ChildIteratorType;
+  static NodeType *getEntryNode(NodeType* N) { return N; }
+  static inline ChildIteratorType child_begin(NodeType *N) {
+    return N->child_begin();
+  }
+  static inline ChildIteratorType child_end(NodeType *N) {
+    return N->child_end();
+  }
+};
+
+template<> struct GraphTraits<const DFGNode *> {
+  typedef DFGNode NodeType;
+  typedef NodeType::const_iterator ChildIteratorType;
+  static NodeType *getEntryNode(NodeType* N) { return N; }
+  static inline ChildIteratorType child_begin(NodeType *N) {
+    return N->child_begin();
+  }
+  static inline ChildIteratorType child_end(NodeType *N) {
+    return N->child_end();
+  }
+};
+
+struct MyStruct
+{
+
+};
+}
+
+namespace llvm {
 class SIRSubModuleBase : public ilist_node<SIRSubModuleBase> {
 public:
   enum Type {
@@ -1121,6 +1259,16 @@ public:
   typedef Val2ValidTimeMapTy::iterator val2validtime_iterator;
   typedef Val2ValidTimeMapTy::const_iterator const_val2validtime_iterator;
 
+  typedef std::map<Instruction *, std::vector<Value *> > OpsOfLOCTy;
+  typedef OpsOfLOCTy::iterator opsofloc_iterator;
+  typedef OpsOfLOCTy::const_iterator const_opsofloc_iterator;
+
+  typedef std::vector<DFGNode *> DFGNodeVectorTy;
+  typedef DFGNodeVectorTy::iterator dfgnode_iterator;
+  typedef DFGNodeVectorTy::const_iterator const_dfgnode_iterator;
+
+  typedef DenseMap<Value *, DFGNode *> DFGNodeOfValMapTy;
+
   typedef std::set<SIRRegister *> ArgRegsTy;
 
 private:
@@ -1150,6 +1298,12 @@ private:
   Reg2SlotMapTy Reg2Slot;
   // The map between Value and its valid time
   Val2ValidTimeMapTy Val2ValidTimeMap;
+  // The map between logic operation chain and its operands
+  OpsOfLOCTy OpsOfLOC;
+  // The vector of DFG nodes
+  DFGNodeVectorTy DFGNodeVector;
+  // The map between value and its corresponding DFGNode
+  DFGNodeOfValMapTy DFGNodeOfVal;
   // The registers created for Arguments of the module
   ArgRegsTy ArgRegs;
 
@@ -1210,6 +1364,31 @@ public:
     return Val2ValidTimeMap[Val];
   }
 
+  bool isLOCRoot(Instruction *Inst) { return OpsOfLOC.count(Inst); }
+  void indexOpsOfLOC(Instruction *LOCRott, std::vector<Value *> Ops) {
+    assert(!OpsOfLOC.count(LOCRott) && "Already existed!");
+
+    OpsOfLOC.insert(std::make_pair(LOCRott, Ops));
+  }
+  std::vector<Value *> getOpsOfLOC(Instruction *LOCRott) {
+    assert(OpsOfLOC.count(LOCRott) && "Not existed!");
+
+    return OpsOfLOC[LOCRott];
+  }
+
+  bool isDFGNodeExisted(Value *Val) const { return DFGNodeOfVal.count(Val); }
+  void indexDFGNodeOfVal(Value *Val, DFGNode *Node) {
+    assert(!DFGNodeOfVal.count(Val) && "Already existed!");
+
+    DFGNodeVector.push_back(Node);
+    DFGNodeOfVal.insert(std::make_pair(Val, Node));
+  }
+  DFGNode *getDFGNodeOfVal(Value *Val) {
+    assert(DFGNodeOfVal.count(Val) && "Not existed!");
+
+    return DFGNodeOfVal[Val];
+  }
+
   void indexArgReg(SIRRegister *Reg) {
     ArgRegs.insert(Reg);
   }
@@ -1265,6 +1444,18 @@ public:
 
   const_seqop_iterator const_seqop_begin() { return SeqOps.begin(); }
   const_seqop_iterator const_seqop_end() { return SeqOps.end(); }
+
+  opsofloc_iterator loc_begin() { return OpsOfLOC.begin(); }
+  opsofloc_iterator loc_end() { return OpsOfLOC.end(); }
+
+  const_opsofloc_iterator const_loc_begin() { return OpsOfLOC.begin(); }
+  const_opsofloc_iterator const_loc_end() { return OpsOfLOC.end(); }
+
+  dfgnode_iterator dfgnode_begin() { return DFGNodeVector.begin(); }
+  dfgnode_iterator dfgnode_end() { return DFGNodeVector.end(); }
+
+  const_dfgnode_iterator const_dfgnode_begin() { return DFGNodeVector.begin(); }
+  const_dfgnode_iterator const_dfgnode_end() { return DFGNodeVector.end(); }
 
   unsigned getSlotsSize() const { return Slots.size(); }
   unsigned getPortsSize() const { return Ports.size(); }
