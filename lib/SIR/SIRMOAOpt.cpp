@@ -186,6 +186,9 @@ struct SIRMOAOpt : public SIRPass {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
     AU.addRequiredID(SIRBitMaskAnalysisID);
+    AU.addRequiredID(DFGBuildID);
+    AU.addRequiredID(DFGOptID);
+    AU.addRequiredID(DFGAnalysisID);
     AU.setPreservesAll();
   }
 };
@@ -198,6 +201,9 @@ INITIALIZE_PASS_BEGIN(SIRMOAOpt, "sir-multi-operand-optimization",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(SIRBitMaskAnalysis)
+  INITIALIZE_PASS_DEPENDENCY(DFGBuild)
+  INITIALIZE_PASS_DEPENDENCY(DFGOpt)
+  INITIALIZE_PASS_DEPENDENCY(DFGAnalysis)
 INITIALIZE_PASS_END(SIRMOAOpt, "sir-multi-operand-optimization",
                     "Perform the multi-operand adder optimization",
                     false, true)
@@ -526,8 +532,10 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
         continue;
       }
 
-      if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(ChildInst))
-        if (II->getIntrinsicID() == Intrinsic::shang_compressor) {
+      if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(ChildInst)) {
+        Intrinsic::ID ID = II->getIntrinsicID();
+
+        if (ID == Intrinsic::shang_compressor) {
           delay += getOperandArrivalTime(ChildInst);
 
           if (ArrivalTimes.count(NULL))
@@ -537,9 +545,10 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
 
           continue;
         }
+      }
 
       if (isa<IntrinsicInst>(ChildInst) || isa<PtrToIntInst>(ChildInst) ||
-        isa<IntToPtrInst>(ChildInst) || isa<BitCastInst>(ChildInst)) {
+          isa<IntToPtrInst>(ChildInst) || isa<BitCastInst>(ChildInst)) {
         VisitStack.push_back(std::make_pair(ChildInst, ChildInst->op_begin()));
         delay += getLatency(ChildInst);
       }
