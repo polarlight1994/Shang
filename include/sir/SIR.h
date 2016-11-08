@@ -703,6 +703,9 @@ namespace llvm {
 struct DFGNode : public ilist_node<DFGNode> {
 public:
   enum NodeType {
+    /// Virtual node as Entry & Exit
+    Entry,
+    Exit,
     /// the argument of design
     Argument,
     /// the constant values
@@ -750,8 +753,8 @@ private:
   // Critical path delay.
   float Latency;
 
-  std::vector<DFGNode *> Childs;
-  std::vector<DFGNode *> Parents;
+  std::set<DFGNode *> Childs;
+  std::set<DFGNode *> Parents;
 
 public:
   // Construction for ilist node.
@@ -762,13 +765,18 @@ public:
   DFGNode(std::string Name, Value *V, NodeType Ty, unsigned BitWidth)
     : Name(Name), Val(V), Ty(Ty), BitWidth(BitWidth), Latency(0.0f) {}
 
+  std::string getName() const { return Name; }
   Value *getValue() const { return Val; }
   NodeType getType() const { return Ty; }
   unsigned getBitWidth() const { return BitWidth; }
   float getCriticalPathDelay() const { return Latency; }
 
-  typedef std::vector<DFGNode *>::iterator iterator;
-  typedef std::vector<DFGNode *>::const_iterator const_iterator;
+  bool isEntryOrExit() const {
+    return Ty == Entry || Ty == Exit;
+  }
+
+  typedef std::set<DFGNode *>::iterator iterator;
+  typedef std::set<DFGNode *>::const_iterator const_iterator;
 
   // Childs.  
   iterator child_begin() { return Childs.begin(); }
@@ -787,23 +795,19 @@ public:
   unsigned parent_size() const { return Parents.size(); }
 
   bool hasChildNode(DFGNode *ChildNode) const {
-    for (const_iterator I = child_begin(), E = child_end(); I != E; ++I)
-      if (ChildNode == *I)
-        return true;
-
-    return false;
+    return Childs.count(ChildNode);
   }
   bool hasParentNode(DFGNode *ParentNode) const {
-    for (const_iterator I = parent_begin(), E = parent_end(); I != E; ++I)
-      if (ParentNode == *I)
-        return true;
-
-    return false;
+    return Parents.count(ParentNode);
   }
 
   void addChildNode(DFGNode *ChildNode) {
-    ChildNode->Parents.push_back(this);
-    Childs.push_back(ChildNode);
+    ChildNode->Parents.insert(this);
+    Childs.insert(ChildNode);
+  }
+  void removeChildNode(DFGNode *ChildNode) {
+    ChildNode->Parents.erase(this);
+    Childs.erase(ChildNode);
   }
 };
 
@@ -831,9 +835,40 @@ template<> struct GraphTraits<const DFGNode *> {
   }
 };
 
-struct MyStruct
-{
+struct DataFlowGraph {
+private:
+  SIR *SM;
 
+  // The list of all nodes in DFG.
+  typedef iplist<DFGNode> DFGNodeListTy;
+  DFGNodeListTy DFGNodeList;
+
+public:
+  DataFlowGraph(SIR *SM) : SM(SM) {
+    // Create the entry SU.
+    DFGNodeList.push_back(new DFGNode("Entry", NULL, DFGNode::Entry, 0));
+    // Create the exit SU.
+    DFGNodeList.push_back(new DFGNode("Exit", NULL, DFGNode::Exit, 0));
+  }
+
+  unsigned size() const { return DFGNodeList.size(); }
+  DFGNode *getEntry() { return &DFGNodeList.front(); }
+  const DFGNode *getEntry() const { return &DFGNodeList.front(); }
+
+  DFGNode *getExit() { return &DFGNodeList.front(); }
+  const DFGNode *getExit() const { return &DFGNodeList.front(); }
+
+  DFGNode *creatDFGNode(std::string Name, Value *Val,
+                        DFGNode::NodeType Ty, unsigned BitWidth);
+
+  typedef DFGNodeListTy::iterator node_iterator;
+  typedef DFGNodeListTy::const_iterator const_node_iterator;
+
+  node_iterator begin() { return DFGNodeList.begin(); }
+  node_iterator end() { return DFGNodeList.end(); }
+
+  const_node_iterator begin() const { return DFGNodeList.begin(); }
+  const_node_iterator end() const { return DFGNodeList.end(); }
 };
 }
 
@@ -1263,10 +1298,6 @@ public:
   typedef OpsOfLOCTy::iterator opsofloc_iterator;
   typedef OpsOfLOCTy::const_iterator const_opsofloc_iterator;
 
-  typedef std::vector<DFGNode *> DFGNodeVectorTy;
-  typedef DFGNodeVectorTy::iterator dfgnode_iterator;
-  typedef DFGNodeVectorTy::const_iterator const_dfgnode_iterator;
-
   typedef DenseMap<Value *, DFGNode *> DFGNodeOfValMapTy;
 
   typedef std::set<SIRRegister *> ArgRegsTy;
@@ -1300,8 +1331,6 @@ private:
   Val2ValidTimeMapTy Val2ValidTimeMap;
   // The map between logic operation chain and its operands
   OpsOfLOCTy OpsOfLOC;
-  // The vector of DFG nodes
-  DFGNodeVectorTy DFGNodeVector;
   // The map between value and its corresponding DFGNode
   DFGNodeOfValMapTy DFGNodeOfVal;
   // The registers created for Arguments of the module
@@ -1380,7 +1409,6 @@ public:
   void indexDFGNodeOfVal(Value *Val, DFGNode *Node) {
     assert(!DFGNodeOfVal.count(Val) && "Already existed!");
 
-    DFGNodeVector.push_back(Node);
     DFGNodeOfVal.insert(std::make_pair(Val, Node));
   }
   DFGNode *getDFGNodeOfVal(Value *Val) {
@@ -1450,12 +1478,6 @@ public:
 
   const_opsofloc_iterator const_loc_begin() { return OpsOfLOC.begin(); }
   const_opsofloc_iterator const_loc_end() { return OpsOfLOC.end(); }
-
-  dfgnode_iterator dfgnode_begin() { return DFGNodeVector.begin(); }
-  dfgnode_iterator dfgnode_end() { return DFGNodeVector.end(); }
-
-  const_dfgnode_iterator const_dfgnode_begin() { return DFGNodeVector.begin(); }
-  const_dfgnode_iterator const_dfgnode_end() { return DFGNodeVector.end(); }
 
   unsigned getSlotsSize() const { return Slots.size(); }
   unsigned getPortsSize() const { return Ports.size(); }

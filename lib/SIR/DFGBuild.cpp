@@ -1,54 +1,7 @@
-#include "sir/SIR.h"
-#include "sir/SIRBuild.h"
-#include "sir/SIRPass.h"
-#include "sir/Passes.h"
-
-#include "vast/LuaI.h"
+#include "sir/DFGBuild.h"
 
 using namespace llvm;
 using namespace vast;
-
-namespace {
-struct DFGBuild : public SIRPass {
-  static char ID;
-  SIR *SM;
-  DataLayout *TD;
-
-  DFGBuild() : SIRPass(ID) {
-    initializeDFGBuildPass(*PassRegistry::getPassRegistry());
-  }
-
-  bool runOnSIR(SIR &SM);
-
-  unsigned getBitWidth(const Value *Val) const {
-    if (Val->getType()->isVoidTy())
-      return 0;
-
-    return TD->getTypeSizeInBits(Val->getType());
-  }
-  float getCriticalPathDelay(Instruction *Inst) const;
-
-  DFGNode *createNode(Value *Val) const;
-  DFGNode *createDataPathNode(Instruction *Inst) const;
-  DFGNode *createConstantIntNode(ConstantInt *CI) const;
-  DFGNode *createGlobalValueNode(GlobalValue *GV) const;
-  DFGNode *createArgumentNode(Argument *Arg) const;
-  DFGNode *createSequentialNode(Value *Val) const;
-
-  void createDependencies(DFGNode *Node) const;
-  void createDependency(DFGNode *From, DFGNode *To) const;
-
-  void verifyDFGCorrectness() const;
-
-  void getAnalysisUsage(AnalysisUsage &AU) const {
-    SIRPass::getAnalysisUsage(AU);
-    AU.addRequired<DataLayout>();
-    // Build DFG after the register synthesis temporary.
-    AU.addRequiredID(SIRBitMaskAnalysisID);
-    AU.setPreservesAll();
-  }
-};
-}
 
 char DFGBuild::ID = 0;
 char &llvm::DFGBuildID = DFGBuild::ID;
@@ -70,6 +23,8 @@ bool DFGBuild::runOnSIR(SIR &SM) {
   this->SM = &SM;
   // Get the data layout of target device.
   this->TD = &getAnalysis<DataLayout>();
+  // Initial an empty DFG.
+  this->G = new DataFlowGraph(&SM);
 
   // The IR representation of design.
   Function *F = SM.getFunction();
@@ -120,9 +75,14 @@ bool DFGBuild::runOnSIR(SIR &SM) {
   }
 
   /// Build the dependencies between all the DFG nodes.
-  typedef SIR::dfgnode_iterator node_iterator;
-  for (node_iterator NI = SM.dfgnode_begin(), NE = SM.dfgnode_end(); NI != NE; ++NI) {
-    DFGNode *Node = *NI;
+  typedef DataFlowGraph::node_iterator node_iterator;
+  for (node_iterator NI = G->begin(), NE = G->end(); NI != NE; ++NI) {
+    DFGNode *Node = NI;
+
+    // The Virtual Entry & Exit node will be handled later.
+    if (Node->isEntryOrExit())
+      continue;
+
     Value *Val = Node->getValue();
 
     // Create dependency based on the nodes represent instructions.
@@ -229,20 +189,17 @@ DFGNode *DFGBuild::createDataPathNode(Instruction *Inst) const {
       break;
     }
 
-    Node = new DFGNode(Name, Inst, Ty, BitWidth);
+    Node = G->creatDFGNode(Name, Inst, Ty, BitWidth);
   }
   else if (isa<IntToPtrInst>(Inst) || isa<PtrToIntInst>(Inst) || isa<BitCastInst>(Inst)) {
-    Node = new DFGNode(Name, Inst, DFGNode::TypeConversion, BitWidth);
+    Node = G->creatDFGNode(Name, Inst, DFGNode::TypeConversion, BitWidth);
   }
   else if (isa<ReturnInst>(Inst)) {
-    Node = new DFGNode(Name, Inst, DFGNode::Ret, BitWidth);
+    Node = G->creatDFGNode(Name, Inst, DFGNode::Ret, BitWidth);
   }
   else {
     llvm_unreachable("Unexpected instruction type!");
   }
-
-  // Index the DFG node of current value.
-  SM->indexDFGNodeOfVal(Inst, Node);
 
   return Node;
 }
@@ -252,10 +209,7 @@ DFGNode *DFGBuild::createConstantIntNode(ConstantInt *CI) const {
   std::string Name = CI->getName();
   unsigned BitWidth = getBitWidth(CI);
 
-  DFGNode *Node = new DFGNode(Name, CI, DFGNode::ConstantInt, BitWidth);
-
-  // Index the DFG node of current value.
-  SM->indexDFGNodeOfVal(CI, Node);
+  DFGNode *Node = G->creatDFGNode(Name, CI, DFGNode::ConstantInt, BitWidth);
 
   return Node;
 }
@@ -265,10 +219,7 @@ DFGNode *DFGBuild::createGlobalValueNode(GlobalValue *GV) const {
   std::string Name = GV->getName();
   unsigned BitWidth = getBitWidth(GV);
 
-  DFGNode *Node = new DFGNode(Name, GV, DFGNode::GlobalVal, BitWidth);
-
-  // Index the DFG node of current value.
-  SM->indexDFGNodeOfVal(GV, Node);
+  DFGNode *Node = G->creatDFGNode(Name, GV, DFGNode::GlobalVal, BitWidth);
 
   return Node;
 }
@@ -278,10 +229,7 @@ DFGNode *DFGBuild::createArgumentNode(Argument *Arg) const {
   std::string Name = Arg->getName();
   unsigned BitWidth = getBitWidth(Arg);
 
-  DFGNode *Node = new DFGNode(Name, Arg, DFGNode::Argument, BitWidth);
-
-  // Index the DFG node of current value.
-  SM->indexDFGNodeOfVal(Arg, Node);
+  DFGNode *Node = G->creatDFGNode(Name, Arg, DFGNode::Argument, BitWidth);
 
   return Node;
 }

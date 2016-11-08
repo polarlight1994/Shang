@@ -1,8 +1,11 @@
 add_llvm_library(ShangSIR
 SIR.cpp
 SIRBuild.cpp
+DFGBuild.cpp
+DFGOpt.cpp
+DFGAnalysis.cpp
 SIRBitMaskAnalysis.cpp
-SIRAddMulChain.cpp
+SIRMOAOpt.cpp
 SIRLowerIntrinsic.cpp
 SIRAllocation.cpp
 SIRTimingAnalysis.cpp

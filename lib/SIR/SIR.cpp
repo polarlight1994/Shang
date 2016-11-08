@@ -76,6 +76,18 @@ void SIRPort::printDecl(raw_ostream &OS) const {
   OS << " " << Mangle(getName());
 }
 
+DFGNode *DataFlowGraph::creatDFGNode(std::string Name, Value *Val,
+                                     DFGNode::NodeType Ty, unsigned BitWidth) {
+  DFGNode *Node = new DFGNode(Name, Val, Ty, BitWidth);
+
+  // Index the node.
+  DFGNodeList.insert(DFGNodeList.back(), Node);
+  if (Val)
+    SM->indexDFGNodeOfVal(Val, Node);
+
+  return Node;
+}
+
 void SIRSubModuleBase::addFanin(SIRRegister *Fanin) {
   Fanins.push_back(Fanin);
 }
