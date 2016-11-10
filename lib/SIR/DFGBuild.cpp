@@ -62,6 +62,8 @@ bool DFGBuild::runOnSIR(SIR &SM) {
             createConstantIntNode(CI);
           else if (GlobalValue *GV = dyn_cast<GlobalValue>(Op))
             createGlobalValueNode(GV);
+          else if (UndefValue *UV = dyn_cast<UndefValue>(Op))
+            createUndefValueNode(UV);
           // To be noted that, there are some argument values created by us which are
           // not included in the function argument list. These values will be handled
           // here.
@@ -220,6 +222,16 @@ DFGNode *DFGBuild::createGlobalValueNode(GlobalValue *GV) const {
   unsigned BitWidth = getBitWidth(GV);
 
   DFGNode *Node = G->creatDFGNode(Name, GV, DFGNode::GlobalVal, BitWidth);
+
+  return Node;
+}
+
+DFGNode *DFGBuild::createUndefValueNode(UndefValue *UV) const {
+  // Basic information of current value.
+  std::string Name = UV->getName();
+  unsigned BitWidth = getBitWidth(UV);
+
+  DFGNode *Node = G->creatDFGNode(Name, UV, DFGNode::UndefVal, BitWidth);
 
   return Node;
 }

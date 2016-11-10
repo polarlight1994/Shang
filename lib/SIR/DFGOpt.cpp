@@ -26,16 +26,6 @@ struct DFGOpt : public SIRPass {
   SIR *SM;
   DataFlowGraph *DFG;
 
-  // The Operations and Operands of logic operation chain
-  typedef std::pair<std::vector<DFGNode *>,
-                    std::vector<DFGNode *> > OperationsAndOperandsTy;
-  // The map between Root and Operation & Operand of logic operation chain
-  typedef std::map<DFGNode *, OperationsAndOperandsTy> LOCType;  
-  // The logic operation chains
-  LOCType LOC;
-  // The map between Root and the LOC DFG node we creat
-  std::map<DFGNode *, DFGNode *> LOCRoot2DFGNode;
-
   DFGOpt() : SIRPass(ID) {
     initializeDFGOptPass(*PassRegistry::getPassRegistry());
   }
@@ -46,16 +36,7 @@ struct DFGOpt : public SIRPass {
   std::vector<DFGNode *> collectMergeRootNodes();
   void traverseFromRootNode(DFGNode *RootNode);
   DFGNode *LOCBuild(DFGNode *RootNode);
-  std::vector<DFGNode *> getOperationsOfLOC(DFGNode *RootNode) {
-    assert(LOC.count(RootNode) && "LOC not existed!");
 
-    return LOC[RootNode].first;
-  }
-  std::vector<DFGNode *> getOperandsOfLOC(DFGNode *RootNode) {
-    assert(LOC.count(RootNode) && "LOC not existed!");
-
-    return LOC[RootNode].second;
-  }
   void createDependency(DFGNode *From, DFGNode *To);
   void removeDependency(DFGNode *From, DFGNode *To);
 
@@ -96,10 +77,10 @@ void DFGOpt::mergeLogicOperations() {
   // Collect the potential root of logic operations to be merged.
   std::vector<DFGNode *> RootNodes = collectMergeRootNodes();
 
-  /// Debug code
-  std::string DebugFile = LuaI::GetString("DebugFile");
-  std::string ErrorInDebugFile;
-  raw_fd_ostream OutputForDebugFile(DebugFile.c_str(), ErrorInDebugFile);
+//   /// Debug code
+//   std::string DebugFile = LuaI::GetString("DebugFile");
+//   std::string ErrorInDebugFile;
+//   raw_fd_ostream OutputForDebugFile(DebugFile.c_str(), ErrorInDebugFile);
 
   // Traverse from root and extract the logic operations chain.
   typedef std::vector<DFGNode *>::iterator node_iterator;
@@ -107,27 +88,27 @@ void DFGOpt::mergeLogicOperations() {
     traverseFromRootNode(*NI);
 
   // Merge the logic operations chain as a single special datapath DFG node.
-  typedef LOCType::iterator loc_iterator;
-  for (loc_iterator LI = LOC.begin(), LE = LOC.end(); LI != LE; ++LI) {
+  typedef DataFlowGraph::loc_iterator loc_iterator;
+  for (loc_iterator LI = DFG->loc_begin(), LE = DFG->loc_end(); LI != LE; ++LI) {
     DFGNode *RootNode = LI->first;
     LOCBuild(RootNode);
 
-    OutputForDebugFile << "Root is [" << RootNode->getName() << "]\n";
-    OutputForDebugFile << "\tuse operands {";
-    DFGNode *LOCNode = LOCRoot2DFGNode[RootNode];
-    typedef DFGNode::iterator iterator;
-    for (iterator I = LOCNode->parent_begin(), E = LOCNode->parent_end(); I != E; ++I) {
-      DFGNode *ParentNode = *I;
-
-      OutputForDebugFile << ParentNode->getName() << ", ";
-    }
-    OutputForDebugFile << "}, used by {";
-    for (iterator I = LOCNode->child_begin(), E = LOCNode->child_end(); I != E; ++I) {
-      DFGNode *ChildNode = *I;
-
-      OutputForDebugFile << ChildNode->getName() << ", ";
-    }
-    OutputForDebugFile << "}\n";
+//     OutputForDebugFile << "Root is [" << RootNode->getName() << "]\n";
+//     OutputForDebugFile << "\tuse operands {";
+//     DFGNode *LOCNode = LOCRoot2DFGNode[RootNode];
+//     typedef DFGNode::iterator iterator;
+//     for (iterator I = LOCNode->parent_begin(), E = LOCNode->parent_end(); I != E; ++I) {
+//       DFGNode *ParentNode = *I;
+// 
+//       OutputForDebugFile << ParentNode->getName() << ", ";
+//     }
+//     OutputForDebugFile << "}, used by {";
+//     for (iterator I = LOCNode->child_begin(), E = LOCNode->child_end(); I != E; ++I) {
+//       DFGNode *ChildNode = *I;
+// 
+//       OutputForDebugFile << ChildNode->getName() << ", ";
+//     }
+//     OutputForDebugFile << "}\n";
   } 
 }
 
@@ -215,13 +196,13 @@ void DFGOpt::traverseFromRootNode(DFGNode *RootNode) {
   }
 
   // Index the logic operation chain.
-  LOC.insert(std::make_pair(RootNode, std::make_pair(Operations, Operands)));
+  DFG->indexLOC(RootNode, Operations, Operands);
 }
 
 DFGNode *DFGOpt::LOCBuild(DFGNode *RootNode) {
   // Get the operations and operands of LOC.
-  std::vector<DFGNode *> Operations = getOperationsOfLOC(RootNode);
-  std::vector<DFGNode *> Operands = getOperandsOfLOC(RootNode);
+  std::vector<DFGNode *> Operations = DFG->getOperationsOfLOC(RootNode);
+  std::vector<DFGNode *> Operands = DFG->getOperandsOfLOC(RootNode);
 
   // Create a DFG node represent the LOC.
   std::string LOCName = "LOC_" + RootNode->getName();
@@ -230,7 +211,7 @@ DFGNode *DFGOpt::LOCBuild(DFGNode *RootNode) {
     = DFG->creatDFGNode(LOCName, NULL, DFGNode::LogicOperationChain, LOCBitWidth);
 
   // Index the root and the LOC node.
-  LOCRoot2DFGNode.insert(std::make_pair(RootNode, LOCNode));
+  DFG->indexRootOfLOC(RootNode, LOCNode);
 
   /// Create dependencies for LOC DFG node.
   // The parents of LOC DFG node

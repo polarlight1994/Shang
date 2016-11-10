@@ -1,6 +1,7 @@
 #include "sir/SIR.h"
 #include "sir/SIRBuild.h"
 #include "sir/SIRPass.h"
+#include "sir/DFGBuild.h"
 #include "sir/Passes.h"
 
 #include "vast/FUInfo.h"
@@ -27,6 +28,7 @@ struct SIRMOAOpt : public SIRPass {
   static char ID;
   DataLayout *TD;
   SIR *SM;
+  DataFlowGraph *DFG;
 
   // Output for debug.
   std::string Error;
@@ -132,6 +134,7 @@ struct SIRMOAOpt : public SIRPass {
   MatrixType sumAllSignBitsInMatrix(MatrixType Matrix,
                                     unsigned RowNum, unsigned ColumnNum);
 
+  float getCritialPathDelay(DFGNode *Node);
   float getLatency(Instruction *Inst);
   float getOperandArrivalTime(Value *Operand);
 
@@ -251,6 +254,10 @@ bool SIRMOAOpt::runOnSIR(SIR &SM) {
   this->TD = &getAnalysis<DataLayout>();
   this->SM = &SM;
 
+  // Get the DFG.
+  DFGBuild &DB = getAnalysis<DFGBuild>();
+  this->DFG = DB.getDFG();
+
   // Extract multi-operand adders
   collectMOAs();
 
@@ -300,270 +307,160 @@ static unsigned LogCeiling(unsigned x, unsigned n) {
   return (Log2_32_Ceil(x) + log2n - 1) / log2n;
 }
 
-float SIRMOAOpt::getLatency(Instruction *Inst) {
-  assert(Inst && "Unexpected SMGNode!");
-
-  /// Get the delay of this node.
-  float delay;
-
-  // These instructions have not been transformed into SIR,
-  // but clearly they cost no delay.
-  if (isa<PtrToIntInst>(Inst) || isa<IntToPtrInst>(Inst) || isa<BitCastInst>(Inst))
+float SIRMOAOpt::getCritialPathDelay(DFGNode *Node) {
+  /// Get the delay of this node according to its type.
+  DFGNode::NodeType Ty = Node->getType();
+  switch (Ty) {
+  case llvm::DFGNode::Entry:
+  case llvm::DFGNode::Exit:
+  case llvm::DFGNode::Argument:
+  case llvm::DFGNode::GlobalVal:
+  case llvm::DFGNode::ConstantInt:
+  case llvm::DFGNode::BitExtract:
+  case llvm::DFGNode::BitCat:
+  case llvm::DFGNode::BitRepeat:
+  case llvm::DFGNode::TypeConversion:
+  case llvm::DFGNode::Ret:
+  case llvm::DFGNode::InValid:
     return 0.0f;
 
-  // Otherwise it must be intrinsic instructions.
-  IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst);
-  assert(II && "Unexpected non-IntrinsicInst!");
-
-  Intrinsic::ID ID = II->getIntrinsicID();
-
-  switch (ID) {
-    // Bit-level operations cost no delay.
-  case Intrinsic::shang_bit_cat:
-  case Intrinsic::shang_bit_repeat:
-  case Intrinsic::shang_bit_extract:
-    return 0.0f;
-
-  case Intrinsic::shang_not: {
-    if (isa<ConstantInt>(II->getOperand(0)))
-      return 0.0f;
-
-    return VFUs::LUTDelay + VFUs::WireDelay;
-  }
-
-  case Intrinsic::shang_and: {
-    // To be noted that, in LLVM IR the return value
-    // is counted in Operands, so the real numbers
-    // of operands should be minus one.
-    unsigned IONums = II->getNumOperands() - 1;
-    assert(IONums == 2 && "Unexpected Num!");
-
-    unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
-    SIRBitMask OpBitMask_A = SM->getBitMask(II->getOperand(0));
-    SIRBitMask OpBitMask_B = SM->getBitMask(II->getOperand(1));
-
-    // Considering each bit of And operation, if there are known 1'b1 or 1'b0
-    // in any one of the two operands, the value of this bit will need no calculation.
-    // So if every bit of And operation meets the condition, then this And operation
-    // can be optimized.
-    bool CanBeOpt = true;
-    for (unsigned i = 0; i < BitWidth; ++i) {
-      if (!OpBitMask_A.isBitKnownAt(i) && !OpBitMask_B.isBitKnownAt(i)) {
-        CanBeOpt = false;
-        break;
-      }
-    }
-    if (CanBeOpt)
-      return 0.0f;
-
-    unsigned LogicLevels = LogCeiling(IONums, VFUs::MaxLutSize);
-    return LogicLevels * VFUs::LUTDelay + VFUs::WireDelay;
-  }
-  case Intrinsic::shang_or: {
-    // To be noted that, in LLVM IR the return value
-    // is counted in Operands, so the real numbers
-    // of operands should be minus one.
-    unsigned IONums = II->getNumOperands() - 1;
-    assert(IONums == 2 && "Unexpected Num!");
-
-    unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
-    SIRBitMask OpBitMask_A = SM->getBitMask(II->getOperand(0));
-    SIRBitMask OpBitMask_B = SM->getBitMask(II->getOperand(1));
-
-    // Considering each bit of Or operation, if there are known 1'b1 or 1'b0
-    // in any one of the two operands, the value of this bit will need no calculation.
-    // So if every bit of Or operation meets the condition, then this Or operation
-    // can be optimized.
-    bool CanBeOpt = true;
-    for (unsigned i = 0; i < BitWidth; ++i) {
-      if (!OpBitMask_A.isBitKnownAt(i) && !OpBitMask_B.isBitKnownAt(i)) {
-        CanBeOpt = false;
-        break;
-      }
-    }
-    if (CanBeOpt)
-      return 0.0f;
-
-    unsigned LogicLevels = LogCeiling(IONums, VFUs::MaxLutSize);
-    return LogicLevels * VFUs::LUTDelay + VFUs::WireDelay;
-  }
-  case Intrinsic::shang_xor: {
-    // To be noted that, in LLVM IR the return value
-    // is counted in Operands, so the real numbers
-    // of operands should be minus one.
-    unsigned IONums = II->getNumOperands() - 1;
-    assert(IONums == 2 && "Unexpected Num!");
-
-    unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
-    SIRBitMask OpBitMask_A = SM->getBitMask(II->getOperand(0));
-    SIRBitMask OpBitMask_B = SM->getBitMask(II->getOperand(1));
-
-    // Considering each bit of Or operation, if there are known 1'b1 or 1'b0
-    // in any one of the two operands, the value of this bit will need no calculation.
-    // So if every bit of Or operation meets the condition, then this Or operation
-    // can be optimized.
-    bool CanBeOpt = true;
-    for (unsigned i = 0; i < BitWidth; ++i) {
-      if (!OpBitMask_A.isZeroKnownAt(i) && !OpBitMask_B.isZeroKnownAt(i)) {
-        CanBeOpt = false;
-        break;
-      }
-    }
-    if (CanBeOpt)
-      return 0.0f;
-
-    unsigned LogicLevels = LogCeiling(IONums, VFUs::MaxLutSize);
-    return LogicLevels * VFUs::LUTDelay + VFUs::WireDelay;
-  }
-
-  case Intrinsic::shang_rand: {
-    SIRBitMask OpBitMask = SM->getBitMask(II->getOperand(0));
-    unsigned BitWidth = OpBitMask.getMaskWidth();
-
-    unsigned ValidBitWidth = BitWidth;
-    for (unsigned i = 0; i < BitWidth; ++i) {
-      if (OpBitMask.isZeroKnownAt(i)) {
-        ValidBitWidth = 0;
-        break;
-      }
-
-      if (OpBitMask.isOneKnownAt(i))
-        ValidBitWidth--;
-    }
-
-    unsigned LogicLevels = LogCeiling(ValidBitWidth, VFUs::MaxLutSize);
-    return LogicLevels * VFUs::LUTDelay + (LogicLevels - 1) * VFUs::WireDelay;
-  }
-
-  case Intrinsic::shang_add:
-  case Intrinsic::shang_addc: {
-    unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
+  case llvm::DFGNode::Add: {
+    unsigned BitWidth = Node->getBitWidth();
     return LuaI::Get<VFUAddSub>()->lookupLatency(std::min(BitWidth, 64u));
   }
-  case Intrinsic::shang_mul: {
-    unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
+  case llvm::DFGNode::Mul: {
+    unsigned BitWidth = Node->getBitWidth();
     return LuaI::Get<VFUMult>()->lookupLatency(std::min(BitWidth, 64u));
   }
-
-  case Intrinsic::shang_sdiv:
-  case Intrinsic::shang_udiv: {
-    unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
+  case llvm::DFGNode::Div: {
+    unsigned BitWidth = Node->getBitWidth();
     return LuaI::Get<VFUDiv>()->lookupLatency(std::min(BitWidth, 64u));
   }
 
-  case Intrinsic::shang_shl:
-  case Intrinsic::shang_ashr:
-  case Intrinsic::shang_lshr: {
-    if (isa<ConstantInt>(II->getOperand(1)))
-      return 0.0f;
-
-    unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
+  case llvm::DFGNode::LShr:
+  case llvm::DFGNode::AShr:
+  case llvm::DFGNode::Shl: {
+    unsigned BitWidth = Node->getBitWidth();
     return LuaI::Get<VFUShift>()->lookupLatency(std::min(BitWidth, 64u));
   }
 
-  case Intrinsic::shang_sgt:
-  case Intrinsic::shang_ugt:
-  case Intrinsic::shang_eq:
-  case Intrinsic::shang_ne: {
-    unsigned BitWidth = TD->getTypeSizeInBits(II->getType());
+  case llvm::DFGNode::Not:
+  case llvm::DFGNode::And:
+  case llvm::DFGNode::Or:
+  case llvm::DFGNode::Xor:
+    return VFUs::LUTDelay + VFUs::WireDelay;
+
+  case llvm::DFGNode::RAnd: {
+    unsigned BitWidth = Node->getBitWidth();
+
+    unsigned LogicLevels = LogCeiling(BitWidth, VFUs::MaxLutSize);
+    return LogicLevels * (VFUs::LUTDelay + VFUs::WireDelay);
+  }
+
+  case llvm::DFGNode::LogicOperationChain: {
+    unsigned OperandNum = Node->parent_size();
+
+    unsigned LogicLevels = LogCeiling(OperandNum, VFUs::MaxLutSize);
+    return LogicLevels * (VFUs::LUTDelay + VFUs::WireDelay);
+  }
+
+  case llvm::DFGNode::GT:
+  case llvm::DFGNode::LT:
+  case llvm::DFGNode::EQ:
+  case llvm::DFGNode::NE: {
+    unsigned BitWidth = Node->getBitWidth();
     return LuaI::Get<VFUICmp>()->lookupLatency(std::min(BitWidth, 64u));
   }
 
+  case llvm::DFGNode::CompressorTree:
+    llvm_unreachable("Not handled yet!");
+    return 0.0f;
+  case llvm::DFGNode::Register:
+    return VFUs::WireDelay;
+
   default:
-    llvm_unreachable("Unexpected opcode!");
+    llvm_unreachable("Not handled yet!");
+    return 0.0f;
   }
 }
 
 float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
   SM->indexKeepVal(Operand);
 
-  if (isLeafValue(SM, Operand))
-    return 0.0f;
+  // Get the corresponding DFG node.
+  DFGNode *Node = SM->getDFGNodeOfVal(Operand);
 
-  // If we already calculate the arrival time before, then we just
-  // return the result.
-  if (ValArrivalTime.count(Operand))
-    return ValArrivalTime[Operand];
-
-  std::map<SIRRegister *, float> ArrivalTimes;
-
-  Instruction *Root = dyn_cast<Instruction>(Operand);
-
-  typedef Instruction::op_iterator iterator;
-  std::vector<std::pair<Instruction *, iterator> > VisitStack;
-
-  float delay = 0.0f;
-  if (IntrinsicInst *RootII = dyn_cast<IntrinsicInst>(Root)) {
-    if (RootII->getIntrinsicID() == Intrinsic::shang_compressor) {
-      delay = getOperandArrivalTime(Root);
-
-      return delay;
-    }
+  DFGNode::NodeType Ty = Node->getType();
+  if (Ty == DFGNode::Not || Ty == DFGNode::And ||
+      Ty == DFGNode::Or || Ty == DFGNode::Xor) {
+    DFGNode *LOCNode = DFG->getLOCNode(Node);
+    Node = LOCNode;
   }
 
-  // The delay of the root node.
-  delay = getLatency(Root);
+  /// Arrival time will be 0.0f if it is a register.
+  if (Node->isSequentialNode())
+    return 0.0f;
 
-  VisitStack.push_back(std::make_pair(Root, Root->op_begin()));
+  /// Otherwise, traverse the DFG to get the arrival time.
+  // Arrival times from different source
+  std::map<DFGNode *, float> ArrivalTimes;
+
+  typedef DFGNode::iterator iterator;
+  std::vector<std::pair<DFGNode *, iterator> > VisitStack;
+  VisitStack.push_back(std::make_pair(Node, Node->parent_begin()));
+
+  // Initialize a arrival time.
+  float ArrivalTime = getCritialPathDelay(Node);
+
   while (!VisitStack.empty()) {
-    Instruction *Node = VisitStack.back().first;
+    DFGNode *CurNode = VisitStack.back().first;
     iterator &It = VisitStack.back().second;
 
     // We have visited all children of current node.
-    if (It == Node->op_end()) {
+    if (It == CurNode->parent_end()) {
       VisitStack.pop_back();
 
-      delay -= getLatency(Node);
+      // Trace back to previous level, so the arrival time
+      // also need to be decreased.
+      ArrivalTime -= getCritialPathDelay(CurNode);
+
       continue;
     }
 
-    Value *ChildNode = *It;
+    DFGNode *ParentNode = *It;
     ++It;
 
-    if (Instruction *ChildInst = dyn_cast<Instruction>(ChildNode)) {
-      SM->indexKeepVal(ChildNode);
+    SM->indexKeepVal(ParentNode->getValue());
 
-      if (SIRRegister *Reg = SM->lookupSIRReg(ChildInst)) {
-        if (ArrivalTimes.count(Reg))
-          ArrivalTimes[Reg] = std::max(ArrivalTimes[Reg], delay);
-        else
-          ArrivalTimes[Reg] = delay;
+    DFGNode::NodeType ParentTy = ParentNode->getType();
+    // If we reach the sequential node, then record the arrival time.
+    if (ParentTy == DFGNode::Register) {
+      // Remember to sum up the latency of the sequential node.
+      float FinalArrivalTime = ArrivalTime + getCritialPathDelay(ParentNode);
 
-        continue;
-      }
+      if (ArrivalTimes.count(ParentNode))
+        ArrivalTimes[ParentNode] = std::max(ArrivalTimes[ParentNode], FinalArrivalTime);
+      else
+        ArrivalTimes.insert(std::make_pair(ParentNode, FinalArrivalTime));
 
-      if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(ChildInst)) {
-        Intrinsic::ID ID = II->getIntrinsicID();
-
-        if (ID == Intrinsic::shang_compressor) {
-          delay += getOperandArrivalTime(ChildInst);
-
-          if (ArrivalTimes.count(NULL))
-            ArrivalTimes[NULL] = std::max(ArrivalTimes[NULL], delay);
-          else
-            ArrivalTimes[NULL] = delay;
-
-          continue;
-        }
-      }
-
-      if (isa<IntrinsicInst>(ChildInst) || isa<PtrToIntInst>(ChildInst) ||
-          isa<IntToPtrInst>(ChildInst) || isa<BitCastInst>(ChildInst)) {
-        VisitStack.push_back(std::make_pair(ChildInst, ChildInst->op_begin()));
-        delay += getLatency(ChildInst);
-      }
+      continue;
     }
+    // Else, continue the traverse the DFG in depth-first search.
+    VisitStack.push_back(std::make_pair(ParentNode, ParentNode->parent_begin()));
+    ArrivalTime += getCritialPathDelay(ParentNode);
   }
 
-  float ArrivalTime = 0.0f;
-  typedef std::map<SIRRegister *, float>::iterator map_iterator;
-  for (map_iterator MI = ArrivalTimes.begin(), ME = ArrivalTimes.end(); MI != ME; ++MI)
-    ArrivalTime = std::max(ArrivalTime, MI->second);
+  float CritialPathArrivalTime = 0.0f;
+  typedef std::map<DFGNode *, float>::iterator arrivaltime_iterator;
+  for (arrivaltime_iterator AI = ArrivalTimes.begin(), AE = ArrivalTimes.end();
+       AI != AE; ++AI) {
+    CritialPathArrivalTime = std::max(CritialPathArrivalTime, AI->second);
 
-  // Index the valid time to the value.
-  ValArrivalTime.insert(std::make_pair(Operand, ArrivalTime));
+    // Index the arrival time.
+    ValArrivalTime.insert(std::make_pair(Operand, CritialPathArrivalTime));
+  }
 
-  return ArrivalTime;
+  return CritialPathArrivalTime;
 }
 
 std::vector<Value *>
@@ -827,10 +724,9 @@ void SIRMOAOpt::collectMOAs() {
 
   Function *F = SM->getFunction();
 
-  ReversePostOrderTraversal<BasicBlock *> RPO(&F->getEntryBlock());
-  typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
-  for (bb_top_iterator BI = RPO.begin(), BE = RPO.end(); BI != BE; ++BI) {
-    BasicBlock *BB = *BI;
+  typedef Function::iterator bb_iterator;
+  for (bb_iterator BI = F->begin(), BE = F->end(); BI != BE; ++BI) {
+    BasicBlock *BB = BI;
 
     typedef BasicBlock::iterator inst_iterator;
     for (inst_iterator II = BB->begin(), IE = BB->end(); II != IE; ++II) {
@@ -1037,26 +933,14 @@ MatrixType SIRMOAOpt::sumAllSignBitsInMatrix(MatrixType Matrix, unsigned RowNum,
   // Get the number of sign bit in each row in Matrix.
   std::vector<unsigned> SignBitNumList = getSignBitNumListInMatrix(Matrix);
 
-  // The smallest sign bit width of all rows in Matrix.
-  unsigned SignBitPatternWidth = UINT_MAX;
-  for (unsigned i = 0; i < SignBitNumList.size(); ++i) {
-    // Only one sign bit existed is not the pattern we looking for.
-    if (SignBitNumList[i] != 1)
-      SignBitPatternWidth = std::min(SignBitPatternWidth, SignBitNumList[i]);
-  }
-
-  // If there are no sign bit pattern, return the origin Matrix.
-  if (SignBitPatternWidth == UINT_MAX)
-    return Matrix;
-
   // Sum all sign bit using the equation:
   // ssssssss = 11111111 + 0000000~s,
   // then sum all the one bit.
   MatrixType SignBitMatrix = Matrix;
   for (unsigned i = 0; i < Matrix.size(); ++i) {
     // If there is sign bit pattern in current row.
-    if (SignBitNumList[i] >= SignBitPatternWidth) {
-      unsigned SignBitStartPoint = Matrix[i].size() - SignBitPatternWidth;
+    if (SignBitNumList[i] > 1) {
+      unsigned SignBitStartPoint = Matrix[i].size() - SignBitNumList[i];
 
       // Set the ssssssss to 0000000~s in origin Matrix.
       DotType OriginDot = Matrix[i][SignBitStartPoint];
@@ -1090,7 +974,7 @@ MatrixType SIRMOAOpt::sumAllSignBitsInMatrix(MatrixType Matrix, unsigned RowNum,
 }
 
 MatrixType SIRMOAOpt::transportMatrix(MatrixType Matrix, unsigned RowNum,
-                                           unsigned ColumnNum) {
+                                      unsigned ColumnNum) {
   MatrixType TMatrix;
 
   for (unsigned j = 0; j < ColumnNum; ++j) {
@@ -2252,7 +2136,7 @@ void SIRMOAOpt::printGPCModule(raw_fd_ostream &Output) {
 }
 
 void SIRMOAOpt::printAddChainModule(unsigned OpNum, unsigned BitWidth,
-                                         raw_fd_ostream &Output) {
+                                    raw_fd_ostream &Output) {
   // Calculate the output bitwidth.
   unsigned OutputBitWidth = BitWidth + std::ceil(log(OpNum) / log(2));
 

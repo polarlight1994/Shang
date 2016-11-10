@@ -711,6 +711,7 @@ public:
     /// the constant values
     ConstantInt,
     GlobalVal,
+    UndefVal,
     /// normal datapath value type
     Add,
     Mul,
@@ -774,6 +775,9 @@ public:
   bool isEntryOrExit() const {
     return Ty == Entry || Ty == Exit;
   }
+  bool isSequentialNode() const {
+    return Ty == Register;
+  }
 
   typedef std::set<DFGNode *>::iterator iterator;
   typedef std::set<DFGNode *>::const_iterator const_iterator;
@@ -836,12 +840,21 @@ template<> struct GraphTraits<const DFGNode *> {
 };
 
 struct DataFlowGraph {
+public:
+  typedef iplist<DFGNode> DFGNodeListTy;
+  typedef std::pair<std::vector<DFGNode *>,
+                    std::vector<DFGNode *> > OperationsAndOperandsTy;
+  typedef std::map<DFGNode *, OperationsAndOperandsTy> LOCType;
+
 private:
   SIR *SM;
 
   // The list of all nodes in DFG.
-  typedef iplist<DFGNode> DFGNodeListTy;
   DFGNodeListTy DFGNodeList;
+  // The logic operation chains
+  LOCType LOC;
+  // The map between Root and the LOC DFG node we creat
+  std::map<DFGNode *, DFGNode *> RootOfLOC;
 
 public:
   DataFlowGraph(SIR *SM) : SM(SM) {
@@ -861,6 +874,34 @@ public:
   DFGNode *creatDFGNode(std::string Name, Value *Val,
                         DFGNode::NodeType Ty, unsigned BitWidth);
 
+  std::vector<DFGNode *> getOperationsOfLOC(DFGNode *RootNode) {
+    assert(LOC.count(RootNode) && "LOC not existed!");
+
+    return LOC[RootNode].first;
+  }
+  std::vector<DFGNode *> getOperandsOfLOC(DFGNode *RootNode) {
+    assert(LOC.count(RootNode) && "LOC not existed!");
+
+    return LOC[RootNode].second;
+  }
+  void indexLOC(DFGNode *RootNode, std::vector<DFGNode *> Operations,
+                std::vector<DFGNode *> Operands) {
+    assert(!LOC.count(RootNode) && "Already existed!");
+
+    LOC.insert(std::make_pair(RootNode, std::make_pair(Operations, Operands)));
+  }
+
+  DFGNode *getLOCNode(DFGNode *RootNode) {
+    assert(RootOfLOC.count(RootNode) && "!Already existed!");
+
+    return RootOfLOC[RootNode];
+  }
+  void indexRootOfLOC(DFGNode *RootNode, DFGNode *LOCNode) {
+    assert(!RootOfLOC.count(RootNode) && "Already existed!");
+
+    RootOfLOC.insert(std::make_pair(RootNode, LOCNode));
+  }
+
   typedef DFGNodeListTy::iterator node_iterator;
   typedef DFGNodeListTy::const_iterator const_node_iterator;
 
@@ -869,6 +910,15 @@ public:
 
   const_node_iterator begin() const { return DFGNodeList.begin(); }
   const_node_iterator end() const { return DFGNodeList.end(); }
+
+  typedef LOCType::iterator loc_iterator;
+  typedef LOCType::const_iterator const_loc_iterator;
+
+  loc_iterator loc_begin() { return LOC.begin(); }
+  loc_iterator loc_end() { return LOC.end(); }
+
+  const_loc_iterator loc_begin() const { return LOC.begin(); }
+  const_loc_iterator loc_end() const { return LOC.end(); }
 };
 }
 

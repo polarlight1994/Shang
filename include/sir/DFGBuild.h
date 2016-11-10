@@ -31,6 +31,7 @@ struct DFGBuild : public SIRPass {
   DFGNode *createDataPathNode(Instruction *Inst) const;
   DFGNode *createConstantIntNode(ConstantInt *CI) const;
   DFGNode *createGlobalValueNode(GlobalValue *GV) const;
+  DFGNode *createUndefValueNode(UndefValue *UV) const;
   DFGNode *createArgumentNode(Argument *Arg) const;
   DFGNode *createSequentialNode(Value *Val) const;
 
