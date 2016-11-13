@@ -314,15 +314,18 @@ float SIRMOAOpt::getCritialPathDelay(DFGNode *Node) {
   case llvm::DFGNode::Entry:
   case llvm::DFGNode::Exit:
   case llvm::DFGNode::Argument:
-  case llvm::DFGNode::GlobalVal:
   case llvm::DFGNode::ConstantInt:
   case llvm::DFGNode::BitExtract:
   case llvm::DFGNode::BitCat:
   case llvm::DFGNode::BitRepeat:
+  case llvm::DFGNode::BitManipulate:
   case llvm::DFGNode::TypeConversion:
   case llvm::DFGNode::Ret:
   case llvm::DFGNode::InValid:
     return 0.0f;
+
+  case llvm::DFGNode::GlobalVal:
+    return VFUs::WireDelay;
 
   case llvm::DFGNode::Add: {
     unsigned BitWidth = Node->getBitWidth();
@@ -393,13 +396,20 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
   DFGNode::NodeType Ty = Node->getType();
   if (Ty == DFGNode::Not || Ty == DFGNode::And ||
       Ty == DFGNode::Or || Ty == DFGNode::Xor) {
-    DFGNode *LOCNode = DFG->getLOCNode(Node);
-    Node = LOCNode;
+    if (DFG->hasReplaceNode(Node)) {
+      DFGNode *ReplaceNode = DFG->getReplaceNode(Node);
+
+      Node = ReplaceNode;
+    }
+    else {
+      DFGNode *LOCNode = DFG->getLOCNode(Node);
+      Node = LOCNode;
+    }
   }
 
   /// Arrival time will be 0.0f if it is a register.
   if (Node->isSequentialNode())
-    return 0.0f;
+    return VFUs::WireDelay;
 
   /// Otherwise, traverse the DFG to get the arrival time.
   // Arrival times from different source
@@ -432,9 +442,8 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
 
     SM->indexKeepVal(ParentNode->getValue());
 
-    DFGNode::NodeType ParentTy = ParentNode->getType();
     // If we reach the sequential node, then record the arrival time.
-    if (ParentTy == DFGNode::Register) {
+    if (ParentNode->isSequentialNode()) {
       // Remember to sum up the latency of the sequential node.
       float FinalArrivalTime = ArrivalTime + getCritialPathDelay(ParentNode);
 
@@ -574,11 +583,7 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
     // Or the dots will be the form like operand[0], operand[1]...
     else {
       // Get the arrival time of the dots.
-      float ArrivalTime;
-      if (SIRRegister *Reg = SM->lookupSIRReg(Operand))
-        ArrivalTime = 0.0f;
-      else
-        ArrivalTime = getOperandArrivalTime(Operand);
+      float ArrivalTime = getOperandArrivalTime(Operand);
 
       // Get the name of the operand to denote the name of the dot later.
       std::string OpName = "operand_" + utostr_32(i);

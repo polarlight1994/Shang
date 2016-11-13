@@ -27,17 +27,6 @@ struct DFGBuild : public SIRPass {
   }
   float getCriticalPathDelay(Instruction *Inst) const;
 
-  DFGNode *createNode(Value *Val) const;
-  DFGNode *createDataPathNode(Instruction *Inst) const;
-  DFGNode *createConstantIntNode(ConstantInt *CI) const;
-  DFGNode *createGlobalValueNode(GlobalValue *GV) const;
-  DFGNode *createUndefValueNode(UndefValue *UV) const;
-  DFGNode *createArgumentNode(Argument *Arg) const;
-  DFGNode *createSequentialNode(Value *Val) const;
-
-  void createDependencies(DFGNode *Node) const;
-  void createDependency(DFGNode *From, DFGNode *To) const;
-
   void verifyDFGCorrectness() const;
 
   void getAnalysisUsage(AnalysisUsage &AU) const {

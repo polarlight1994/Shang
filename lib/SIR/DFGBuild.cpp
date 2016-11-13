@@ -33,7 +33,9 @@ bool DFGBuild::runOnSIR(SIR &SM) {
   typedef Function::arg_iterator arg_iterator;
   for (arg_iterator AI = F->arg_begin(), AE = F->arg_end(); AI != AE; ++AI) {
     Argument *Arg = AI;
-    createArgumentNode(Arg);
+    unsigned ArgBitWidth = getBitWidth(Arg);
+
+    G->createArgumentNode(Arg, ArgBitWidth);
   }
 
   /// Traverse the whole design and create node for
@@ -45,30 +47,37 @@ bool DFGBuild::runOnSIR(SIR &SM) {
     typedef BasicBlock::iterator inst_iterator;
     for (inst_iterator II = BB->begin(), IE = BB->end(); II != IE; ++II) {
       Instruction *Inst = II;
+      unsigned InstBitWidth = getBitWidth(Inst);
 
       // Do not create same node twice.
       if (!SM.isDFGNodeExisted(Inst))
-        createDataPathNode(Inst);
+        G->createDataPathNode(Inst, InstBitWidth);
 
       // Also create node for its operands if it has not been created.
       typedef Instruction::op_iterator op_iterator;
       for (op_iterator OI = Inst->op_begin(), OE = Inst->op_end(); OI != OE; ++OI) {
         Value *Op = *OI;
 
+        // Ignore the function declaration.
+        if (isa<Function>(Op))
+          continue;
+
+        unsigned OpBitWidth = getBitWidth(Op);
+
         if (!SM.isDFGNodeExisted(Op)) {
           if (Instruction *OpInst = dyn_cast<Instruction>(Op))
-            createDataPathNode(OpInst);
+            G->createDataPathNode(OpInst, OpBitWidth);
           else if (ConstantInt *CI = dyn_cast<ConstantInt>(Op))
-            createConstantIntNode(CI);
+            G->createConstantIntNode(CI, OpBitWidth);
           else if (GlobalValue *GV = dyn_cast<GlobalValue>(Op))
-            createGlobalValueNode(GV);
+            G->createGlobalValueNode(GV, OpBitWidth);
           else if (UndefValue *UV = dyn_cast<UndefValue>(Op))
-            createUndefValueNode(UV);
+            G->createUndefValueNode(UV, OpBitWidth);
           // To be noted that, there are some argument values created by us which are
           // not included in the function argument list. These values will be handled
           // here.
           else if (Argument *Arg = dyn_cast<Argument>(Op))
-            createArgumentNode(Arg);
+            G->createArgumentNode(Arg, OpBitWidth);
           else
             llvm_unreachable("Unexpected value type!");
         }
@@ -91,7 +100,7 @@ bool DFGBuild::runOnSIR(SIR &SM) {
     if (!isa<Instruction>(Val))
       continue;
 
-    createDependencies(Node);
+    G->createDependencies(Node);
   }
 
   /// Verify the correctness of DFG graph.
@@ -103,175 +112,6 @@ bool DFGBuild::runOnSIR(SIR &SM) {
 static unsigned LogCeiling(unsigned x, unsigned n) {
   unsigned log2n = Log2_32_Ceil(n);
   return (Log2_32_Ceil(x) + log2n - 1) / log2n;
-}
-
-DFGNode *DFGBuild::createDataPathNode(Instruction *Inst) const {
-  // Basic information of current value.
-  std::string Name = Inst->getName();
-  unsigned BitWidth = getBitWidth(Inst);
-
-  // The node we want to create.
-  DFGNode *Node;
-
-  // Identify the type of instruction.
-  DFGNode::NodeType Ty = DFGNode::InValid;
-  if (const IntrinsicInst *InstII = dyn_cast<IntrinsicInst>(Inst)) {
-    Intrinsic::ID ID = InstII->getIntrinsicID();
-
-    switch (ID) {
-    case llvm::Intrinsic::shang_add:
-    case llvm::Intrinsic::shang_addc:
-      Ty = DFGNode::Add;
-      break;
-    case llvm::Intrinsic::shang_and:
-      Ty = DFGNode::And;
-      break;
-    case llvm::Intrinsic::shang_ashr:
-      Ty = DFGNode::AShr;
-      break;
-    case llvm::Intrinsic::shang_bit_cat:
-      Ty = DFGNode::BitCat;
-      break;
-    case llvm::Intrinsic::shang_bit_extract:
-      Ty = DFGNode::BitExtract;
-      break;
-    case llvm::Intrinsic::shang_bit_repeat:
-      Ty = DFGNode::BitRepeat;
-      break;
-    case llvm::Intrinsic::shang_compressor:
-      Ty = DFGNode::CompressorTree;
-      break;
-    case llvm::Intrinsic::shang_eq:
-      Ty = DFGNode::EQ;
-      break;
-    case llvm::Intrinsic::shang_logic_operations:
-      Ty = DFGNode::LogicOperationChain;
-      break;
-    case llvm::Intrinsic::shang_lshr:
-      Ty = DFGNode::LShr;
-      break;
-    case llvm::Intrinsic::shang_mul:
-      Ty = DFGNode::Mul;
-      break;
-    case llvm::Intrinsic::shang_ne:
-      Ty = DFGNode::NE;
-      break;
-    case llvm::Intrinsic::shang_not:
-      Ty = DFGNode::Not;
-      break;
-    case llvm::Intrinsic::shang_or:
-      Ty = DFGNode::Or;
-      break;
-    case llvm::Intrinsic::shang_rand:
-      Ty = DFGNode::RAnd;
-      break;
-    case llvm::Intrinsic::shang_reg_assign:
-      Ty = DFGNode::Register;
-      break;
-    case llvm::Intrinsic::shang_shl:
-      Ty = DFGNode::Shl;
-      break;
-    case llvm::Intrinsic::shang_sdiv:
-      Ty = DFGNode::Div;
-      break;
-    case llvm::Intrinsic::shang_udiv:
-      Ty = DFGNode::Div;
-      break;
-    case llvm::Intrinsic::shang_sgt:
-      Ty = DFGNode::GT;
-      break;
-    case llvm::Intrinsic::shang_ugt:
-      Ty = DFGNode::GT;
-      break;
-    case llvm::Intrinsic::shang_xor:
-      Ty = DFGNode::Xor;
-      break;
-    default:
-      llvm_unreachable("Unexpected instruction type!");
-      break;
-    }
-
-    Node = G->creatDFGNode(Name, Inst, Ty, BitWidth);
-  }
-  else if (isa<IntToPtrInst>(Inst) || isa<PtrToIntInst>(Inst) || isa<BitCastInst>(Inst)) {
-    Node = G->creatDFGNode(Name, Inst, DFGNode::TypeConversion, BitWidth);
-  }
-  else if (isa<ReturnInst>(Inst)) {
-    Node = G->creatDFGNode(Name, Inst, DFGNode::Ret, BitWidth);
-  }
-  else {
-    llvm_unreachable("Unexpected instruction type!");
-  }
-
-  return Node;
-}
-
-DFGNode *DFGBuild::createConstantIntNode(ConstantInt *CI) const {
-  // Basic information of current value.
-  std::string Name = CI->getName();
-  unsigned BitWidth = getBitWidth(CI);
-
-  DFGNode *Node = G->creatDFGNode(Name, CI, DFGNode::ConstantInt, BitWidth);
-
-  return Node;
-}
-
-DFGNode *DFGBuild::createGlobalValueNode(GlobalValue *GV) const {
-  // Basic information of current value.
-  std::string Name = GV->getName();
-  unsigned BitWidth = getBitWidth(GV);
-
-  DFGNode *Node = G->creatDFGNode(Name, GV, DFGNode::GlobalVal, BitWidth);
-
-  return Node;
-}
-
-DFGNode *DFGBuild::createUndefValueNode(UndefValue *UV) const {
-  // Basic information of current value.
-  std::string Name = UV->getName();
-  unsigned BitWidth = getBitWidth(UV);
-
-  DFGNode *Node = G->creatDFGNode(Name, UV, DFGNode::UndefVal, BitWidth);
-
-  return Node;
-}
-
-DFGNode *DFGBuild::createArgumentNode(Argument *Arg) const {
-  // Basic information of current value.
-  std::string Name = Arg->getName();
-  unsigned BitWidth = getBitWidth(Arg);
-
-  DFGNode *Node = G->creatDFGNode(Name, Arg, DFGNode::Argument, BitWidth);
-
-  return Node;
-}
-
-void DFGBuild::createDependencies(DFGNode *Node) const {
-  /// Create dependencies according to the dependencies of
-  /// the instruction which the node represents for.
-  Instruction *Inst = dyn_cast<Instruction>(Node->getValue());
-
-  typedef Instruction::op_iterator op_iterator;
-  for (op_iterator OI = Inst->op_begin(), OE = Inst->op_end(); OI != OE; ++OI) {
-    Value *Op = *OI;
-
-    // Ignore the function declaration which is also regarded as operand in llvm
-    // intermediate representation.
-    if (isa<Function>(Op))
-      continue;
-
-    // The corresponding DFG node of users.
-    DFGNode *OpNode = SM->getDFGNodeOfVal(Op);
-
-    createDependency(OpNode, Node);
-  }
-}
-
-void DFGBuild::createDependency(DFGNode *From, DFGNode *To) const {
-  From->addChildNode(To);
-
-  assert(From->hasChildNode(To) && "Fail to create dependency!");
-  assert(To->hasParentNode(From) && "Fail to create dependency!");
 }
 
 void DFGBuild::verifyDFGCorrectness() const {

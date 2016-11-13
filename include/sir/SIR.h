@@ -369,8 +369,6 @@ public:
     return LeadingSigns;
   }
 
-  bool updateMask(Instruction *Inst, SIR *SM, DataLayout *TD);
-
   void print(raw_ostream &Output) {
     Output << "[";
 
@@ -731,6 +729,7 @@ public:
     BitExtract,
     BitCat,
     BitRepeat,
+    BitManipulate,
     TypeConversion,
     Ret,
     /// special datapath value type
@@ -764,7 +763,10 @@ public:
   // initialized as 0.0f since it will be calculated after a series of
   // DFG optimization.
   DFGNode(std::string Name, Value *V, NodeType Ty, unsigned BitWidth)
-    : Name(Name), Val(V), Ty(Ty), BitWidth(BitWidth), Latency(0.0f) {}
+    : Name(Name), Val(V), Ty(Ty), BitWidth(BitWidth), Latency(0.0f) {
+    if (V)
+      assert(!isa<Function>(V) && "Unexpected value type!");
+  }
 
   std::string getName() const { return Name; }
   Value *getValue() const { return Val; }
@@ -776,7 +778,7 @@ public:
     return Ty == Entry || Ty == Exit;
   }
   bool isSequentialNode() const {
-    return Ty == Register;
+    return Ty == Register || Ty == GlobalVal;
   }
 
   typedef std::set<DFGNode *>::iterator iterator;
@@ -812,6 +814,44 @@ public:
   void removeChildNode(DFGNode *ChildNode) {
     ChildNode->Parents.erase(this);
     Childs.erase(ChildNode);
+  }
+
+  void addParentNode(DFGNode *ParentNode) {
+    ParentNode->Childs.insert(this);
+    Parents.insert(ParentNode);
+  }
+  void removeParentNode(DFGNode *ParentNode) {
+    ParentNode->Childs.erase(this);
+    Parents.erase(ParentNode);
+  }
+
+  // Replace all the use of current node to target node. To be noted that,
+  // the parents of current node are not affected.
+  void replaceAllUseWith(DFGNode *ReplaceNode) {
+    for (iterator CI = child_begin(), CE = child_end(); CI != CE;) {
+      DFGNode *ChildNode = *CI++;
+
+      ChildNode->removeParentNode(this);
+      ReplaceNode->addChildNode(ChildNode);
+    }
+
+    assert(Childs.empty() && "Unexpected uses remain!");
+  }
+  // Replace all the def of current node to target node. To be noted that,
+  // the children of current node are not affected.
+  void replaceAllDefWith(DFGNode *ReplaceNode) {
+    for (iterator PI = parent_begin(), PE = parent_end(); PI != PE;) {
+      DFGNode *ParentNode = *PI++;
+
+      ParentNode->removeChildNode(this);
+      ReplaceNode->addParentNode(ParentNode);
+    }
+
+    assert(Parents.empty() && "Unexpected defs remain!");
+  }
+  void replaceAllWith(DFGNode *ReplaceNode) {
+    replaceAllDefWith(ReplaceNode);
+    replaceAllUseWith(ReplaceNode);
   }
 };
 
@@ -856,6 +896,8 @@ private:
   // The map between Root and the LOC DFG node we creat
   std::map<DFGNode *, DFGNode *> RootOfLOC;
 
+  std::map<DFGNode *, DFGNode *> ReplacedNodes;
+
 public:
   DataFlowGraph(SIR *SM) : SM(SM) {
     // Create the entry SU.
@@ -873,6 +915,16 @@ public:
 
   DFGNode *creatDFGNode(std::string Name, Value *Val,
                         DFGNode::NodeType Ty, unsigned BitWidth);
+  DFGNode *createDataPathNode(Instruction *Inst, unsigned BitWidth);
+  DFGNode *createConstantIntNode(APInt Val);
+  DFGNode *createConstantIntNode(ConstantInt *CI, unsigned BitWidth);
+  DFGNode *createGlobalValueNode(GlobalValue *GV, unsigned BitWidth);
+  DFGNode *createUndefValueNode(UndefValue *UV, unsigned BitWidth);
+  DFGNode *createArgumentNode(Argument *Arg, unsigned BitWidth);
+  DFGNode *createSequentialNode(Value *Val, unsigned BitWidth);
+
+  void createDependencies(DFGNode *Node);
+  void createDependency(DFGNode *From, DFGNode *To);
 
   std::vector<DFGNode *> getOperationsOfLOC(DFGNode *RootNode) {
     assert(LOC.count(RootNode) && "LOC not existed!");
@@ -892,7 +944,7 @@ public:
   }
 
   DFGNode *getLOCNode(DFGNode *RootNode) {
-    assert(RootOfLOC.count(RootNode) && "!Already existed!");
+    assert(RootOfLOC.count(RootNode) && "Not existed!");
 
     return RootOfLOC[RootNode];
   }
@@ -900,6 +952,20 @@ public:
     assert(!RootOfLOC.count(RootNode) && "Already existed!");
 
     RootOfLOC.insert(std::make_pair(RootNode, LOCNode));
+  }
+
+  bool hasReplaceNode(DFGNode *OriginNode) {
+    return ReplacedNodes.count(OriginNode);
+  }
+  DFGNode *getReplaceNode(DFGNode *OriginNode) {
+    assert(ReplacedNodes.count(OriginNode) && "Not existed!");
+
+    return ReplacedNodes[OriginNode];
+  }
+  void indexReplaceNode(DFGNode *OriginNode, DFGNode *ReplaceNode) {
+    assert(!ReplacedNodes.count(OriginNode) && "Already existed!");
+
+    ReplacedNodes.insert(std::make_pair(OriginNode, ReplaceNode));
   }
 
   typedef DFGNodeListTy::iterator node_iterator;
@@ -1324,6 +1390,10 @@ public:
   typedef Val2BitMaskMapTy::iterator val2bitmask_iterator;
   typedef Val2BitMaskMapTy::const_iterator const_val2bitmask_iterator;
 
+  typedef std::map<DFGNode *, SIRBitMask> Node2BitMaskMapTy;
+  typedef Node2BitMaskMapTy::iterator node2bitmask_iterator;
+  typedef Node2BitMaskMapTy::const_iterator const_node2bitmask_iterator;
+
   typedef std::map<IntrinsicInst *, std::vector<Value *> > Ops2AdderChainTy;
   typedef Ops2AdderChainTy::iterator ops2adderchain_iterator;
   typedef Ops2AdderChainTy::const_iterator const_ops2adderchain_iterator;
@@ -1371,6 +1441,8 @@ private:
   Val2SeqValMapTy Val2SeqVal;
   // The map between Value in SIR and BitMask.
   Val2BitMaskMapTy Val2BitMask;
+  // The map between DFG node and BitMask.
+  Node2BitMaskMapTy Node2BitMask;
   // The map between ChainRoot and its operands
   Ops2AdderChainTy Ops2AdderChain;
   // The map between SeqVal in SIR and Reg in SIR
@@ -1622,6 +1694,28 @@ public:
     assert(hasBitMask(Val) && "Mask not created yet?");
 
     const_val2bitmask_iterator at = Val2BitMask.find(Val);
+    return at->second;
+  }
+
+  bool IndexNode2BitMask(DFGNode *Node, SIRBitMask BitMask) {
+    BitMask.verify();
+
+    if (hasBitMask(Node)) {
+      Node2BitMask[Node] = BitMask;
+
+      return true;
+    }
+
+    return Node2BitMask.insert(std::make_pair(Node, BitMask)).second;
+  }
+  bool hasBitMask(DFGNode *Node) const {
+    const_node2bitmask_iterator at = Node2BitMask.find(Node);
+    return at != Node2BitMask.end();
+  }
+  SIRBitMask getBitMask(DFGNode *Node) const {
+    assert(hasBitMask(Node) && "Mask not created yet?");
+
+    const_node2bitmask_iterator at = Node2BitMask.find(Node);
     return at->second;
   }
 

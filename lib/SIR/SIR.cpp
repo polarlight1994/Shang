@@ -88,6 +88,180 @@ DFGNode *DataFlowGraph::creatDFGNode(std::string Name, Value *Val,
   return Node;
 }
 
+DFGNode *DataFlowGraph::createDataPathNode(Instruction *Inst, unsigned BitWidth) {
+  // Basic information of current value.
+  std::string Name = Inst->getName();
+
+  // The node we want to create.
+  DFGNode *Node;
+
+  // Identify the type of instruction.
+  DFGNode::NodeType Ty = DFGNode::InValid;
+  if (const IntrinsicInst *InstII = dyn_cast<IntrinsicInst>(Inst)) {
+    Intrinsic::ID ID = InstII->getIntrinsicID();
+
+    switch (ID) {
+    case llvm::Intrinsic::shang_add:
+    case llvm::Intrinsic::shang_addc:
+      Ty = DFGNode::Add;
+      break;
+    case llvm::Intrinsic::shang_and:
+      Ty = DFGNode::And;
+      break;
+    case llvm::Intrinsic::shang_ashr:
+      Ty = DFGNode::AShr;
+      break;
+    case llvm::Intrinsic::shang_bit_cat:
+      Ty = DFGNode::BitCat;
+      break;
+    case llvm::Intrinsic::shang_bit_extract:
+      Ty = DFGNode::BitExtract;
+      break;
+    case llvm::Intrinsic::shang_bit_repeat:
+      Ty = DFGNode::BitRepeat;
+      break;
+    case llvm::Intrinsic::shang_compressor:
+      Ty = DFGNode::CompressorTree;
+      break;
+    case llvm::Intrinsic::shang_eq:
+      Ty = DFGNode::EQ;
+      break;
+    case llvm::Intrinsic::shang_logic_operations:
+      Ty = DFGNode::LogicOperationChain;
+      break;
+    case llvm::Intrinsic::shang_lshr:
+      Ty = DFGNode::LShr;
+      break;
+    case llvm::Intrinsic::shang_mul:
+      Ty = DFGNode::Mul;
+      break;
+    case llvm::Intrinsic::shang_ne:
+      Ty = DFGNode::NE;
+      break;
+    case llvm::Intrinsic::shang_not:
+      Ty = DFGNode::Not;
+      break;
+    case llvm::Intrinsic::shang_or:
+      Ty = DFGNode::Or;
+      break;
+    case llvm::Intrinsic::shang_rand:
+      Ty = DFGNode::RAnd;
+      break;
+    case llvm::Intrinsic::shang_reg_assign:
+      Ty = DFGNode::Register;
+      break;
+    case llvm::Intrinsic::shang_shl:
+      Ty = DFGNode::Shl;
+      break;
+    case llvm::Intrinsic::shang_sdiv:
+      Ty = DFGNode::Div;
+      break;
+    case llvm::Intrinsic::shang_udiv:
+      Ty = DFGNode::Div;
+      break;
+    case llvm::Intrinsic::shang_sgt:
+      Ty = DFGNode::GT;
+      break;
+    case llvm::Intrinsic::shang_ugt:
+      Ty = DFGNode::GT;
+      break;
+    case llvm::Intrinsic::shang_xor:
+      Ty = DFGNode::Xor;
+      break;
+    default:
+      llvm_unreachable("Unexpected instruction type!");
+      break;
+    }
+
+    Node = creatDFGNode(Name, Inst, Ty, BitWidth);
+  }
+  else if (isa<IntToPtrInst>(Inst) || isa<PtrToIntInst>(Inst) || isa<BitCastInst>(Inst)) {
+    Node = creatDFGNode(Name, Inst, DFGNode::TypeConversion, BitWidth);
+  }
+  else if (isa<ReturnInst>(Inst)) {
+    Node = creatDFGNode(Name, Inst, DFGNode::Ret, BitWidth);
+  }
+  else {
+    llvm_unreachable("Unexpected instruction type!");
+  }
+
+  return Node;
+}
+
+DFGNode *DataFlowGraph::createConstantIntNode(APInt Val) {
+  ConstantInt *CI = ConstantInt::get(SM->getContext(), Val);
+
+  // The mask of constant value is itself.
+  SIRBitMask Mask(~Val, Val, Val.getNullValue(Val.getBitWidth()));
+  SM->IndexVal2BitMask(CI, Mask);
+
+  return createConstantIntNode(CI, Val.getBitWidth());
+}
+
+DFGNode *DataFlowGraph::createConstantIntNode(ConstantInt *CI, unsigned BitWidth) {
+  // Basic information of current value.
+  std::string Name = CI->getName();
+
+  DFGNode *Node = creatDFGNode(Name, CI, DFGNode::ConstantInt, BitWidth);
+
+  return Node;
+}
+
+DFGNode *DataFlowGraph::createGlobalValueNode(GlobalValue *GV, unsigned BitWidth) {
+  // Basic information of current value.
+  std::string Name = GV->getName();
+
+  DFGNode *Node = creatDFGNode(Name, GV, DFGNode::GlobalVal, BitWidth);
+
+  return Node;
+}
+
+DFGNode *DataFlowGraph::createUndefValueNode(UndefValue *UV, unsigned BitWidth) {
+  // Basic information of current value.
+  std::string Name = UV->getName();
+
+  DFGNode *Node = creatDFGNode(Name, UV, DFGNode::UndefVal, BitWidth);
+
+  return Node;
+}
+
+DFGNode *DataFlowGraph::createArgumentNode(Argument *Arg, unsigned BitWidth) {
+  // Basic information of current value.
+  std::string Name = Arg->getName();
+
+  DFGNode *Node = creatDFGNode(Name, Arg, DFGNode::Argument, BitWidth);
+
+  return Node;
+}
+
+void DataFlowGraph::createDependencies(DFGNode *Node) {
+  /// Create dependencies according to the dependencies of
+  /// the instruction which the node represents for.
+  Instruction *Inst = dyn_cast<Instruction>(Node->getValue());
+
+  typedef Instruction::op_iterator op_iterator;
+  for (op_iterator OI = Inst->op_begin(), OE = Inst->op_end(); OI != OE; ++OI) {
+    Value *Op = *OI;
+
+    // Ignore the function declaration which is also regarded as operand in llvm
+    // intermediate representation.
+    if (isa<Function>(Op))
+      continue;
+
+    // The corresponding DFG node of users.
+    DFGNode *OpNode = SM->getDFGNodeOfVal(Op);
+
+    createDependency(OpNode, Node);
+  }
+}
+
+void DataFlowGraph::createDependency(DFGNode *From, DFGNode *To) {
+  From->addChildNode(To);
+
+  assert(From->hasChildNode(To) && "Fail to create dependency!");
+  assert(To->hasParentNode(From) && "Fail to create dependency!");
+}
+
 void SIRSubModuleBase::addFanin(SIRRegister *Fanin) {
   Fanins.push_back(Fanin);
 }
