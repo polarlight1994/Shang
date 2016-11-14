@@ -22,6 +22,7 @@ typedef std::vector<DotType> MatrixRowType;
 typedef std::vector<MatrixRowType> MatrixType;
 
 static unsigned Component_NUM = 0;
+static bool sortMatrixByArrivalTime = true;
 
 namespace {
 struct SIRMOAOpt : public SIRPass {
@@ -1093,16 +1094,25 @@ bool DotCompare(const DotType &DotA, const DotType &DotB) {
   float DotADelay = DotA.second.first;
   float DotBDelay = DotB.second.first;
 
-  if (DotAStage < DotBStage)
-    return true;
-  else if (DotAStage > DotBStage)
-    return false;
+  if (sortMatrixByArrivalTime) {
+    if (DotAStage < DotBStage)
+      return true;
+    else if (DotAStage > DotBStage)
+      return false;
+    else {
+      if (DotADelay < DotBDelay)
+        return true;
+      else
+        return false;
+    }
+  }
   else {
-    if (DotADelay < DotBDelay)
+    if (DotAStage < DotBStage)
       return true;
     else
       return false;
   }
+
 }
 
 MatrixType SIRMOAOpt::sortTMatrix(MatrixType TMatrix) {
