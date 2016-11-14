@@ -93,7 +93,8 @@ void DFGOpt::shrinkOperatorStrength() {
 
     if (SM->hasBitMask(Node))
       Mask = SM->getBitMask(Node);
-    else if (Node->getType() == DFGNode::Argument)
+    else if (Node->getType() == DFGNode::Argument ||
+             Node->getType() == DFGNode::UndefVal)
       Mask = SIRBitMask(BitWidth);
     else
       Mask = SM->getBitMask(Val);
@@ -111,7 +112,8 @@ void DFGOpt::shrinkOperatorStrength() {
       SIRBitMask ParentMask;
       if (SM->hasBitMask(ParentNode))
         ParentMask = SM->getBitMask(ParentNode);
-      else if (ParentNode->getType() == DFGNode::Argument) {
+      else if (ParentNode->getType() == DFGNode::Argument ||
+               ParentNode->getType() == DFGNode::UndefVal) {
         ParentMask = SIRBitMask(BitWidth);
       }
       else {

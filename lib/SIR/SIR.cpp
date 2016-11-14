@@ -193,6 +193,7 @@ DFGNode *DataFlowGraph::createConstantIntNode(APInt Val) {
 
   // The mask of constant value is itself.
   SIRBitMask Mask(~Val, Val, Val.getNullValue(Val.getBitWidth()));
+
   SM->IndexVal2BitMask(CI, Mask);
 
   return createConstantIntNode(CI, Val.getBitWidth());
@@ -202,7 +203,12 @@ DFGNode *DataFlowGraph::createConstantIntNode(ConstantInt *CI, unsigned BitWidth
   // Basic information of current value.
   std::string Name = CI->getName();
 
-  DFGNode *Node = creatDFGNode(Name, CI, DFGNode::ConstantInt, BitWidth);
+  // Temporary, we may can't create two DFG nodes with same constant integer value.
+  DFGNode *Node;
+  if (!SM->isDFGNodeExisted(CI))
+    Node = creatDFGNode(Name, CI, DFGNode::ConstantInt, BitWidth);
+  else
+    Node = SM->getDFGNodeOfVal(CI);
 
   return Node;
 }
