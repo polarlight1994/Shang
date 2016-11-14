@@ -1943,7 +1943,7 @@ void SIRMOAOpt::printTMatrixForDebug(MatrixType TMatrix) {
     for (unsigned j = 0; j < Row.size(); ++j) {
       DotType Dot = Row[j];
 
-      DebugOutput << Dot.first << "--" << Dot.second.first;
+      DebugOutput << Dot.first/* << "--" << Dot.second.first*/;
 
       if (j != Row.size() - 1)
         DebugOutput << "  ";
