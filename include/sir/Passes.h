@@ -24,7 +24,7 @@ class PassRegistry;
 
 namespace llvm {
 extern char &DFGBuildID;
-extern char &SIRBitMaskAnalysisID;
+extern char &BitMaskAnalysisID;
 extern char &DFGOptID;
 extern char &DFGAnalysisID;
 extern char &SIRMOAOptID;
@@ -43,7 +43,7 @@ void initializeDFGBuildPass(PassRegistry &Registry);
 void initializeSIRLowerIntrinsicPass(PassRegistry &Registry);
 void initializeSIRAllocationPass(PassRegistry &Registry);
 void initializeSIRMemoryPartitionPass(PassRegistry &Registry);
-void initializeSIRBitMaskAnalysisPass(PassRegistry &Registry);
+void initializeBitMaskAnalysisPass(PassRegistry &Registry);
 void initializeDFGOptPass(PassRegistry &Registry);
 void initializeDFGAnalysisPass(PassRegistry &Registry);
 void initializeSIRMOAOptPass(PassRegistry &Registry);

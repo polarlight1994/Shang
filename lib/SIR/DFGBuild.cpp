@@ -9,7 +9,7 @@ INITIALIZE_PASS_BEGIN(DFGBuild, "build-DFG",
                       "Build the DFG of design",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
-  INITIALIZE_PASS_DEPENDENCY(SIRBitMaskAnalysis)
+  INITIALIZE_PASS_DEPENDENCY(BitMaskAnalysis)
 INITIALIZE_PASS_END(DFGBuild, "build-DFG",
                     "Build the DFG of design",
                     false, true)

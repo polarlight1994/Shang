@@ -3,6 +3,7 @@
 #include "sir/SIRPass.h"
 #include "sir/DFGBuild.h"
 #include "sir/Passes.h"
+#include "sir/BitMaskAnalysis.h"
 
 #include "vast/FUInfo.h"
 #include "vast/LuaI.h"
@@ -129,11 +130,14 @@ struct SIRMOAOpt : public SIRPass {
   void collectMOAs();
 
   
-
+  MatrixRowType createDotMatrixRow(std::string OpName, unsigned OpWidth,
+                                   unsigned ColNum, float ArrivalTime, BitMask Mask);
   MatrixType createDotMatrix(std::vector<Value *> Operands,
                              unsigned RowNum, unsigned ColNum);
   MatrixType sumAllSignBitsInMatrix(MatrixType Matrix,
                                     unsigned RowNum, unsigned ColumnNum);
+
+  MatrixType sumRowsByAdder(MatrixType Matrix, raw_fd_ostream &Output);
 
   float getCritialPathDelay(DFGNode *Node);
   float getLatency(Instruction *Inst);
@@ -189,7 +193,7 @@ struct SIRMOAOpt : public SIRPass {
   void getAnalysisUsage(AnalysisUsage &AU) const {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
-    AU.addRequiredID(SIRBitMaskAnalysisID);
+    AU.addRequiredID(BitMaskAnalysisID);
     AU.addRequiredID(DFGBuildID);
     AU.addRequiredID(DFGOptID);
     AU.addRequiredID(DFGAnalysisID);
@@ -204,7 +208,7 @@ INITIALIZE_PASS_BEGIN(SIRMOAOpt, "sir-multi-operand-optimization",
                       "Perform the multi-operand adder optimization",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
-  INITIALIZE_PASS_DEPENDENCY(SIRBitMaskAnalysis)
+  INITIALIZE_PASS_DEPENDENCY(BitMaskAnalysis)
   INITIALIZE_PASS_DEPENDENCY(DFGBuild)
   INITIALIZE_PASS_DEPENDENCY(DFGOpt)
   INITIALIZE_PASS_DEPENDENCY(DFGAnalysis)
@@ -284,6 +288,9 @@ float SIRMOAOpt::hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
   Matrix = sumAllSignBitsInMatrix(Matrix, RowNum, ColNum);
   RowNum = Matrix.size();
   printTMatrixForDebug(Matrix);
+
+  // Consider use normal adder to sum some rows which have earlier arrival time.
+  Matrix = sumRowsByAdder(Matrix, Output);
 
   // Optimize the dot matrix taking advantage of the known bits.
   MatrixType TMatrix = transportMatrix(Matrix, RowNum, ColNum);
@@ -529,7 +536,7 @@ SIRMOAOpt::eliminateIdenticalOperands(std::vector<Value *> Operands,
         = Builder.createSBitCatInst(ExtractResult, Builder.createIntegerValue(1, 0),
                                     Op->getType(), MOA, true);
 
-      SIRBitMask OpMask = SM->getBitMask(Op);
+      BitMask OpMask = SM->getBitMask(Op);
       OpMask = OpMask.shl(1);
 
       SM->IndexVal2BitMask(ShiftResult, OpMask);
@@ -542,6 +549,52 @@ SIRMOAOpt::eliminateIdenticalOperands(std::vector<Value *> Operands,
   }
 
   return FinalOperands;
+}
+
+MatrixRowType SIRMOAOpt::createDotMatrixRow(std::string OpName, unsigned OpWidth,
+                                            unsigned ColNum, float ArrivalTime,
+                                            BitMask Mask) {
+  // The row we will create.
+  MatrixRowType Row;
+
+  // Used to denote the sign bit of the operand if it exists.
+  std::string SameBit;
+  for (unsigned i = 0; i < ColNum; ++i) {
+    // When the dot position is within the range of operand bit width,
+    // we get the name of dot considering the bit mask.
+    if (i < OpWidth) {
+      // If it is a known bit, then use the known value.
+      if (Mask.isOneKnownAt(i)) {
+        Row.push_back(std::make_pair("1'b1", std::make_pair(0.0f, 0)));
+        continue;
+      }
+      else if (Mask.isZeroKnownAt(i)) {
+        Row.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
+        continue;
+      }
+      else if (Mask.isSameKnownAt(i)) {
+        if (SameBit.size() != 0)
+          Row.push_back(std::make_pair(SameBit, std::make_pair(ArrivalTime, 0)));
+        else {
+          SameBit = Mangle(OpName) + "[" + utostr_32(i) + "]";
+          Row.push_back(std::make_pair(SameBit, std::make_pair(ArrivalTime, 0)));
+        }
+        continue;
+      }
+      else {
+        // Or use the form like operand[0], operand[1]...
+        std::string DotName = Mangle(OpName) + "[" + utostr_32(i) + "]";
+        Row.push_back(std::make_pair(DotName, std::make_pair(ArrivalTime, 0)));
+      }
+    }
+    // When the dot position is beyond the range of operand bit width,
+    // we need to pad zero into the matrix.
+    else {
+      Row.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
+    }
+  }
+
+  return Row;
 }
 
 MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
@@ -586,6 +639,8 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
       // Get the arrival time of the dots.
       float ArrivalTime = getOperandArrivalTime(Operand);
 
+      errs() << "Operand_" + utostr_32(i) << " has arrival time of " << ArrivalTime << "\n";
+
       // Get the name of the operand to denote the name of the dot later.
       std::string OpName = "operand_" + utostr_32(i);
       // Used to denote the sign bit of the operand if it exists.
@@ -596,7 +651,7 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
         if (j < OpWidth) {
           // If it is a known bit, then use the known value.
           if (SM->hasBitMask(Operand)) {
-            SIRBitMask Mask = SM->getBitMask(Operand);
+            BitMask Mask = SM->getBitMask(Operand);
 
             if (Mask.isOneKnownAt(j)) {
               Matrix[i][j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
@@ -608,7 +663,7 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
             }
             else if (Mask.isSameKnownAt(j)) {
               if (SameBit.size() != 0)
-                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(0.0f, 0));
+                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
               else {
                 SameBit = Mangle(OpName) + "[" + utostr_32(j) + "]";
                 Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
@@ -975,6 +1030,137 @@ MatrixType SIRMOAOpt::sumAllSignBitsInMatrix(MatrixType Matrix, unsigned RowNum,
   SignBitMatrix = transportMatrix(SignBitTMatrix, ColumnNum, ++RowNum);  
   MatrixRowType Row = SignBitMatrix[0];
   Matrix.push_back(SignBitMatrix[0]);
+
+  return Matrix;
+}
+
+bool ArrivalTimeCompare(const std::pair<int, float> AT1,
+                        const std::pair<int, float> AT2) {
+  if (AT1.second < AT2.second)
+    return true;
+  else
+    return false;
+}
+
+MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, raw_fd_ostream &Output) {
+  /// First we should check each row by its arrival time to identify which rows can be
+  /// summed by adder without increasing critical path delay of compressor tree.
+
+  // Collect the arrival time of each row and sort it in ascending order.
+  std::vector<std::pair<int, float> > ArrivalTimes;
+  for (unsigned i = 0; i < Matrix.size(); ++i) {
+    MatrixRowType Row = Matrix[i];
+
+    // Ignore the constant int row.
+    if (isConstantInt(Row))
+      continue;
+
+    float ArrivalTime = 0.0f;
+
+    for (unsigned j = 0; j < Row.size(); ++j) {
+      DotType Dot = Row[j];
+
+      if (Dot.second.first != 0.0f) {
+        if (ArrivalTime == 0.0f)
+          ArrivalTime = Dot.second.first;
+        else
+          assert(ArrivalTime == Dot.second.first && "Unexpected arrival time of dot!");
+      }      
+    }
+
+    assert(ArrivalTime != 0.0f || isConstantInt(Row) && "Unexpected arrival time of row!");
+    ArrivalTimes.push_back(std::make_pair(i, ArrivalTime));
+  }
+  std::sort(ArrivalTimes.begin(), ArrivalTimes.end(), ArrivalTimeCompare);
+
+  // Identify which rows can be summed by adder.
+  std::vector<std::vector<unsigned> > RowsSummedByAdder;  
+  float InputArrivalTime = std::max(ArrivalTimes[0].second,
+                                    std::max(ArrivalTimes[1].second, ArrivalTimes[2].second));
+  float ResultArrivalTime = InputArrivalTime + 1.436f / VFUs::Period;
+
+  if (ResultArrivalTime < ArrivalTimes.back().second) {
+    std::vector<unsigned> AdderOps;
+    AdderOps.push_back(ArrivalTimes[0].first);
+    AdderOps.push_back(ArrivalTimes[1].first);
+    AdderOps.push_back(ArrivalTimes[2].first);
+
+    RowsSummedByAdder.push_back(AdderOps);
+  }
+
+  /// Then according to the result, generate the adder to sum these rows and remember to
+  /// insert the add result back into matrix as new rows.
+
+  // Generate the adders to sum the chosen rows.
+  for (unsigned i = 0; i < RowsSummedByAdder.size(); ++i) {
+    std::vector<unsigned> AdderOpIdxs = RowsSummedByAdder[i];
+
+    // The operands of current adder.
+    for (unsigned j = 0; j < AdderOpIdxs.size(); ++j) {
+      unsigned AdderOpIdx = AdderOpIdxs[j];
+
+      Output << "wire[31:0] Adder_" + utostr_32(i) + "_Op_" + utostr_32(j) << " = {";
+
+      for (unsigned k = 0; k < 32; ++k) {
+        Output << Matrix[AdderOpIdx][32 - 1 - k].first;
+
+        if (k != 32 - 1)
+          Output << ", ";
+        else
+          Output << "};\n";
+      }
+    }
+
+    // The implement of current adder.
+    Output << "wire[31:0] Adder_0 = ";
+    for (unsigned j = 0; j < AdderOpIdxs.size(); ++j) {
+      Output << "Adder_" + utostr_32(i) + "_Op_" + utostr_32(j);
+
+      if (j != AdderOpIdxs.size() - 1)
+        Output << " + ";
+      else
+        Output << ";\n\n";
+    }
+  }
+
+  // Insert the adder result back into matrix.
+  for (unsigned i = 0; i < RowsSummedByAdder.size(); ++i) {
+    std::string AdderName = "Adder_" + utostr_32(i);
+
+    // Get the mask for each operand row of current adder.
+    std::vector<BitMask> AdderOpMasks;
+    std::vector<unsigned> AdderOpIdxs = RowsSummedByAdder[i];
+    for (unsigned j = 0; j < AdderOpIdxs.size(); ++j) {
+      unsigned AdderOpIdx = AdderOpIdxs[j];
+      MatrixRowType AdderOp = Matrix[AdderOpIdx];
+
+      // Initialize a empty mask.
+      BitMask Mask = BitMask(32);
+
+      // Set each bit of mask according to the dot in row.
+      for (unsigned k = 0; k < 32; ++k) {
+        if (AdderOp[k].first == "1'b0")
+          Mask.setKnownZeroAt(k);
+        else if (AdderOp[k].first == "1'b1")
+          Mask.setKnownOneAt(k);
+      }
+
+      AdderOpMasks.push_back(Mask);
+
+      Mask.print(errs());
+    }
+
+    // Calculate the mask of adder result.
+    BitMask ResultMask = BitMaskAnalysis::computeAdd(AdderOpMasks[0], AdderOpMasks[1], 32);
+
+    ResultMask.print(errs());
+
+    MatrixRowType AdderResultRow = createDotMatrixRow(AdderName, 32, 32, 0.0f, BitMask(32));
+
+    int temp = 0;
+  }
+
+
 
   return Matrix;
 }

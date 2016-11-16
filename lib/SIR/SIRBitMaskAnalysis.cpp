@@ -1,90 +1,21 @@
-#include "sir/SIR.h"
-#include "sir/SIRBuild.h"
-#include "sir/SIRPass.h"
-#include "sir/Passes.h"
-
-#include "vast/LuaI.h"
-
-#include "llvm/ADT/Statistic.h"
+#include "sir/BitMaskAnalysis.h"
 
 using namespace llvm;
 using namespace vast;
 
-namespace {
-struct SIRBitMaskAnalysis : public SIRPass {
-  SIR *SM;
-  DataLayout *TD;
-
-  // Avoid visit the instruction twice in traverse.
-  std::set<Instruction *> Visited;
-
-  static char ID;
-  SIRBitMaskAnalysis() : SIRPass(ID) {
-    initializeSIRBitMaskAnalysisPass(*PassRegistry::getPassRegistry());
-  }
-
-  void printMask(raw_fd_ostream &Output);
-  void verifyMaskCorrectness();
-
-  // Bit extraction of BitMasks.
-  APInt getBitExtraction(const APInt &OriginMask,
-                         unsigned UB, unsigned LB) const {
-    if (UB != OriginMask.getBitWidth() || LB != 0)
-      return OriginMask.lshr(LB).sextOrTrunc(UB - LB);
-
-    return OriginMask;
-  }
-
-  SIRBitMask computeAnd(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask computeOr(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask computeNot(SIRBitMask Mask);
-  SIRBitMask computeXor(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask computeRand(SIRBitMask Mask);
-  SIRBitMask computeRxor(SIRBitMask Mask);
-  SIRBitMask computeBitCat(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask computeBitExtract(SIRBitMask Mask, unsigned UB, unsigned LB);
-  SIRBitMask computeBitRepeat(SIRBitMask Mask, unsigned RepeatTimes);
-  SIRBitMask computeAdd(SIRBitMask LHS, SIRBitMask RHS, unsigned ResultBitWidth);
-  SIRBitMask computeAddc(SIRBitMask LHS, SIRBitMask RHS, SIRBitMask Carry);
-  SIRBitMask computeMul(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask computeShl(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask computeLshr(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask computeAshr(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask computeUgt(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask computeSgt(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask computeUDiv(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask computeSDiv(SIRBitMask LHS, SIRBitMask RHS);
-
-  SIRBitMask computeMask(Instruction *Inst, SIR *SM, DataLayout *TD);
-  bool computeAndUpdateMask(Instruction *Inst);
-  bool traverseFromRoot(Value *Val);
-  bool traverseDatapath();
-
-  bool runIteration();
-  bool runOnSIR(SIR &SM);
-
-  void getAnalysisUsage(AnalysisUsage &AU) const {
-    SIRPass::getAnalysisUsage(AU);
-    AU.addRequired<DataLayout>();
-    AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
-    AU.setPreservesAll();
-  }
-};
-}
-
-char SIRBitMaskAnalysis::ID = 0;
-char &llvm::SIRBitMaskAnalysisID = SIRBitMaskAnalysis::ID;
-INITIALIZE_PASS_BEGIN(SIRBitMaskAnalysis, "sir-bit-mask-analysis",
-                      "Perform the bit-level optimization",
+char BitMaskAnalysis::ID = 0;
+char &llvm::BitMaskAnalysisID = BitMaskAnalysis::ID;
+INITIALIZE_PASS_BEGIN(BitMaskAnalysis, "bit-mask-analysis",
+                      "Perform the bit-level analysis",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForCodeGen)
-INITIALIZE_PASS_END(SIRBitMaskAnalysis, "sir-bit-mask-analysis",
-                    "Perform the bit-level optimization",
+INITIALIZE_PASS_END(BitMaskAnalysis, "bit-mask-analysis",
+                    "Perform the bit-level analysis",
                     false, true)
 
-SIRBitMask SIRBitMaskAnalysis::computeAnd(SIRBitMask LHS, SIRBitMask RHS) {
-  return SIRBitMask(
+BitMask BitMaskAnalysis::computeAnd(BitMask LHS, BitMask RHS) {
+  return BitMask(
     // If any zero in some bits of one of operands, then these bits of result will be zero
     LHS.getKnownZeros() | RHS.getKnownZeros(),
     // If any one in some bits of both two operands, then these bits of result will be one
@@ -93,8 +24,8 @@ SIRBitMask SIRBitMaskAnalysis::computeAnd(SIRBitMask LHS, SIRBitMask RHS) {
     LHS.getKnownSames() & RHS.getKnownSames());
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeOr(SIRBitMask LHS, SIRBitMask RHS) {
-  return SIRBitMask(
+BitMask BitMaskAnalysis::computeOr(BitMask LHS, BitMask RHS) {
+  return BitMask(
     // If any zero in some bits of both two operands, then these bits of result will be zero
     LHS.getKnownZeros() & RHS.getKnownZeros(),
     // If any one in some bits of one of operands, then these bits of result will be one
@@ -103,12 +34,12 @@ SIRBitMask SIRBitMaskAnalysis::computeOr(SIRBitMask LHS, SIRBitMask RHS) {
     LHS.getKnownSames() & RHS.getKnownSames());
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeNot(SIRBitMask Mask) {
-  return SIRBitMask(Mask.getKnownOnes(), Mask.getKnownZeros(), Mask.getKnownSames());
+BitMask BitMaskAnalysis::computeNot(BitMask Mask) {
+  return BitMask(Mask.getKnownOnes(), Mask.getKnownZeros(), Mask.getKnownSames());
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeXor(SIRBitMask LHS, SIRBitMask RHS) {
-  return SIRBitMask(
+BitMask BitMaskAnalysis::computeXor(BitMask LHS, BitMask RHS) {
+  return BitMask(
     // If some bits of both two operands are known to be same, then these bits of result will be zero
     (LHS.getKnownZeros() & RHS.getKnownZeros()) | (LHS.getKnownOnes() & RHS.getKnownOnes()),
     // If some bits of both two operands are known to be different, then these bits of result will be one
@@ -117,130 +48,93 @@ SIRBitMask SIRBitMaskAnalysis::computeXor(SIRBitMask LHS, SIRBitMask RHS) {
     LHS.getKnownSames() & RHS.getKnownSames());
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeRand(SIRBitMask Mask) {
-  return Mask.isAllOneKnown() ? SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1)) :
-                                (Mask.hasAnyZeroKnown() ? SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1)) : SIRBitMask(APInt::getNullValue(1), APInt::getNullValue(1), APInt::getNullValue(1)));
+BitMask BitMaskAnalysis::computeRand(BitMask Mask) {
+  return Mask.isAllOneKnown() ? BitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1)) :
+                                (Mask.hasAnyZeroKnown() ? BitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1)) : BitMask(APInt::getNullValue(1), APInt::getNullValue(1), APInt::getNullValue(1)));
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeRxor(SIRBitMask Mask) {
+BitMask BitMaskAnalysis::computeRxor(BitMask Mask) {
   if (Mask.hasAnyOneKnown() && Mask.hasAnyZeroKnown())
-    return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
+    return BitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
   else if (Mask.isAllOneKnown() || Mask.isAllZeroKnown())
-    return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
+    return BitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
   else
-    return SIRBitMask(APInt::getNullValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
+    return BitMask(APInt::getNullValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeBitCat(SIRBitMask LHS, SIRBitMask RHS) {
+BitMask BitMaskAnalysis::computeBitCat(BitMask LHS, BitMask RHS) {
   unsigned MaskWidth = LHS.getMaskWidth() + RHS.getMaskWidth();
 
   APInt KnownZeros = LHS.getKnownZeros().zextOrSelf(MaskWidth).shl(RHS.getMaskWidth()) | RHS.getKnownZeros().zextOrSelf(MaskWidth);
   APInt KnownOnes = LHS.getKnownOnes().zextOrSelf(MaskWidth).shl(RHS.getMaskWidth()) | RHS.getKnownOnes().zextOrSelf(MaskWidth);
 
-  return SIRBitMask(KnownZeros, KnownOnes, LHS.getKnownSames().zextOrSelf(MaskWidth).shl(RHS.getMaskWidth()));;
+  return BitMask(KnownZeros, KnownOnes, LHS.getKnownSames().zextOrSelf(MaskWidth).shl(RHS.getMaskWidth()));;
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeBitExtract(SIRBitMask Mask, unsigned UB, unsigned LB) {
-  return SIRBitMask(getBitExtraction(Mask.getKnownZeros(), UB, LB),
-                    getBitExtraction(Mask.getKnownOnes(), UB, LB),
-                    getBitExtraction(Mask.getKnownSames(), UB, LB));
+BitMask BitMaskAnalysis::computeBitExtract(BitMask Mask, unsigned UB, unsigned LB) {
+  return BitMask(getBitExtraction(Mask.getKnownZeros(), UB, LB),
+                 getBitExtraction(Mask.getKnownOnes(), UB, LB),
+                 getBitExtraction(Mask.getKnownSames(), UB, LB));
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeBitRepeat(SIRBitMask Mask, unsigned RepeatTimes) {
-  SIRBitMask NewMask = computeBitCat(Mask, Mask);
+BitMask BitMaskAnalysis::computeBitRepeat(BitMask Mask, unsigned RepeatTimes) {
+  BitMask NewMask = computeBitCat(Mask, Mask);
 
   for (unsigned i = 2; i < RepeatTimes; ++i) {
     NewMask = computeBitCat(NewMask, Mask);
   }
 
   if (!Mask.isAllBitKnown())
-    NewMask = SIRBitMask(NewMask.getKnownZeros(), NewMask.getKnownOnes(), APInt::getAllOnesValue(RepeatTimes));
+    NewMask = BitMask(NewMask.getKnownZeros(), NewMask.getKnownOnes(), APInt::getAllOnesValue(RepeatTimes));
 
   return NewMask;
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeAdd(SIRBitMask LHS, SIRBitMask RHS, unsigned ResultBitWidth) {
+BitMask BitMaskAnalysis::computeAdd(BitMask LHS, BitMask RHS, unsigned ResultBitWidth) {
   unsigned BitWidth = LHS.getMaskWidth();
   assert(BitWidth == RHS.getMaskWidth() && "BitWidth not matches!");
 
-  // Without consideration of cin, the known bits of sum will be
-  // determined by s = a ^ b;
-  SIRBitMask S = computeXor(LHS, RHS);
+  // Initialize a empty mask.
+  BitMask ResultBitMask(ResultBitWidth);
 
-  // Without consideration of cin, the known bits of sum will be
-  // determined by c = a & b;
-  SIRBitMask C = computeAnd(LHS, RHS);
+  // Calculate each bit of result mask by analyzing the adder in carry-propagate form.
+  BitMask Carry
+    = BitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
+  for (unsigned i = 0; i < ResultBitWidth; ++i) {
+    if (i < BitWidth) {
+      BitMask LHSBit = computeBitExtract(LHS, i + 1, i);
+      BitMask RHSBit = computeBitExtract(RHS, i + 1, i);
 
-  SIRBitMask Carry = computeBitExtract(C, BitWidth, BitWidth - 1);
-  for (unsigned i = 0; i < BitWidth; ++i) {
-    // If there is not any known bits of S, then we will get nothing.
-    // Also, if there is all known zero bits of C, then the result
-    // will always be same with S.
-    if (!S.hasAnyBitKnown() || C.isAllZeroKnown())
-      break;
+      BitMask S = computeXor(computeXor(LHSBit, RHSBit), Carry);
 
-    // Shift the C since the cout of this bit will be the cin
-    // of the next bit.
-    SIRBitMask ShiftedC = C.shl(1);
+      BitMask C0 = computeAnd(LHSBit, RHSBit);
+      BitMask C1 = computeAnd(LHSBit, Carry);
+      BitMask C2 = computeAnd(RHSBit, Carry);
+      Carry = computeOr(computeOr(C0, C1), C2);
 
-    // Calculate the mask bit by bit considering the cin.
-    C = computeAnd(S, ShiftedC);
-    S = computeXor(S, ShiftedC);
+      if (S.isZeroKnownAt(0))
+        ResultBitMask.setKnownZeroAt(i);
+      else if (S.isOneKnownAt(0))
+        ResultBitMask.setKnownOneAt(i);
+    }
+    else {
+      if (Carry.isZeroKnownAt(0))
+        ResultBitMask.setKnownZeroAt(i);
+      else if (Carry.isOneKnownAt(0))
+        ResultBitMask.setKnownOneAt(i);
 
-    Carry = computeXor(Carry, computeBitExtract(C, BitWidth, BitWidth - 1));
+      Carry = BitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1),
+                      APInt::getNullValue(1));
+    }    
   }
 
-  SIRBitMask MaskWithCarry =  computeBitCat(Carry, S);
-
-  if (ResultBitWidth >= MaskWithCarry.getMaskWidth())
-    return SIRBitMask(MaskWithCarry.getKnownZeros().zextOrSelf(ResultBitWidth),
-                      MaskWithCarry.getKnownOnes().zextOrSelf(ResultBitWidth),
-                      MaskWithCarry.getKnownSames().zextOrSelf(ResultBitWidth));
-  else
-    return computeBitExtract(MaskWithCarry, ResultBitWidth, 0);
+  return ResultBitMask;
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeAddc(SIRBitMask LHS, SIRBitMask RHS, SIRBitMask Carry) {
-  unsigned BitWidth = LHS.getMaskWidth();
-  assert(BitWidth == RHS.getMaskWidth() && "BitWidth not matches!");
-  assert(Carry.getMaskWidth() == 1 && "Unexpected Carry BitWidth!");
-
-  // Without consideration of cin, the known bits of sum will be
-  // determined by s = a ^ b;
-  SIRBitMask S = computeXor(LHS, RHS);
-
-  // Without consideration of cin, the known bits of sum will be
-  // determined by c = a & b; To be noted that, the cin will
-  // catenate with the result.
-  SIRBitMask C = computeAnd(LHS, RHS);
-
-  for (unsigned i = 0; i < BitWidth; ++i) {
-    // If there is not any known bits of S, then we will get nothing.
-    // Also, if there is all known zero bits of C, then the result
-    // will always be same with S.
-    if (!S.hasAnyBitKnown() || (C.isAllZeroKnown() && Carry.isAllZeroKnown()))
-      break;
-
-    // Shift the C since the cout of this bit will be the cin
-    // of the next bit.
-    SIRBitMask ShiftedC = C.shl(1);
-
-    // Consider the Cin.
-    if (i == 0)
-      ShiftedC = computeAnd(ShiftedC, Carry.extend(BitWidth));
-
-    // Calculate the mask bit by bit considering the cin.
-    S = computeXor(S, ShiftedC);
-    C = computeAnd(S, ShiftedC);
-  }
-
-  return S;
-}
-
-SIRBitMask SIRBitMaskAnalysis::computeMul(SIRBitMask LHS, SIRBitMask RHS) {
+BitMask BitMaskAnalysis::computeMul(BitMask LHS, BitMask RHS) {
   unsigned BitWidth = LHS.getMaskWidth() + RHS.getMaskWidth();
 
-  SIRBitMask R(APInt::getAllOnesValue(BitWidth),
+  BitMask R(APInt::getAllOnesValue(BitWidth),
                APInt::getNullValue(BitWidth),
                APInt::getNullValue(BitWidth));
 
@@ -253,14 +147,14 @@ SIRBitMask SIRBitMaskAnalysis::computeMul(SIRBitMask LHS, SIRBitMask RHS) {
     // If the i-th bit is known 1 in RHS, we always add the shifted LHS
     // to the result in this case.
     if (RHS.isOneKnownAt(i))
-      R = computeAdd(R, SIRBitMask(LHS.getKnownZeros().zextOrSelf(BitWidth),
+      R = computeAdd(R, BitMask(LHS.getKnownZeros().zextOrSelf(BitWidth),
                                    LHS.getKnownOnes().zextOrSelf(BitWidth),
                                    LHS.getKnownSames().zextOrSelf(BitWidth)),
                      BitWidth);
     // If the current bit is unknown, then we must make sure the known
     // zero bits of LHS is passed to the partial product.
     else if (!RHS.isZeroKnownAt(i)) {
-      SIRBitMask Mask(LHS.getKnownZeros().zextOrSelf(BitWidth), APInt::getNullValue(BitWidth), LHS.getKnownSames().zextOrSelf(BitWidth));
+      BitMask Mask(LHS.getKnownZeros().zextOrSelf(BitWidth), APInt::getNullValue(BitWidth), LHS.getKnownSames().zextOrSelf(BitWidth));
       R = computeAdd(R, Mask, BitWidth);
     }
 
@@ -275,11 +169,11 @@ SIRBitMask SIRBitMaskAnalysis::computeMul(SIRBitMask LHS, SIRBitMask RHS) {
   return R;
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeShl(SIRBitMask LHS, SIRBitMask RHS) {
+BitMask BitMaskAnalysis::computeShl(BitMask LHS, BitMask RHS) {
   unsigned RHSMaxWidth = std::min(Log2_32_Ceil(LHS.getMaskWidth()),
                                   RHS.getMaskWidth());
 
-  SIRBitMask R = LHS;
+  BitMask R = LHS;
   for (unsigned i = 0; i < RHSMaxWidth; ++i) {
     // If the i-th bit is known one in RHS, we always add the shifted
     // LHS to the result in this case.
@@ -295,8 +189,8 @@ SIRBitMask SIRBitMaskAnalysis::computeShl(SIRBitMask LHS, SIRBitMask RHS) {
   return R;
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeLshr(SIRBitMask LHS, SIRBitMask RHS) {
-  SIRBitMask R = LHS;
+BitMask BitMaskAnalysis::computeLshr(BitMask LHS, BitMask RHS) {
+  BitMask R = LHS;
   for (unsigned i = 0; i < RHS.getMaskWidth(); ++i) {
     // If the i-th bit is known one in RHS, we always add the shifted
     // LHS to the result in this case.
@@ -312,11 +206,11 @@ SIRBitMask SIRBitMaskAnalysis::computeLshr(SIRBitMask LHS, SIRBitMask RHS) {
   return R;
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeAshr(SIRBitMask LHS, SIRBitMask RHS) {
+BitMask BitMaskAnalysis::computeAshr(BitMask LHS, BitMask RHS) {
   unsigned RHSMaxWidth = std::min(Log2_32_Ceil(LHS.getMaskWidth()),
     RHS.getMaskWidth());
 
-  SIRBitMask R = LHS;
+  BitMask R = LHS;
   for (unsigned i = 0; i < RHSMaxWidth && R.hasAnyBitKnown(); ++i) {
     // If the i-th bit is known one in RHS, we always add the shifted
     // LHS to the result in this case.
@@ -332,7 +226,7 @@ SIRBitMask SIRBitMaskAnalysis::computeAshr(SIRBitMask LHS, SIRBitMask RHS) {
   return R;
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeUgt(SIRBitMask LHS, SIRBitMask RHS) {
+BitMask BitMaskAnalysis::computeUgt(BitMask LHS, BitMask RHS) {
   unsigned BitWidth = LHS.getMaskWidth();
   assert(BitWidth == RHS.getMaskWidth() && "Mask width not matches!");
 
@@ -341,33 +235,33 @@ SIRBitMask SIRBitMaskAnalysis::computeUgt(SIRBitMask LHS, SIRBitMask RHS) {
       (LHS.isOneKnownAt(BitWidth - 1 - i) && RHS.isOneKnownAt(BitWidth - 1 - i)))
       continue;
     else if (LHS.isOneKnownAt(BitWidth - 1 - i) && RHS.isZeroKnownAt(BitWidth - 1 - i))
-      return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
+      return BitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
     else if (LHS.isZeroKnownAt(BitWidth - 1 - i) && RHS.isOneKnownAt(BitWidth - 1 - i))
-      return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
+      return BitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
     else
-      return SIRBitMask(1);
+      return BitMask(1);
   }
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeSgt(SIRBitMask LHS, SIRBitMask RHS) {
+BitMask BitMaskAnalysis::computeSgt(BitMask LHS, BitMask RHS) {
   unsigned BitWidth = LHS.getMaskWidth();
   assert(BitWidth == RHS.getMaskWidth() && "Mask width not matches!");
 
   if (LHS.isZeroKnownAt(BitWidth - 1) && RHS.isOneKnownAt(BitWidth - 1))
-    return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
+    return BitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
   else if (LHS.isOneKnownAt(BitWidth - 1) && RHS.isZeroKnownAt(BitWidth - 1))
-    return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
+    return BitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
   else if (LHS.isZeroKnownAt(BitWidth - 1) && RHS.isZeroKnownAt(BitWidth - 1)) {
     for (unsigned i = 0; i < BitWidth - 1; ++i) {
       if ((LHS.isZeroKnownAt(BitWidth - 2 - i) && RHS.isZeroKnownAt(BitWidth - 2 - i)) ||
         (LHS.isOneKnownAt(BitWidth - 2 - i) && RHS.isOneKnownAt(BitWidth - 2 - i)))
         continue;
       else if (LHS.isOneKnownAt(BitWidth - 2 - i) && RHS.isZeroKnownAt(BitWidth - 2 - i))
-        return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
+        return BitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
       else if (LHS.isZeroKnownAt(BitWidth - 2 - i) && RHS.isOneKnownAt(BitWidth - 2 - i))
-        return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
+        return BitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
       else
-        return SIRBitMask(1);
+        return BitMask(1);
     }
   } else if (LHS.isOneKnownAt(BitWidth - 1) && RHS.isOneKnownAt(BitWidth - 1)) {
     for (unsigned i = 0; i < BitWidth - 1; ++i) {
@@ -375,25 +269,25 @@ SIRBitMask SIRBitMaskAnalysis::computeSgt(SIRBitMask LHS, SIRBitMask RHS) {
         (LHS.isOneKnownAt(BitWidth - 2 - i) && RHS.isOneKnownAt(BitWidth - 2 - i)))
         continue;
       else if (LHS.isOneKnownAt(BitWidth - 2 - i) && RHS.isZeroKnownAt(BitWidth - 2 - i))
-        return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));       
+        return BitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));       
       else if (LHS.isZeroKnownAt(BitWidth - 2 - i) && RHS.isOneKnownAt(BitWidth - 2 - i))
-        return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
+        return BitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
       else
-        return SIRBitMask(1);
+        return BitMask(1);
     }
   } else
-    return SIRBitMask(1);  
+    return BitMask(1);  
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeUDiv(SIRBitMask LHS, SIRBitMask RHS) {
-  return SIRBitMask(LHS.getMaskWidth());
+BitMask BitMaskAnalysis::computeUDiv(BitMask LHS, BitMask RHS) {
+  return BitMask(LHS.getMaskWidth());
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeSDiv(SIRBitMask LHS, SIRBitMask RHS) {
-  return SIRBitMask(LHS.getMaskWidth());
+BitMask BitMaskAnalysis::computeSDiv(BitMask LHS, BitMask RHS) {
+  return BitMask(LHS.getMaskWidth());
 }
 
-SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayout *TD) {
+BitMask BitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayout *TD) {
   // Handle the special non-intrinsic instruction in SIR.
   if (isa<PtrToIntInst>(Inst) || isa<IntToPtrInst>(Inst) || isa<BitCastInst>(Inst)) {
     Value *Operand = Inst->getOperand(0);
@@ -405,14 +299,14 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
       assert(isa<GlobalValue>(Operand) || (SM->lookupSIRReg(Operand) != NULL) ||
              isa<Argument>(Operand) || isa<UndefValue>(Operand) && "Unexpected value type!");
 
-      SIRBitMask Mask(BitWidth);
+      BitMask Mask(BitWidth);
 
       SM->IndexVal2BitMask(Operand, Mask);
       SM->IndexVal2BitMask(Inst, Mask);
       return Mask;
     }
 
-    SIRBitMask OperandMask = SM->getBitMask(Operand);
+    BitMask OperandMask = SM->getBitMask(Operand);
     SM->IndexVal2BitMask(Inst, OperandMask);
 
     return OperandMask;
@@ -420,7 +314,7 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
 
   assert(isa<IntrinsicInst>(Inst) && "Unexpected instruction type!");
 
-  SmallVector<SIRBitMask, 4> Masks;
+  SmallVector<BitMask, 4> Masks;
   for (unsigned i = 0; i < Inst->getNumOperands() - 1; ++i) {
     Value *Op = Inst->getOperand(i);
     unsigned BitWidth = TD->getTypeSizeInBits(Op->getType());
@@ -428,14 +322,14 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
     // The ports of module will not have mask.
     if (!SM->hasBitMask(Op)) {
       if (Instruction *Inst = dyn_cast<Instruction>(Op)) {
-        SIRBitMask Mask(BitWidth);
+        BitMask Mask(BitWidth);
 
         Masks.push_back(Mask);
         continue;
       }
 
       if (SIRRegister *Reg = SM->lookupSIRReg(Op)) {
-        Masks.push_back(SIRBitMask(BitWidth));
+        Masks.push_back(BitMask(BitWidth));
         continue;
       }
 
@@ -450,7 +344,7 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
         assert(SignBits > 0 && "Unexpected result!");
 
         if (SignBits == 1) {
-          SIRBitMask Mask = SIRBitMask(~CIAPInt, CIAPInt, CIAPInt.getNullValue(CIAPInt.getBitWidth()));
+          BitMask Mask = BitMask(~CIAPInt, CIAPInt, CIAPInt.getNullValue(CIAPInt.getBitWidth()));
           SM->IndexVal2BitMask(Op, Mask);
 
           Masks.push_back(Mask);
@@ -460,16 +354,16 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
           KnownSignBits = KnownSignBits.lshr(CIAPInt.getBitWidth() - SignBits);
           KnownSignBits = KnownSignBits.shl(CIAPInt.getBitWidth() - SignBits);
 
-          SIRBitMask Mask = SIRBitMask(~CIAPInt, CIAPInt, KnownSignBits);
+          BitMask Mask = BitMask(~CIAPInt, CIAPInt, KnownSignBits);
           SM->IndexVal2BitMask(Op, Mask);
 
-          Masks.push_back(SIRBitMask(~CIAPInt, CIAPInt,KnownSignBits));
+          Masks.push_back(BitMask(~CIAPInt, CIAPInt,KnownSignBits));
         }
 
         continue;
       }
 
-      Masks.push_back(SIRBitMask(BitWidth));
+      Masks.push_back(BitMask(BitWidth));
       continue;
     }
 
@@ -539,7 +433,7 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
 
     unsigned BitWidth = TD->getTypeSizeInBits(Inst->getType());
 
-    SIRBitMask UpdateMask = computeAdd(Masks[0], Masks[1], BitWidth);
+    BitMask UpdateMask = computeAdd(Masks[0], Masks[1], BitWidth);
     UpdateMask = computeAdd(UpdateMask, Masks[2].extend(BitWidth), BitWidth);
 
     if (BitWidth < UpdateMask.getMaskWidth())
@@ -552,7 +446,7 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
 
     unsigned BitWidth = TD->getTypeSizeInBits(Inst->getType());
 
-    SIRBitMask UpdateMask = computeAdd(Masks[0], Masks[1], BitWidth);
+    BitMask UpdateMask = computeAdd(Masks[0], Masks[1], BitWidth);
 
     if (BitWidth < UpdateMask.getMaskWidth())
       UpdateMask = computeBitExtract(UpdateMask, BitWidth, 0);
@@ -564,7 +458,7 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
 
     unsigned BitWidth = TD->getTypeSizeInBits(Inst->getType());
 
-    SIRBitMask UpdateMask = computeMul(Masks[0], Masks[1]);
+    BitMask UpdateMask = computeMul(Masks[0], Masks[1]);
 
     if (BitWidth < UpdateMask.getMaskWidth())
       UpdateMask = computeBitExtract(UpdateMask, BitWidth, 0);
@@ -619,11 +513,11 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
     }
 
     if (UnEqual)
-      return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
+      return BitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
     else if (!UnEqual && UnKnown)
-      return SIRBitMask(1);
+      return BitMask(1);
     else
-      return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
+      return BitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
   }
   case Intrinsic::shang_ne: {
     bool UnEqual = false;
@@ -649,11 +543,11 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
     }
 
     if (UnEqual)
-      return SIRBitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
+      return BitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1), APInt::getNullValue(1));
     else if (!UnEqual && UnKnown)
-      return SIRBitMask(1);
+      return BitMask(1);
     else
-      return SIRBitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
+      return BitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1), APInt::getNullValue(1));
   }
   case Intrinsic::shang_udiv: {
     assert(Masks.size() == 2 && "Unexpected numbers of operands!");
@@ -670,32 +564,32 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
 
     //SIRRegister *Reg = SM->lookupSIRReg(Inst);
     //if (Reg->isFUInOut()) {
-    //  return SIRBitMask(Masks[0].getMaskWidth());
+    //  return BitMask(Masks[0].getMaskWidth());
     //}
 
-    //return SIRBitMask(Masks[0].getKnownZeros(),
+    //return BitMask(Masks[0].getKnownZeros(),
     //                  APInt::getNullValue(Masks[0].getMaskWidth()),
     //                  APInt::getNullValue(Masks[0].getMaskWidth()));
 
-    return SIRBitMask(Masks[0].getMaskWidth());
+    return BitMask(Masks[0].getMaskWidth());
   }
   }
 }
 
-bool isDifferentMask(SIRBitMask NewMask, SIRBitMask OldMask) {
+bool isDifferentMask(BitMask NewMask, BitMask OldMask) {
   return ((NewMask.getKnownOnes() != OldMask.getKnownOnes()) ||
           (NewMask.getKnownZeros() != OldMask.getKnownZeros()) ||
           (NewMask.getKnownSames() != OldMask.getKnownSames()));
 }
 
-bool SIRBitMaskAnalysis::computeAndUpdateMask(Instruction *Inst) {
+bool BitMaskAnalysis::computeAndUpdateMask(Instruction *Inst) {
   unsigned BitWidth = TD->getTypeSizeInBits(Inst->getType());
 
-  SIRBitMask OldMask(BitWidth);
+  BitMask OldMask(BitWidth);
   if (SM->hasBitMask(Inst))
     OldMask = SM->getBitMask(Inst);
 
-  SIRBitMask NewMask = computeMask(Inst, SM, TD);
+  BitMask NewMask = computeMask(Inst, SM, TD);
 
   if (isDifferentMask(NewMask, OldMask)) {
     NewMask.mergeKnownByOr(OldMask);
@@ -708,7 +602,7 @@ bool SIRBitMaskAnalysis::computeAndUpdateMask(Instruction *Inst) {
   return false;
 }
 
-bool SIRBitMaskAnalysis::traverseFromRoot(Value *Val) {
+bool BitMaskAnalysis::traverseFromRoot(Value *Val) {
   Instruction *Inst = dyn_cast<Instruction>(Val);
   assert(Inst && "Unexpected value type!");
 
@@ -762,7 +656,7 @@ bool SIRBitMaskAnalysis::traverseFromRoot(Value *Val) {
   return Changed;
 }
 
-bool SIRBitMaskAnalysis::traverseDatapath() {
+bool BitMaskAnalysis::traverseDatapath() {
   bool Changed = false;
 
   typedef SIR::register_iterator iterator;
@@ -775,7 +669,7 @@ bool SIRBitMaskAnalysis::traverseDatapath() {
   return Changed;
 }
 
-void SIRBitMaskAnalysis::printMask(raw_fd_ostream &Output) {
+void BitMaskAnalysis::printMask(raw_fd_ostream &Output) {
   // Visit the basic block in topological order.
   Function *F = SM->getFunction();
 
@@ -795,7 +689,7 @@ void SIRBitMaskAnalysis::printMask(raw_fd_ostream &Output) {
       if (!SM->hasBitMask(Inst)) {
         continue;
       }
-      SIRBitMask Mask = SM->getBitMask(Inst);
+      BitMask Mask = SM->getBitMask(Inst);
 
       Value *KnownZeros = Builder.createIntegerValue(Mask.getKnownZeros());
       Value *KnownOnes = Builder.createIntegerValue(Mask.getKnownOnes());         
@@ -810,7 +704,7 @@ void SIRBitMaskAnalysis::printMask(raw_fd_ostream &Output) {
   Output << "\n\n\n";
 }
 
-void SIRBitMaskAnalysis::verifyMaskCorrectness() {
+void BitMaskAnalysis::verifyMaskCorrectness() {
   Function *F = SM->getFunction();
   SIRDatapathBuilder Builder(SM, *TD);
 
@@ -831,7 +725,7 @@ void SIRBitMaskAnalysis::verifyMaskCorrectness() {
       if (MaskedVals.count(Inst))
         continue;
 
-      SIRBitMask Mask = SM->getBitMask(Inst);
+      BitMask Mask = SM->getBitMask(Inst);
 
       if (!Mask.hasAnyBitKnown())
         continue;
@@ -861,7 +755,7 @@ void SIRBitMaskAnalysis::verifyMaskCorrectness() {
   }
 }
 
-bool SIRBitMaskAnalysis::runIteration() {
+bool BitMaskAnalysis::runIteration() {
   bool Changed = false;
 
   Changed |= traverseDatapath();
@@ -869,7 +763,7 @@ bool SIRBitMaskAnalysis::runIteration() {
   return Changed;
 }
 
-bool SIRBitMaskAnalysis::runOnSIR(SIR &SM) {
+bool BitMaskAnalysis::runOnSIR(SIR &SM) {
   this->TD = &getAnalysis<DataLayout>();
   this->SM = &SM;
 
@@ -882,7 +776,7 @@ bool SIRBitMaskAnalysis::runOnSIR(SIR &SM) {
 
   while(runIteration());
 
-  //verifyMaskCorrectness();
+  verifyMaskCorrectness();
   printMask(Output);
 
   return false;

@@ -33,7 +33,7 @@ struct DFGBuild : public SIRPass {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
     // Build DFG after the register synthesis temporary.
-    AU.addRequiredID(SIRBitMaskAnalysisID);
+    AU.addRequiredID(BitMaskAnalysisID);
     AU.setPreservesAll();
   }
 };

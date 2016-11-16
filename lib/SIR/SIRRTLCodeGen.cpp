@@ -1139,7 +1139,7 @@ namespace {
       AU.addRequired<DataLayout>();
       AU.addRequiredID(SIRSchedulingID);
       AU.addRequiredID(SIRMOAOptID);
-      AU.addRequiredID(SIRBitMaskAnalysisID);
+      AU.addRequiredID(BitMaskAnalysisID);
       AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
       AU.addRequiredID(SIRTimingScriptGenID);
       AU.setPreservesAll();
@@ -1550,7 +1550,7 @@ INITIALIZE_PASS_BEGIN(SIR2RTL, "shang-sir-verilog-writer",
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(SIRScheduling)
   INITIALIZE_PASS_DEPENDENCY(SIRMOAOpt)
-  INITIALIZE_PASS_DEPENDENCY(SIRBitMaskAnalysis)
+  INITIALIZE_PASS_DEPENDENCY(BitMaskAnalysis)
   INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForCodeGen)
   INITIALIZE_PASS_DEPENDENCY(SIRTimingScriptGen)
   INITIALIZE_PASS_END(SIR2RTL, "shang-sir-verilog-writer",

@@ -89,18 +89,18 @@ void DFGOpt::shrinkOperatorStrength() {
     DFGNode::NodeType Ty = Node->getType();
     unsigned BitWidth = Node->getBitWidth();
     Value *Val = Node->getValue();
-    SIRBitMask Mask;
+    BitMask Mask;
 
     if (SM->hasBitMask(Node))
       Mask = SM->getBitMask(Node);
     else if (Node->getType() == DFGNode::Argument ||
              Node->getType() == DFGNode::UndefVal)
-      Mask = SIRBitMask(BitWidth);
+      Mask = BitMask(BitWidth);
     else
       Mask = SM->getBitMask(Val);
 
     // Get the mask of its parent nodes.
-    std::vector<SIRBitMask> ParentMasks;
+    std::vector<BitMask> ParentMasks;
     typedef DFGNode::iterator parent_iterator;
     for (parent_iterator PI = Node->parent_begin(), PE = Node->parent_end();
          PI != PE; ++PI) {
@@ -109,12 +109,12 @@ void DFGOpt::shrinkOperatorStrength() {
       if (ParentNode->isEntryOrExit())
         continue;
 
-      SIRBitMask ParentMask;
+      BitMask ParentMask;
       if (SM->hasBitMask(ParentNode))
         ParentMask = SM->getBitMask(ParentNode);
       else if (ParentNode->getType() == DFGNode::Argument ||
                ParentNode->getType() == DFGNode::UndefVal) {
-        ParentMask = SIRBitMask(BitWidth);
+        ParentMask = BitMask(BitWidth);
       }
       else {
         Value *ParentVal = ParentNode->getValue();
@@ -140,7 +140,7 @@ void DFGOpt::shrinkOperatorStrength() {
       for (unsigned i = 0; i < BitWidth; ++i) {
         unsigned UnKnown = 0;
         for (unsigned j = 0; j < ParentMasks.size(); ++j) {
-          SIRBitMask ParentMask = ParentMasks[j];
+          BitMask ParentMask = ParentMasks[j];
 
           if (!ParentMask.isBitKnownAt(i))
             ++UnKnown;

@@ -147,27 +147,27 @@ class SIRSubModuleBase;
 class SIRSubModule;
 class SIRMemoryBank;
 
-class SIRBitMask;
+class BitMask;
 
 class SIR;
 }
 
 namespace llvm {
-class SIRBitMask {
+class BitMask {
 private:
   APInt KnownZeros, KnownOnes, KnownSames;
 
 public:
-  SIRBitMask() : KnownZeros(APInt::getNullValue(1)),
+  BitMask() : KnownZeros(APInt::getNullValue(1)),
                  KnownOnes(APInt::getNullValue(1)),
                  KnownSames(APInt::getNullValue(1)) {}
 
-  SIRBitMask(unsigned BitWidth)
+  BitMask(unsigned BitWidth)
     : KnownZeros(APInt::getNullValue(BitWidth)),
       KnownOnes(APInt::getNullValue(BitWidth)),
       KnownSames(APInt::getNullValue(BitWidth)) {}
 
-  SIRBitMask(Value *V, unsigned BitWidth)
+  BitMask(Value *V, unsigned BitWidth)
     : KnownZeros(APInt::getNullValue(BitWidth)),
       KnownOnes(APInt::getNullValue(BitWidth)),
       KnownSames(APInt::getNullValue(BitWidth)) {
@@ -180,7 +180,7 @@ public:
     }
   }
 
-  SIRBitMask(APInt KnownZeros, APInt KnownOnes, APInt KnownSames)
+  BitMask(APInt KnownZeros, APInt KnownOnes, APInt KnownSames)
     : KnownZeros(KnownZeros), KnownOnes(KnownOnes), KnownSames(KnownSames) {
     assert(KnownZeros.getBitWidth() == KnownOnes.getBitWidth() &&
            KnownZeros.getBitWidth() == KnownSames.getBitWidth() && "BitWidth not matches!");
@@ -203,7 +203,7 @@ public:
     assert(!(KnownZeros & KnownOnes) && "BitMasks conflicts!");
   }
 
-  bool isCompatibleWith(const SIRBitMask &Mask) {
+  bool isCompatibleWith(const BitMask &Mask) {
     return getMaskWidth() == Mask.getMaskWidth() &&
            !(KnownOnes & Mask.KnownZeros) && !(KnownZeros & Mask.KnownOnes);
   }
@@ -222,7 +222,7 @@ public:
     verify();
   }
 
-  void mergeKnownByOr(const SIRBitMask &Mask) {
+  void mergeKnownByOr(const BitMask &Mask) {
     assert(isCompatibleWith(Mask) && "BitMask conflicts!");
 
     KnownZeros |= Mask.KnownZeros;
@@ -230,7 +230,7 @@ public:
     KnownSames |= Mask.KnownSames;
     verify();
   }
-  void mergeKnownByAnd(const SIRBitMask &Mask) {
+  void mergeKnownByAnd(const BitMask &Mask) {
     assert(this->getMaskWidth() == Mask.getMaskWidth() && "BitWidth not matches!");
 
     KnownZeros &= Mask.KnownZeros;
@@ -239,35 +239,35 @@ public:
     verify();
   }
 
-  // Bit extraction of BitMasks.
-  APInt getBitExtraction(const APInt &OriginMask,
+  // Bit extraction of BitMask's APInt value.
+  APInt getBitExtraction(const APInt &OriginMaskAPInt,
                          unsigned UB, unsigned LB) const {
-    if (UB != OriginMask.getBitWidth() || LB != 0)
-      return OriginMask.lshr(LB).sextOrTrunc(UB - LB);
+    if (UB != OriginMaskAPInt.getBitWidth() || LB != 0)
+      return OriginMaskAPInt.lshr(LB).sextOrTrunc(UB - LB);
 
-    return OriginMask;
+    return OriginMaskAPInt;
   }
 
   // Shift left and fill the lower bits with zeros.
-  SIRBitMask shl(unsigned i) {
+  BitMask shl(unsigned i) {
     APInt PaddingZeros = APInt::getLowBitsSet(getMaskWidth(), i);
 
-    return SIRBitMask(KnownZeros.shl(i) | PaddingZeros, KnownOnes.shl(i), KnownSames.shl(i));
+    return BitMask(KnownZeros.shl(i) | PaddingZeros, KnownOnes.shl(i), KnownSames.shl(i));
   }
   // Logic shift right and fill the higher bits with zeros.
-  SIRBitMask lshr(unsigned i) {
+  BitMask lshr(unsigned i) {
     APInt PaddingZeros = APInt::getHighBitsSet(getMaskWidth(), i);
 
-    return SIRBitMask(KnownZeros.lshr(i) | PaddingZeros, KnownOnes.lshr(i), KnownSames.lshr(i));
+    return BitMask(KnownZeros.lshr(i) | PaddingZeros, KnownOnes.lshr(i), KnownSames.lshr(i));
   }
   // Arithmetic shift right and fill the higher bits with sign bit. However,
   // this can only be down when it is known.
-  SIRBitMask ashr(unsigned i) {
-    return SIRBitMask(KnownZeros.ashr(i), KnownOnes.ashr(i), KnownSames.ashr(i));
+  BitMask ashr(unsigned i) {
+    return BitMask(KnownZeros.ashr(i), KnownOnes.ashr(i), KnownSames.ashr(i));
   }
   // Extend the width of mask
-  SIRBitMask extend(unsigned BitWidth) {
-    return SIRBitMask(KnownZeros.zextOrSelf(BitWidth), KnownOnes.zextOrSelf(BitWidth), KnownSames.zextOrSelf(BitWidth));
+  BitMask extend(unsigned BitWidth) {
+    return BitMask(KnownZeros.zextOrSelf(BitWidth), KnownOnes.zextOrSelf(BitWidth), KnownSames.zextOrSelf(BitWidth));
   }
 
 #define CREATEBITACCESSORS(WHAT, VALUE) \
@@ -1386,11 +1386,11 @@ public:
   typedef MemInst2SeqOpsMapTy::iterator meminst2seqops_iterator;
   typedef MemInst2SeqOpsMapTy::const_iterator const_meminst2seqops_iterator;
 
-  typedef std::map<Value *, SIRBitMask> Val2BitMaskMapTy;
+  typedef std::map<Value *, BitMask> Val2BitMaskMapTy;
   typedef Val2BitMaskMapTy::iterator val2bitmask_iterator;
   typedef Val2BitMaskMapTy::const_iterator const_val2bitmask_iterator;
 
-  typedef std::map<DFGNode *, SIRBitMask> Node2BitMaskMapTy;
+  typedef std::map<DFGNode *, BitMask> Node2BitMaskMapTy;
   typedef Node2BitMaskMapTy::iterator node2bitmask_iterator;
   typedef Node2BitMaskMapTy::const_iterator const_node2bitmask_iterator;
 
@@ -1675,7 +1675,7 @@ public:
     return at->second;
   }
 
-  bool IndexVal2BitMask(Value *Val, SIRBitMask BitMask) {
+  bool IndexVal2BitMask(Value *Val, BitMask BitMask) {
     BitMask.verify();
 
     if (hasBitMask(Val)) {
@@ -1690,14 +1690,14 @@ public:
     const_val2bitmask_iterator at = Val2BitMask.find(Val);
     return at != Val2BitMask.end();
   }
-  SIRBitMask getBitMask(Value *Val) const {
+  BitMask getBitMask(Value *Val) const {
     assert(hasBitMask(Val) && "Mask not created yet?");
 
     const_val2bitmask_iterator at = Val2BitMask.find(Val);
     return at->second;
   }
 
-  bool IndexNode2BitMask(DFGNode *Node, SIRBitMask BitMask) {
+  bool IndexNode2BitMask(DFGNode *Node, BitMask BitMask) {
     BitMask.verify();
 
     if (hasBitMask(Node)) {
@@ -1712,7 +1712,7 @@ public:
     const_node2bitmask_iterator at = Node2BitMask.find(Node);
     return at != Node2BitMask.end();
   }
-  SIRBitMask getBitMask(DFGNode *Node) const {
+  BitMask getBitMask(DFGNode *Node) const {
     assert(hasBitMask(Node) && "Mask not created yet?");
 
     const_node2bitmask_iterator at = Node2BitMask.find(Node);

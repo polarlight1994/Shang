@@ -192,7 +192,7 @@ DFGNode *DataFlowGraph::createConstantIntNode(APInt Val) {
   ConstantInt *CI = ConstantInt::get(SM->getContext(), Val);
 
   // The mask of constant value is itself.
-  SIRBitMask Mask(~Val, Val, Val.getNullValue(Val.getBitWidth()));
+  BitMask Mask(~Val, Val, Val.getNullValue(Val.getBitWidth()));
 
   SM->IndexVal2BitMask(CI, Mask);
 
