@@ -17,6 +17,8 @@
 
 using namespace llvm;
 
+static unsigned DFGNodeIdx = 1;
+
 void SIRRegister::addAssignment(Value *Fanin, Value *FaninGuard) {
   Fanins.push_back(Fanin);
   FaninGuards.push_back(FaninGuard);
@@ -76,9 +78,108 @@ void SIRPort::printDecl(raw_ostream &OS) const {
   OS << " " << Mangle(getName());
 }
 
-DFGNode *DataFlowGraph::creatDFGNode(std::string Name, Value *Val,
-                                     DFGNode::NodeType Ty, unsigned BitWidth) {
-  DFGNode *Node = new DFGNode(Name, Val, Ty, BitWidth);
+void DataFlowGraph::toposortCone(DFGNode *Root, std::set<DFGNode *> &Visited) {
+  assert(Visited.insert(Root).second && "Unexpected insert failure!");
+
+  /// Start from root, sort all its previous nodes according to the dependencies.
+
+  typedef DFGNode::iterator iterator;
+  std::vector<std::pair<DFGNode *, iterator> > WorkStack;
+  WorkStack.push_back(std::make_pair(Root, Root->parent_begin()));
+
+  while (!WorkStack.empty()) {
+    DFGNode *CurNode = WorkStack.back().first;
+    iterator &It = WorkStack.back().second;
+
+    // Sort the node if all its previous nodes have been visited.
+    if (It == CurNode->parent_end()) {
+      WorkStack.pop_back();
+      DFGNodeList.splice(DFGNodeList.end(), DFGNodeList, CurNode);
+
+      continue;
+    }
+
+    DFGNode *ParentNode = *It;
+    ++It;
+
+    if (ParentNode->getType() == DFGNode::Entry)
+      continue;
+
+    if (!Visited.insert(ParentNode).second)
+      continue;
+
+    WorkStack.push_back(std::make_pair(ParentNode, ParentNode->parent_begin()));
+  }
+}
+
+void DataFlowGraph::topologicalSortNodes() {
+  DFGNode *Entry = getEntry(), *Exit = getExit();
+
+  // Sort the Entry first.
+  DFGNodeList.splice(DFGNodeList.end(), DFGNodeList, Entry);
+
+  /// Use a BFS to visit all nodes and sort the node list
+  /// by taking the visited node as root.
+
+  std::set<DFGNode *> Visited;
+
+  // BFS visit stack.
+  std::list<DFGNode *> VisitStack;
+  typedef DFGNode::iterator iterator;
+  VisitStack.insert(VisitStack.end(), Entry);
+
+  // Start the BFS.
+  while (!VisitStack.empty()) {
+    DFGNode *CurNode = *VisitStack.begin();
+
+    for (iterator I = CurNode->child_begin(), E = CurNode->child_end();
+         I != E; ++I) {
+      DFGNode *ChildNode = *I;
+
+      // If already visited, ignore it.
+      if (Visited.count(ChildNode))
+        continue;
+
+      // Ignore the Exit.
+      if (ChildNode->getType() == DFGNode::Exit)
+        continue;
+
+      toposortCone(ChildNode, Visited);
+
+      VisitStack.insert(VisitStack.end(), ChildNode);
+      Visited.insert(ChildNode);
+    }
+
+    VisitStack.pop_front();
+  }
+
+  // Sort the Exit last.
+  DFGNodeList.splice(DFGNodeList.end(), DFGNodeList, Exit);
+}
+
+DFGNode *DataFlowGraph::createDFGNode(std::string Name, Value *Val, BasicBlock *BB,
+                                      DFGNode::NodeType Ty, unsigned BitWidth) {
+  assert(DFGNodeIdx < UINT_MAX && "Out of range!");
+
+  // Create the DFG node.
+  DFGNode *Node;
+  if (Ty == DFGNode::Add || Ty == DFGNode::Mul || Ty == DFGNode::And ||
+      Ty == DFGNode::Or || Ty == DFGNode::Xor || Ty == DFGNode::EQ ||
+      Ty == DFGNode::NE || Ty == DFGNode::CompressorTree) {
+    assert(BB && "Unexpected parent basic block!");
+
+    Node = new CommutativeDFGNode(DFGNodeIdx++, Name, Val, BB, Ty, BitWidth);
+  }
+  else if (Ty == DFGNode::Div || Ty == DFGNode::LShr || Ty == DFGNode::AShr ||
+           Ty == DFGNode::Shl || Ty == DFGNode::GT || Ty == DFGNode::LT ||
+           Ty == DFGNode::BitExtract || Ty == DFGNode::BitCat ||
+           Ty == DFGNode::BitRepeat || Ty == DFGNode::Register) {
+    assert(BB && "Unexpected parent basic block!");
+
+    Node = new NonCommutativeDFGNode(DFGNodeIdx++, Name, Val, BB, Ty, BitWidth);
+  }
+  else
+    Node = new DFGNode(DFGNodeIdx++, Name, Val, BB, Ty, BitWidth);
 
   // Index the node.
   DFGNodeList.insert(DFGNodeList.back(), Node);
@@ -101,6 +202,7 @@ DFGNode *DataFlowGraph::createDataPathNode(Instruction *Inst, unsigned BitWidth)
     Intrinsic::ID ID = InstII->getIntrinsicID();
 
     switch (ID) {
+    // CommutativeDFGNodes
     case llvm::Intrinsic::shang_add:
     case llvm::Intrinsic::shang_addc:
       Ty = DFGNode::Add;
@@ -173,13 +275,13 @@ DFGNode *DataFlowGraph::createDataPathNode(Instruction *Inst, unsigned BitWidth)
       break;
     }
 
-    Node = creatDFGNode(Name, Inst, Ty, BitWidth);
+    Node = createDFGNode(Name, Inst, Inst->getParent(), Ty, BitWidth);
   }
   else if (isa<IntToPtrInst>(Inst) || isa<PtrToIntInst>(Inst) || isa<BitCastInst>(Inst)) {
-    Node = creatDFGNode(Name, Inst, DFGNode::TypeConversion, BitWidth);
+    Node = createDFGNode(Name, Inst, Inst->getParent(), DFGNode::TypeConversion, BitWidth);
   }
   else if (isa<ReturnInst>(Inst)) {
-    Node = creatDFGNode(Name, Inst, DFGNode::Ret, BitWidth);
+    Node = createDFGNode(Name, Inst, Inst->getParent(), DFGNode::Ret, BitWidth);
   }
   else {
     llvm_unreachable("Unexpected instruction type!");
@@ -188,36 +290,30 @@ DFGNode *DataFlowGraph::createDataPathNode(Instruction *Inst, unsigned BitWidth)
   return Node;
 }
 
-DFGNode *DataFlowGraph::createConstantIntNode(APInt Val) {
-  ConstantInt *CI = ConstantInt::get(SM->getContext(), Val);
+DFGNode *DataFlowGraph::createConstantIntNode(uint64_t Val, unsigned BitWidth) {
+  assert(BitWidth <= 64 && "Out of range!");
 
-  // The mask of constant value is itself.
-  BitMask Mask(~Val, Val, Val.getNullValue(Val.getBitWidth()));
+  std::string Name = utostr(Val);
+  DFGNode *Node = new ConstantIntDFGNode(DFGNodeIdx++, Name, Val, BitWidth);
 
-  SM->IndexVal2BitMask(CI, Mask);
+  // Index the node.
+  DFGNodeList.insert(DFGNodeList.back(), Node);
 
-  return createConstantIntNode(CI, Val.getBitWidth());
+  return Node;
 }
 
 DFGNode *DataFlowGraph::createConstantIntNode(ConstantInt *CI, unsigned BitWidth) {
-  // Basic information of current value.
-  std::string Name = CI->getName();
+  assert(BitWidth <= 64 && "Out of range!");
 
-  // Temporary, we may can't create two DFG nodes with same constant integer value.
-  DFGNode *Node;
-  if (!SM->isDFGNodeExisted(CI))
-    Node = creatDFGNode(Name, CI, DFGNode::ConstantInt, BitWidth);
-  else
-    Node = SM->getDFGNodeOfVal(CI);
-
-  return Node;
+  uint64_t Val = CI->getZExtValue();
+  return createConstantIntNode(Val, BitWidth);
 }
 
 DFGNode *DataFlowGraph::createGlobalValueNode(GlobalValue *GV, unsigned BitWidth) {
   // Basic information of current value.
   std::string Name = GV->getName();
 
-  DFGNode *Node = creatDFGNode(Name, GV, DFGNode::GlobalVal, BitWidth);
+  DFGNode *Node = createDFGNode(Name, GV, NULL, DFGNode::GlobalVal, BitWidth);
 
   return Node;
 }
@@ -226,7 +322,10 @@ DFGNode *DataFlowGraph::createUndefValueNode(UndefValue *UV, unsigned BitWidth) 
   // Basic information of current value.
   std::string Name = UV->getName();
 
-  DFGNode *Node = creatDFGNode(Name, UV, DFGNode::UndefVal, BitWidth);
+  DFGNode *Node = new DFGNode(DFGNodeIdx++, Name, UV, NULL, DFGNode::UndefVal, BitWidth);
+
+  // Index the node.
+  DFGNodeList.insert(DFGNodeList.back(), Node);
 
   return Node;
 }
@@ -235,34 +334,20 @@ DFGNode *DataFlowGraph::createArgumentNode(Argument *Arg, unsigned BitWidth) {
   // Basic information of current value.
   std::string Name = Arg->getName();
 
-  DFGNode *Node = creatDFGNode(Name, Arg, DFGNode::Argument, BitWidth);
+  DFGNode *Node = createDFGNode(Name, Arg, NULL, DFGNode::Argument, BitWidth);
 
   return Node;
 }
 
-void DataFlowGraph::createDependencies(DFGNode *Node) {
-  /// Create dependencies according to the dependencies of
-  /// the instruction which the node represents for.
-  Instruction *Inst = dyn_cast<Instruction>(Node->getValue());
-
-  typedef Instruction::op_iterator op_iterator;
-  for (op_iterator OI = Inst->op_begin(), OE = Inst->op_end(); OI != OE; ++OI) {
-    Value *Op = *OI;
-
-    // Ignore the function declaration which is also regarded as operand in llvm
-    // intermediate representation.
-    if (isa<Function>(Op))
-      continue;
-
-    // The corresponding DFG node of users.
-    DFGNode *OpNode = SM->getDFGNodeOfVal(Op);
-
-    createDependency(OpNode, Node);
+void DataFlowGraph::createDependency(DFGNode *From, DFGNode *To, unsigned Idx) {
+  // Handle the non-commutative node specially since it need to mark the index
+  // of each parent node.
+  if (NonCommutativeDFGNode *NCNode = dyn_cast<NonCommutativeDFGNode>(To)) {
+    NCNode->addParentNode(From, Idx);
   }
-}
-
-void DataFlowGraph::createDependency(DFGNode *From, DFGNode *To) {
-  From->addChildNode(To);
+  else {
+    From->addChildNode(To);
+  }
 
   assert(From->hasChildNode(To) && "Fail to create dependency!");
   assert(To->hasParentNode(From) && "Fail to create dependency!");

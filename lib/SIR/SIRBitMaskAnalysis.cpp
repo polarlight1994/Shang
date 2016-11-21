@@ -9,7 +9,7 @@ INITIALIZE_PASS_BEGIN(BitMaskAnalysis, "bit-mask-analysis",
                       "Perform the bit-level analysis",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
-  INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForCodeGen)
+  INITIALIZE_PASS_DEPENDENCY(DFGBuild)
 INITIALIZE_PASS_END(BitMaskAnalysis, "bit-mask-analysis",
                     "Perform the bit-level analysis",
                     false, true)
@@ -78,21 +78,34 @@ BitMask BitMaskAnalysis::computeBitExtract(BitMask Mask, unsigned UB, unsigned L
 }
 
 BitMask BitMaskAnalysis::computeBitRepeat(BitMask Mask, unsigned RepeatTimes) {
+  assert(Mask.getMaskWidth() == 1 && "Unexpected width!");
+
   BitMask NewMask = computeBitCat(Mask, Mask);
 
   for (unsigned i = 2; i < RepeatTimes; ++i) {
     NewMask = computeBitCat(NewMask, Mask);
   }
 
-  if (!Mask.isAllBitKnown())
-    NewMask = BitMask(NewMask.getKnownZeros(), NewMask.getKnownOnes(), APInt::getAllOnesValue(RepeatTimes));
+  // Remember to set the Known-as-Sign-bit.
+  for (unsigned i = 0; i < RepeatTimes; ++i) {
+    NewMask.setKnownSignAt(i);
+  }
 
   return NewMask;
 }
 
 BitMask BitMaskAnalysis::computeAdd(BitMask LHS, BitMask RHS, unsigned ResultBitWidth) {
-  unsigned BitWidth = LHS.getMaskWidth();
-  assert(BitWidth == RHS.getMaskWidth() && "BitWidth not matches!");
+  unsigned BitWidth = std::max(LHS.getMaskWidth(), RHS.getMaskWidth());
+  if (LHS.getMaskWidth() != BitWidth) {
+    assert(LHS.getMaskWidth() == 1 && "Unexpected width!");
+
+    LHS.extend(BitWidth);
+  }
+  if (RHS.getMaskWidth() != BitWidth) {
+    assert(RHS.getMaskWidth() == 1 && "Unexpected width!");
+
+    RHS.extend(BitWidth);
+  }
 
   // Initialize a empty mask.
   BitMask ResultBitMask(ResultBitWidth);
@@ -576,97 +589,371 @@ BitMask BitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayout *TD)
   }
 }
 
+BitMask BitMaskAnalysis::computeMask(DFGNode *Node) {
+  // Calculate the mask according to the node type.
+  DFGNode::NodeType NodeTy = Node->getType();
+  unsigned BitWidth = Node->getBitWidth();
+
+  // Handle the special node types.
+  if (NodeTy == DFGNode::TypeConversion) {
+    assert(Node->parent_size() == 1 && "Unexpected parent size!");
+    DFGNode *ParentNode = *(Node->parent_begin());
+
+    BitMask ParentMask = getOrCreateMask(ParentNode);
+
+    return ParentMask;
+  }
+  else if (NodeTy == DFGNode::Argument || NodeTy == DFGNode::UndefVal ||
+           NodeTy == DFGNode::GlobalVal) {
+    BitMask Mask = BitMask(BitWidth);
+
+    return Mask;
+  }
+  else if (NodeTy == DFGNode::ConstantInt) {
+    ConstantIntDFGNode *CINode = dyn_cast<ConstantIntDFGNode>(Node);
+    assert(CINode && "Unexpected node type!");
+
+    uint64_t Val = CINode->getIntValue();
+    APInt CIAPInt = APInt(BitWidth, Val);
+    unsigned LeadingZeros = CIAPInt.countLeadingZeros();
+    unsigned LeadingOnes = CIAPInt.countLeadingOnes();
+
+    unsigned SignBits = std::max(LeadingZeros, LeadingOnes);
+    assert(SignBits > 0 && "Unexpected result!");
+
+    if (SignBits == 1) {
+      BitMask Mask = BitMask(~CIAPInt, CIAPInt, CIAPInt.getNullValue(CIAPInt.getBitWidth()));
+
+      return Mask;
+    }
+    else {
+      APInt KnownSignBits = APInt::getAllOnesValue(CIAPInt.getBitWidth());
+      KnownSignBits = KnownSignBits.lshr(CIAPInt.getBitWidth() - SignBits);
+      KnownSignBits = KnownSignBits.shl(CIAPInt.getBitWidth() - SignBits);
+
+      BitMask Mask = BitMask(~CIAPInt, CIAPInt, KnownSignBits);
+
+      return Mask;
+    }
+  }
+  else {
+    // First collect the mask of parent nodes.
+    std::vector<BitMask> ParentMasks;
+    typedef DFGNode::iterator iterator;
+    for (iterator I = Node->parent_begin(), E = Node->parent_end(); I != E; ++I) {
+      DFGNode *ParentNode = *I;
+
+      // Get the mask.
+      BitMask ParentMask = getOrCreateMask(ParentNode);
+      ParentMasks.push_back(ParentMask);
+    }
+
+    switch (NodeTy) {
+    case llvm::DFGNode::Add: {
+      BitMask Mask;
+      if (ParentMasks.size() == 2)
+        Mask = computeAdd(ParentMasks[0], ParentMasks[1], BitWidth);
+      else {
+        Mask = computeAdd(computeAdd(ParentMasks[0], ParentMasks[1], BitWidth),
+                          ParentMasks[2], BitWidth);
+      }
+
+      return Mask;
+    }
+    case llvm::DFGNode::Mul: {
+      assert(ParentMasks.size() == 2 && "Unexpected numbers of operands!");
+
+      BitMask UpdateMask = computeMul(ParentMasks[0], ParentMasks[1]);
+
+      if (BitWidth < UpdateMask.getMaskWidth())
+        UpdateMask = computeBitExtract(UpdateMask, BitWidth, 0);
+
+      return UpdateMask;
+    }
+    case llvm::DFGNode::Div: {
+      assert(ParentMasks.size() == 2 && "Unexpected numbers of operands!");
+
+      NonCommutativeDFGNode *NCNode = dyn_cast<NonCommutativeDFGNode>(Node);
+      assert(NCNode && "Unexpected node type!");
+
+      BitMask LHSMask = getOrCreateMask(NCNode->getParentNode(0));
+      BitMask RHSMask = getOrCreateMask(NCNode->getParentNode(1));
+
+      BitMask Mask = computeUDiv(LHSMask, RHSMask);
+
+      return Mask;
+    }
+    case llvm::DFGNode::LShr: {
+      assert(ParentMasks.size() == 2 && "Unexpected numbers of operands!");
+
+      NonCommutativeDFGNode *NCNode = dyn_cast<NonCommutativeDFGNode>(Node);
+      assert(NCNode && "Unexpected node type!");
+
+      BitMask LHSMask = getOrCreateMask(NCNode->getParentNode(0));
+      BitMask RHSMask = getOrCreateMask(NCNode->getParentNode(1));
+
+      BitMask Mask = computeLshr(LHSMask, RHSMask);
+
+      return Mask;
+    }
+    case llvm::DFGNode::AShr: {
+      assert(ParentMasks.size() == 2 && "Unexpected numbers of operands!");
+
+      NonCommutativeDFGNode *NCNode = dyn_cast<NonCommutativeDFGNode>(Node);
+      assert(NCNode && "Unexpected node type!");
+
+      BitMask LHSMask = getOrCreateMask(NCNode->getParentNode(0));
+      BitMask RHSMask = getOrCreateMask(NCNode->getParentNode(1));
+
+      BitMask Mask = computeAshr(LHSMask, RHSMask);
+
+      return Mask;
+    }
+    case llvm::DFGNode::Shl: {
+      assert(ParentMasks.size() == 2 && "Unexpected numbers of operands!");
+
+      NonCommutativeDFGNode *NCNode = dyn_cast<NonCommutativeDFGNode>(Node);
+      assert(NCNode && "Unexpected node type!");
+
+      BitMask LHSMask = getOrCreateMask(NCNode->getParentNode(0));
+      BitMask RHSMask = getOrCreateMask(NCNode->getParentNode(1));
+
+      BitMask Mask = computeShl(LHSMask, RHSMask);
+
+      return Mask;
+    }
+    case llvm::DFGNode::Not: {
+      assert(ParentMasks.size() == 1 && "Unexpected numbers of operands!");
+
+      BitMask Mask = computeNot(ParentMasks[0]);
+
+      return Mask;
+    }
+    case llvm::DFGNode::And: {
+      assert(ParentMasks.size() == 2 && "Unexpected numbers of operands!");
+
+      BitMask Mask = computeAnd(ParentMasks[0], ParentMasks[1]);
+
+      return Mask;
+    }
+    case llvm::DFGNode::Or: {
+      assert(ParentMasks.size() == 2 && "Unexpected numbers of operands!");
+
+      BitMask Mask = computeOr(ParentMasks[0], ParentMasks[1]);
+
+      return Mask;
+    }
+    case llvm::DFGNode::Xor: {
+      assert(ParentMasks.size() == 2 && "Unexpected numbers of operands!");
+
+      BitMask Mask = computeXor(ParentMasks[0], ParentMasks[1]);
+
+      return Mask;
+    }
+    case llvm::DFGNode::RAnd: {
+      assert(ParentMasks.size() == 1 && "Unexpected numbers of operands!");
+
+      BitMask Mask = computeRand(ParentMasks[0]);
+
+      return Mask;
+    }
+    case llvm::DFGNode::GT: {
+      assert(ParentMasks.size() == 2 && "Unexpected numbers of operands!");
+
+      NonCommutativeDFGNode *NCNode = dyn_cast<NonCommutativeDFGNode>(Node);
+      assert(NCNode && "Unexpected node type!");
+
+      BitMask LHSMask = getOrCreateMask(NCNode->getParentNode(0));
+      BitMask RHSMask = getOrCreateMask(NCNode->getParentNode(1));
+
+      BitMask Mask = computeUgt(LHSMask, RHSMask);
+
+      return Mask;
+    }
+    case llvm::DFGNode::EQ: {
+      bool UnEqual = false;
+      bool UnKnown = false;
+
+      unsigned BitWidth = ParentMasks[0].getMaskWidth();
+      assert(BitWidth == ParentMasks[1].getMaskWidth() && "Unexpected bitwidth!");
+
+      for (unsigned i = 0; i < BitWidth; ++i) {
+        if (ParentMasks[0].isOneKnownAt(i) && ParentMasks[1].isZeroKnownAt(i)) {
+          UnEqual = true;
+          break;
+        }
+
+        if (ParentMasks[0].isZeroKnownAt(i) && ParentMasks[1].isOneKnownAt(i)) {
+          UnEqual = true;
+          break;
+        }
+
+        if (!ParentMasks[0].isBitKnownAt(i) || !ParentMasks[1].isBitKnownAt(i)) {
+          UnKnown = true;
+        }
+      }
+
+      BitMask Mask;
+      if (UnEqual) {
+        Mask = BitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1),
+                       APInt::getNullValue(1));
+      }
+      else {
+        if (UnKnown)
+          Mask = BitMask(1);
+        else
+          Mask = BitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1),
+                         APInt::getNullValue(1));
+      }
+
+      return Mask;
+    }
+    case llvm::DFGNode::NE: {
+      bool UnEqual = false;
+      bool UnKnown = false;
+
+      unsigned BitWidth = ParentMasks[0].getMaskWidth();
+      assert(BitWidth == ParentMasks[1].getMaskWidth() && "Unexpected bitwidth!");
+
+      for (unsigned i = 0; i < BitWidth; ++i) {
+        if (ParentMasks[0].isOneKnownAt(i) && ParentMasks[1].isZeroKnownAt(i)) {
+          UnEqual = true;
+          break;
+        }
+
+        if (ParentMasks[0].isZeroKnownAt(i) && ParentMasks[1].isOneKnownAt(i)) {
+          UnEqual = true;
+          break;
+        }
+
+        if (!ParentMasks[0].isBitKnownAt(i) || !ParentMasks[1].isBitKnownAt(i))
+          UnKnown = true;
+
+      }
+
+      BitMask Mask;
+      if (UnEqual)
+        Mask = BitMask(APInt::getNullValue(1), APInt::getAllOnesValue(1),
+                       APInt::getNullValue(1));
+      else {
+        if (UnKnown)
+          Mask = BitMask(1);
+        else
+          Mask = BitMask(APInt::getAllOnesValue(1), APInt::getNullValue(1),
+                         APInt::getNullValue(1));
+      }
+
+      return Mask;
+    }
+    case llvm::DFGNode::BitExtract: {
+      assert(ParentMasks.size() == 3 && "Unexpected numbers of operands!");
+
+      NonCommutativeDFGNode *NCNode = dyn_cast<NonCommutativeDFGNode>(Node);
+      assert(NCNode && "Unexpected node type!");
+
+      ConstantIntDFGNode *UBNode
+        = dyn_cast<ConstantIntDFGNode>(NCNode->getParentNode(1));
+      ConstantIntDFGNode *LBNode
+        = dyn_cast<ConstantIntDFGNode>(NCNode->getParentNode(2));
+
+      assert(UBNode && LBNode && "Unexpected node type!");
+
+      unsigned UB = UBNode->getIntValue();
+      unsigned LB = LBNode->getIntValue();
+
+      DFGNode *ExtractTarget = NCNode->getParentNode(0);
+      BitMask ExtractTargetMask = getOrCreateMask(ExtractTarget);
+
+      BitMask Mask = computeBitExtract(ExtractTargetMask, UB, LB);
+
+      return Mask;
+    }
+    case llvm::DFGNode::BitCat: {
+      assert(ParentMasks.size() == 2 && "Unexpected numbers of operands!");
+
+      NonCommutativeDFGNode *NCNode = dyn_cast<NonCommutativeDFGNode>(Node);
+      assert(NCNode && "Unexpected node type!");
+
+      BitMask OpMask0 = getOrCreateMask(NCNode->getParentNode(0));
+      BitMask OpMask1 = getOrCreateMask(NCNode->getParentNode(1));
+
+      BitMask Mask = computeBitCat(OpMask0, OpMask1);
+
+      return Mask;
+    }
+    case llvm::DFGNode::BitRepeat: {
+      assert(ParentMasks.size() == 2 && "Unexpected numbers of operands!");
+
+      NonCommutativeDFGNode *NCNode = dyn_cast<NonCommutativeDFGNode>(Node);
+      assert(NCNode && "Unexpected node type!");
+
+      ConstantIntDFGNode *RepeatTimesNode
+        = dyn_cast<ConstantIntDFGNode>(NCNode->getParentNode(1));
+      unsigned RepeatTimes = RepeatTimesNode->getIntValue();
+
+      DFGNode *RepeatTarget = NCNode->getParentNode(0);
+      BitMask RepeatTargetMask = getOrCreateMask(RepeatTarget);
+
+      assert(RepeatTimes * RepeatTargetMask.getMaskWidth() == BitWidth &&
+             "Unexpected width!");
+
+      return computeBitRepeat(RepeatTargetMask, RepeatTimes);
+    }
+    case llvm::DFGNode::Ret:
+      break;
+    case llvm::DFGNode::Register: {
+      assert(ParentMasks.size() == 2 && "Unexpected numbers of operands!");
+
+      //SIRRegister *Reg = SM->lookupSIRReg(Inst);
+      //if (Reg->isFUInOut()) {
+      //  return BitMask(Masks[0].getMaskWidth());
+      //}
+
+      //return BitMask(Masks[0].getKnownZeros(),
+      //                  APInt::getNullValue(Masks[0].getMaskWidth()),
+      //                  APInt::getNullValue(Masks[0].getMaskWidth()));
+
+      BitMask Mask = BitMask(BitWidth);
+
+      return Mask;
+    }
+    case llvm::DFGNode::InValid:
+      break;
+    default:
+      assert(false && "Unexpected node type!");
+    }
+  }
+}
+
 bool isDifferentMask(BitMask NewMask, BitMask OldMask) {
   return ((NewMask.getKnownOnes() != OldMask.getKnownOnes()) ||
           (NewMask.getKnownZeros() != OldMask.getKnownZeros()) ||
           (NewMask.getKnownSames() != OldMask.getKnownSames()));
 }
 
-bool BitMaskAnalysis::computeAndUpdateMask(Instruction *Inst) {
-  unsigned BitWidth = TD->getTypeSizeInBits(Inst->getType());
+bool BitMaskAnalysis::computeAndUpdateMask(DFGNode *Node) {
+  unsigned BitWidth = Node->getBitWidth();
+
+  if (BitWidth == 0) {
+    assert(Node->getType() == DFGNode::Ret && "Unexpected type!");
+    return false;
+  }
 
   BitMask OldMask(BitWidth);
-  if (SM->hasBitMask(Inst))
-    OldMask = SM->getBitMask(Inst);
+  if (SM->hasBitMask(Node))
+    OldMask = SM->getBitMask(Node);
 
-  BitMask NewMask = computeMask(Inst, SM, TD);
+  BitMask NewMask = computeMask(Node);
 
   if (isDifferentMask(NewMask, OldMask)) {
     NewMask.mergeKnownByOr(OldMask);
 
-    SM->IndexVal2BitMask(Inst, NewMask);
+    SM->IndexNode2BitMask(Node, NewMask);
     return true;
   }
 
-  SM->IndexVal2BitMask(Inst, NewMask);
+  SM->IndexNode2BitMask(Node, NewMask);
   return false;
-}
-
-bool BitMaskAnalysis::traverseFromRoot(Value *Val) {
-  Instruction *Inst = dyn_cast<Instruction>(Val);
-  assert(Inst && "Unexpected value type!");
-
-  // Avoid visiting same instruction twice.
-  if (Visited.count(Inst))
-    return false;
-
-  bool Changed = false;
-
-  std::set<Instruction *> LocalVisited;
-
-  typedef Instruction::op_iterator op_iterator;
-  std::vector<std::pair<Instruction *, op_iterator> > VisitStack;
-
-  VisitStack.push_back(std::make_pair(Inst, Inst->op_begin()));
-
-  while(!VisitStack.empty()) {
-    Instruction *CurNode = VisitStack.back().first;
-    op_iterator &I = VisitStack.back().second;
-
-    // All children of current node have been visited.
-    if (I == CurNode->op_end()) {
-      VisitStack.pop_back();
-
-      Changed |= computeAndUpdateMask(CurNode);
-      continue;
-    }
-
-    // Otherwise, remember the node and visit its children first.
-    Value *ChildVal = *I;
-    ++I;
-    Instruction *ChildInst = dyn_cast<Instruction>(ChildVal);
-
-    // TODO: the mask of constant value may be useful.
-    // Ignore the non-instruction value.
-    if (!ChildInst)
-      continue;
-
-    // Ignore the register.
-    if (IntrinsicInst *ChildII = dyn_cast<IntrinsicInst>(ChildInst))
-      if (ChildII->getIntrinsicID() == Intrinsic::shang_reg_assign)
-        continue;
-
-    // No need to visit the same node twice.
-    if (!LocalVisited.insert(ChildInst).second || Visited.count(ChildInst))
-      continue;
-
-    VisitStack.push_back(std::make_pair(ChildInst, ChildInst->op_begin()));
-  }
-
-  return Changed;
-}
-
-bool BitMaskAnalysis::traverseDatapath() {
-  bool Changed = false;
-
-  typedef SIR::register_iterator iterator;
-  for (iterator I = SM->registers_begin(), E = SM->registers_end(); I != E; ++I) {
-    SIRRegister *Reg = I;
-
-    Changed |= traverseFromRoot(Reg->getLLVMValue());
-  }
-
-  return Changed;
 }
 
 void BitMaskAnalysis::printMask(raw_fd_ostream &Output) {
@@ -686,10 +973,14 @@ void BitMaskAnalysis::printMask(raw_fd_ostream &Output) {
     for (inst_iterator II = BB->begin(), IE = BB->end(); II != IE; ++II) {
       Instruction *Inst = II;
 
-      if (!SM->hasBitMask(Inst)) {
+      if (!SM->isDFGNodeExisted(Inst)) {
         continue;
       }
-      BitMask Mask = SM->getBitMask(Inst);
+      DFGNode *Node = SM->getDFGNodeOfVal(Inst);
+      if (!SM->hasBitMask(Node)) {
+        continue;
+      }
+      BitMask Mask = SM->getBitMask(Node);
 
       Value *KnownZeros = Builder.createIntegerValue(Mask.getKnownZeros());
       Value *KnownOnes = Builder.createIntegerValue(Mask.getKnownOnes());         
@@ -710,6 +1001,8 @@ void BitMaskAnalysis::verifyMaskCorrectness() {
 
   std::set<Value *> MaskedVals;
 
+  unsigned VerifyIdx = 0;
+
   typedef Function::iterator bb_iterator;
   typedef BasicBlock::iterator inst_iterator;
   for (bb_iterator BI = F->begin(), BE = F->end(); BI != BE; ++BI) {
@@ -718,23 +1011,30 @@ void BitMaskAnalysis::verifyMaskCorrectness() {
     for (inst_iterator II = BB->begin(), IE = BB->end(); II != IE; ++II) {
       Instruction *Inst = II;
 
-      if (!SM->hasBitMask(Inst)) {
+      DFGNode *Node = SM->getDFGNodeOfVal(Inst);
+      assert(Node && "DFG node not created!");
+
+      if (!SM->hasBitMask(Node))
         continue;
-      }
 
       if (MaskedVals.count(Inst))
         continue;
 
-      BitMask Mask = SM->getBitMask(Inst);
+      BitMask Mask = SM->getBitMask(Node);
 
       if (!Mask.hasAnyBitKnown())
         continue;
+
+//       if (VerifyIdx++ > 500)
+//         continue;
 
       Value *KnownZeros = Builder.createIntegerValue(Mask.getKnownZeros());
       Value *KnownOnes = Builder.createIntegerValue(Mask.getKnownOnes());
 
       unsigned BitWidth = Mask.getMaskWidth();
-      Value *MaskedVal = Builder.createSOrInst(Builder.createIntegerValue(BitWidth, 1), Builder.createIntegerValue(BitWidth, 1), Inst->getType(), Inst, true);
+      Value *MaskedVal = Builder.createSOrInst(Builder.createIntegerValue(BitWidth, 1),
+                                               Builder.createIntegerValue(BitWidth, 1),
+                                               Inst->getType(), Inst, true);
 
       MaskedVals.insert(MaskedVal);
       SM->IndexVal2BitMask(MaskedVal, Mask);
@@ -749,7 +1049,9 @@ void BitMaskAnalysis::verifyMaskCorrectness() {
       }
 
       Instruction *MaskedInst = dyn_cast<Instruction>(MaskedVal);
-      MaskedInst->setOperand(0, Builder.createSAndInst(Inst, Builder.createSNotInst(KnownZeros, KnownZeros->getType(), Inst, true), Inst->getType(), Inst, true));
+      Value *Op0_part1 = Builder.createSNotInst(KnownZeros, KnownZeros->getType(), Inst, true);
+      Value *Op0 = Builder.createSAndInst(Inst, Op0_part1, Inst->getType(), Inst, true);
+      MaskedInst->setOperand(0, Op0);
       MaskedInst->setOperand(1, KnownOnes);
     }
   }
@@ -758,7 +1060,17 @@ void BitMaskAnalysis::verifyMaskCorrectness() {
 bool BitMaskAnalysis::runIteration() {
   bool Changed = false;
 
-  Changed |= traverseDatapath();
+  typedef DataFlowGraph::node_iterator iterator;
+  for (iterator I = DFG->begin(), E = DFG->end(); I != E; ++I) {
+    DFGNode *Node = I;
+
+    // Ignore the Entry & Exit.
+    if (Node->isEntryOrExit())
+      continue;
+
+    // Compute and update the mask
+    Changed |= computeAndUpdateMask(Node);
+  }
 
   return Changed;
 }
@@ -767,17 +1079,26 @@ bool BitMaskAnalysis::runOnSIR(SIR &SM) {
   this->TD = &getAnalysis<DataLayout>();
   this->SM = &SM;
 
+  // Get the DFG.
+  DFGBuild &DB = getAnalysis<DFGBuild>();
+  this->DFG = DB.getDFG();
+
   // Get the output path for Verilog code.
   std::string MaskOutputPath = LuaI::GetString("MaskOutput");
   std::string Error;
   raw_fd_ostream Output(MaskOutputPath.c_str(), Error);
 
-  unsigned num_iterations = 0;
+  unsigned IterationNum = 0;
 
-  while(runIteration());
+  bool Changed = true;
+  while (Changed) {
+    errs() << "Running BitMask Analysis in iteration #"
+           << utostr_32(IterationNum++) << "\n";
+    Changed = runIteration();
+  }
 
-  verifyMaskCorrectness();
   printMask(Output);
+  verifyMaskCorrectness();
 
   return false;
 }

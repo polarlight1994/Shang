@@ -264,7 +264,7 @@ bool SIRMOAOpt::runOnSIR(SIR &SM) {
   this->DFG = DB.getDFG();
 
   // Extract multi-operand adders
-  collectMOAs();
+  //collectMOAs();
 
   // Generate hybrid tree.
   generateHybridTrees();
@@ -650,8 +650,11 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
         // we get the name of dot considering the bit mask.
         if (j < OpWidth) {
           // If it is a known bit, then use the known value.
-          if (SM->hasBitMask(Operand)) {
-            BitMask Mask = SM->getBitMask(Operand);
+          DFGNode *OpNode = SM->getDFGNodeOfVal(Operand);
+          assert(OpNode && "DFG node not created?");
+
+          if (SM->hasBitMask(OpNode)) {
+            BitMask Mask = SM->getBitMask(OpNode);
 
             if (Mask.isOneKnownAt(j)) {
               Matrix[i][j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
@@ -1146,18 +1149,12 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, raw_fd_ostream &Output) 
       }
 
       AdderOpMasks.push_back(Mask);
-
-      Mask.print(errs());
     }
 
     // Calculate the mask of adder result.
     BitMask ResultMask = BitMaskAnalysis::computeAdd(AdderOpMasks[0], AdderOpMasks[1], 32);
 
-    ResultMask.print(errs());
-
     MatrixRowType AdderResultRow = createDotMatrixRow(AdderName, 32, 32, 0.0f, BitMask(32));
-
-    int temp = 0;
   }
 
 

@@ -1,3 +1,6 @@
+#ifndef DFG_BUILD_H
+#define DFG_BUILD_H
+
 #include "sir/SIR.h"
 #include "sir/SIRBuild.h"
 #include "sir/SIRPass.h"
@@ -25,16 +28,17 @@ struct DFGBuild : public SIRPass {
 
     return TD->getTypeSizeInBits(Val->getType());
   }
-  float getCriticalPathDelay(Instruction *Inst) const;
 
+  DFGNode *getOrCreateDFGNode(Value *V, unsigned BitWidth);
   void verifyDFGCorrectness() const;
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
-    // Build DFG after the register synthesis temporary.
-    AU.addRequiredID(BitMaskAnalysisID);
+    AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
     AU.setPreservesAll();
   }
 };
 }
+
+#endif

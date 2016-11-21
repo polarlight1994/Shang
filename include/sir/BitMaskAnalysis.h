@@ -1,7 +1,11 @@
+#ifndef BITMASK_ANALYSIS_H
+#define BITMASK_ANALYSIS_H
+
 #include "sir/SIR.h"
 #include "sir/SIRBuild.h"
 #include "sir/SIRPass.h"
 #include "sir/Passes.h"
+#include "sir/DFGBuild.h"
 
 #include "vast/LuaI.h"
 
@@ -11,6 +15,7 @@ namespace llvm {
 struct BitMaskAnalysis : public SIRPass {
   SIR *SM;
   DataLayout *TD;
+  DataFlowGraph *DFG;
 
   // Avoid visit the instruction twice in traverse.
   std::set<Instruction *> Visited;
@@ -32,6 +37,15 @@ struct BitMaskAnalysis : public SIRPass {
     return OriginMask;
   }
 
+  // Get the corresponding BitMask and if not exist initialize one.
+  BitMask getOrCreateMask(DFGNode *Node) {
+    // If there exist then get and return it.
+    if (SM->hasBitMask(Node))
+      return SM->getBitMask(Node);
+    else
+      return BitMask(Node->getBitWidth());
+  }
+
   static BitMask computeAnd(BitMask LHS, BitMask RHS);
   static BitMask computeOr(BitMask LHS, BitMask RHS);
   static BitMask computeNot(BitMask Mask);
@@ -51,8 +65,10 @@ struct BitMaskAnalysis : public SIRPass {
   static BitMask computeUDiv(BitMask LHS, BitMask RHS);
   static BitMask computeSDiv(BitMask LHS, BitMask RHS);
 
+  BitMask computeMask(DFGNode *Node);
   BitMask computeMask(Instruction *Inst, SIR *SM, DataLayout *TD);
   bool computeAndUpdateMask(Instruction *Inst);
+  bool computeAndUpdateMask(DFGNode *Node);
   bool traverseFromRoot(Value *Val);
   bool traverseDatapath();
 
@@ -62,8 +78,10 @@ struct BitMaskAnalysis : public SIRPass {
   void getAnalysisUsage(AnalysisUsage &AU) const {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
-    AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
+    AU.addRequired<DFGBuild>();
     AU.setPreservesAll();
   }
 };
 }
+
+#endif

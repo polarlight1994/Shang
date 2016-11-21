@@ -1498,6 +1498,14 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
   // Remove the dead SIR instruction before the CodeGen.
   SM.gc();
 
+//   /// Debug code
+//   std::string FinalSIR = LuaI::GetString("FinalSIR");
+//   std::string ErrorInFinalSIR;
+//   raw_fd_ostream OutputForFinalSIR(FinalSIR.c_str(), ErrorInFinalSIR);
+//   vlang_raw_ostream OutForFinalSIR;
+//   OutForFinalSIR.setStream(OutputForFinalSIR);
+//   OutForFinalSIR << *SM.getFunction();
+
   DataLayout &TD = getAnalysis<DataLayout>();
 
   // Get the output path for Verilog code.

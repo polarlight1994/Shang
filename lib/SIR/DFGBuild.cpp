@@ -9,7 +9,7 @@ INITIALIZE_PASS_BEGIN(DFGBuild, "build-DFG",
                       "Build the DFG of design",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
-  INITIALIZE_PASS_DEPENDENCY(BitMaskAnalysis)
+  INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForCodeGen)
 INITIALIZE_PASS_END(DFGBuild, "build-DFG",
                     "Build the DFG of design",
                     false, true)
@@ -29,17 +29,14 @@ bool DFGBuild::runOnSIR(SIR &SM) {
   // The IR representation of design.
   Function *F = SM.getFunction();
 
-  /// Create node for the argument value of design.
-  typedef Function::arg_iterator arg_iterator;
-  for (arg_iterator AI = F->arg_begin(), AE = F->arg_end(); AI != AE; ++AI) {
-    Argument *Arg = AI;
-    unsigned ArgBitWidth = getBitWidth(Arg);
+//   /// Debug code
+//   std::string FinalSIR = LuaI::GetString("FinalSIR");
+//   std::string ErrorInFinalSIR;
+//   raw_fd_ostream OutputForFinalSIR(FinalSIR.c_str(), ErrorInFinalSIR);
+//   OutputForFinalSIR << *F;
 
-    G->createArgumentNode(Arg, ArgBitWidth);
-  }
-
-  /// Traverse the whole design and create node for
-  /// each instruction in design.  
+  /// Traverse the whole design and create node and its dependencies for
+  /// each instruction in design.
   typedef Function::iterator bb_iterator;
   for (bb_iterator BI = F->begin(), BE = F->end(); BI != BE; ++BI) {
     BasicBlock *BB = BI;
@@ -47,13 +44,14 @@ bool DFGBuild::runOnSIR(SIR &SM) {
     typedef BasicBlock::iterator inst_iterator;
     for (inst_iterator II = BB->begin(), IE = BB->end(); II != IE; ++II) {
       Instruction *Inst = II;
+
       unsigned InstBitWidth = getBitWidth(Inst);
 
       // Do not create same node twice.
-      if (!SM.isDFGNodeExisted(Inst))
-        G->createDataPathNode(Inst, InstBitWidth);
+      DFGNode *Node = getOrCreateDFGNode(Inst, InstBitWidth);
 
       // Also create node for its operands if it has not been created.
+      unsigned OpIdx = 0;
       typedef Instruction::op_iterator op_iterator;
       for (op_iterator OI = Inst->op_begin(), OE = Inst->op_end(); OI != OE; ++OI) {
         Value *Op = *OI;
@@ -63,29 +61,16 @@ bool DFGBuild::runOnSIR(SIR &SM) {
           continue;
 
         unsigned OpBitWidth = getBitWidth(Op);
+        DFGNode *OpNode = getOrCreateDFGNode(Op, OpBitWidth);
 
-        if (!SM.isDFGNodeExisted(Op)) {
-          if (Instruction *OpInst = dyn_cast<Instruction>(Op))
-            G->createDataPathNode(OpInst, OpBitWidth);
-          else if (ConstantInt *CI = dyn_cast<ConstantInt>(Op))
-            G->createConstantIntNode(CI, OpBitWidth);
-          else if (GlobalValue *GV = dyn_cast<GlobalValue>(Op))
-            G->createGlobalValueNode(GV, OpBitWidth);
-          else if (UndefValue *UV = dyn_cast<UndefValue>(Op))
-            G->createUndefValueNode(UV, OpBitWidth);
-          // To be noted that, there are some argument values created by us which are
-          // not included in the function argument list. These values will be handled
-          // here.
-          else if (Argument *Arg = dyn_cast<Argument>(Op))
-            G->createArgumentNode(Arg, OpBitWidth);
-          else
-            llvm_unreachable("Unexpected value type!");
-        }
+        G->createDependency(OpNode, Node, OpIdx++);
       }
     }
   }
 
-  /// Build the dependencies between all the DFG nodes.
+  /// Connect the root nodes to Entry and leaf nodes to Exit.
+  DFGNode *Entry = G->getEntry();
+  DFGNode *Exit = G->getExit();
   typedef DataFlowGraph::node_iterator node_iterator;
   for (node_iterator NI = G->begin(), NE = G->end(); NI != NE; ++NI) {
     DFGNode *Node = NI;
@@ -94,19 +79,54 @@ bool DFGBuild::runOnSIR(SIR &SM) {
     if (Node->isEntryOrExit())
       continue;
 
-    Value *Val = Node->getValue();
+    // The root nodes
+    if (Node->parent_empty())
+      G->createDependency(Entry, Node, NULL);
 
-    // Create dependency based on the nodes represent instructions.
-    if (!isa<Instruction>(Val))
-      continue;
-
-    G->createDependencies(Node);
+    // The leaf nodes
+    if (Node->child_empty())
+      G->createDependency(Node, Exit, NULL);
   }
 
-  /// Verify the correctness of DFG graph.
+  // Sort the nodes in topological order.
+  //G->topologicalSortNodes();
+
+  // Verify the correctness of DFG graph.
   verifyDFGCorrectness();
 
   return Changed;
+}
+
+DFGNode *DFGBuild::getOrCreateDFGNode(Value *V, unsigned BitWidth) {
+  DFGNode *Node;
+  if (Instruction *Inst = dyn_cast<Instruction>(V)) {
+    if (SM->isDFGNodeExisted(V))
+      Node = SM->getDFGNodeOfVal(V);
+    else
+      Node = G->createDataPathNode(Inst, BitWidth);
+  }
+  else if (ConstantInt *CI = dyn_cast<ConstantInt>(V)) {
+    Node = G->createConstantIntNode(CI, BitWidth);
+  }
+  else if (GlobalValue *GV = dyn_cast<GlobalValue>(V)) {
+    if (SM->isDFGNodeExisted(V))
+      Node = SM->getDFGNodeOfVal(V);
+    else
+      Node = G->createGlobalValueNode(GV, BitWidth);
+  }
+  else if (UndefValue *UV = dyn_cast<UndefValue>(V)) {
+    Node = G->createUndefValueNode(UV, BitWidth);
+  }
+  else if (Argument *Arg = dyn_cast<Argument>(V)) {
+    if (SM->isDFGNodeExisted(V))
+      Node = SM->getDFGNodeOfVal(V);
+    else
+      Node = G->createArgumentNode(Arg, BitWidth);
+  }
+  else
+    llvm_unreachable("Unexpected value type!");
+
+  return Node;
 }
 
 static unsigned LogCeiling(unsigned x, unsigned n) {
@@ -128,11 +148,15 @@ void DFGBuild::verifyDFGCorrectness() const {
     for (inst_iterator II = BB->begin(), IE = BB->end(); II != IE; ++II) {
       Instruction *Inst = II;
 
+      if (isa<ReturnInst>(Inst))
+        continue;
+
       // Verify if we have created DFG node for this instruction.
       assert(SM->isDFGNodeExisted(Inst) && "Node not created!");
 
       DFGNode *Node = SM->getDFGNodeOfVal(Inst);
 
+      unsigned OpNum = 0;
       typedef Instruction::op_iterator op_iterator;
       for (op_iterator OI = Inst->op_begin(), OE = Inst->op_end(); OI != OE; ++OI) {
         Value *Op = *OI;
@@ -140,6 +164,12 @@ void DFGBuild::verifyDFGCorrectness() const {
         // Ignore the function declaration which is also regarded as operand in llvm
         // intermediate representation.
         if (isa<Function>(Op))
+          continue;
+
+        OpNum++;
+
+        // Ignore the constant integer and undef value.
+        if (isa<ConstantInt>(Op) || isa<UndefValue>(Op))
           continue;
 
         // Verify if we have created DFG node for this instruction.
@@ -151,6 +181,8 @@ void DFGBuild::verifyDFGCorrectness() const {
         assert(OpNode->hasChildNode(Node) && "Dependencies not created!");
         assert(Node->hasParentNode(OpNode) && "Dependencies not created!");
       }
+
+      assert(OpNum == Node->parent_size() && "Some operands missed?");
     }
   }
 }

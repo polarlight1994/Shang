@@ -27,6 +27,7 @@
 
 #include <iostream>
 #include <set>
+#include <list>
 
 namespace llvm {
 // Get the signed value of a ConstantInt.
@@ -208,7 +209,7 @@ public:
            !(KnownOnes & Mask.KnownZeros) && !(KnownZeros & Mask.KnownOnes);
   }
 
-  // Set bit of KnownZeros and KnownOnes
+  // Set bit of KnownZeros, KnownOnes and KnownSigns
   void setKnownZeroAt(unsigned i) {
     KnownZeros.setBit(i);
     KnownOnes.clearBit(i);
@@ -219,6 +220,10 @@ public:
     KnownOnes.setBit(i);
     KnownZeros.clearBit(i);
     KnownSames.clearBit(i);
+    verify();
+  }
+  void setKnownSignAt(unsigned i) {
+    KnownSames.setBit(i);
     verify();
   }
 
@@ -698,7 +703,7 @@ public:
 }
 
 namespace llvm {
-struct DFGNode : public ilist_node<DFGNode> {
+class DFGNode : public ilist_node<DFGNode> {
 public:
   enum NodeType {
     /// Virtual node as Entry & Exit
@@ -742,37 +747,40 @@ public:
   };
 
 private:
+  // Index
+  unsigned Idx;
   // Name
   std::string Name;
   // Corresponding llvm value in IR.
   Value *Val;
+  // Corresponding basic block in IR.
+  BasicBlock *ParentBB;
   // Node type.
   NodeType Ty;
   // BitWidth
   unsigned BitWidth;
-  // Critical path delay.
-  float Latency;
 
-  std::set<DFGNode *> Childs;
-  std::set<DFGNode *> Parents;
+  // Child nodes & Parent nodes.
+  std::multiset<DFGNode *> Childs;
+  std::multiset<DFGNode *> Parents;
 
 public:
   // Construction for ilist node.
-  DFGNode() : Name(""), Val(NULL), Ty(InValid), BitWidth(0), Latency(0.0f) {}
-  // Construction for normal node. To be noted that, the latency is always
-  // initialized as 0.0f since it will be calculated after a series of
-  // DFG optimization.
-  DFGNode(std::string Name, Value *V, NodeType Ty, unsigned BitWidth)
-    : Name(Name), Val(V), Ty(Ty), BitWidth(BitWidth), Latency(0.0f) {
+  DFGNode() : Idx(NULL), Name(""), Val(NULL), Ty(InValid), BitWidth(0) {}
+  // Construction for normal node.
+  DFGNode(unsigned Idx, std::string Name, Value *V, BasicBlock *BB,
+          NodeType Ty, unsigned BitWidth)
+    : Idx(Idx), Name(Name), Val(V), ParentBB(BB), Ty(Ty), BitWidth(BitWidth) {
     if (V)
       assert(!isa<Function>(V) && "Unexpected value type!");
   }
 
+  unsigned getIdx() const { return Idx; }
   std::string getName() const { return Name; }
   Value *getValue() const { return Val; }
+  BasicBlock *getParentBB() const { return ParentBB; }
   NodeType getType() const { return Ty; }
   unsigned getBitWidth() const { return BitWidth; }
-  float getCriticalPathDelay() const { return Latency; }
 
   bool isEntryOrExit() const {
     return Ty == Entry || Ty == Exit;
@@ -811,47 +819,132 @@ public:
     ChildNode->Parents.insert(this);
     Childs.insert(ChildNode);
   }
-  void removeChildNode(DFGNode *ChildNode) {
-    ChildNode->Parents.erase(this);
-    Childs.erase(ChildNode);
-  }
+//   void removeChildNode(DFGNode *ChildNode) {
+//     ChildNode->Parents.erase(this);
+//     Childs.erase(ChildNode);
+//   }
 
   void addParentNode(DFGNode *ParentNode) {
     ParentNode->Childs.insert(this);
     Parents.insert(ParentNode);
   }
-  void removeParentNode(DFGNode *ParentNode) {
-    ParentNode->Childs.erase(this);
-    Parents.erase(ParentNode);
+//   void removeParentNode(DFGNode *ParentNode) {
+//     ParentNode->Childs.erase(this);
+//     Parents.erase(ParentNode);
+//   }
+// 
+//   // Replace all the use of current node to target node. To be noted that,
+//   // the parents of current node are not affected.
+//   void replaceAllUseWith(DFGNode *ReplaceNode) {
+//     for (iterator CI = child_begin(), CE = child_end(); CI != CE;) {
+//       DFGNode *ChildNode = *CI++;
+// 
+//       ChildNode->removeParentNode(this);
+//       ReplaceNode->addChildNode(ChildNode);
+//     }
+// 
+//     assert(Childs.empty() && "Unexpected uses remain!");
+//   }
+//   // Replace all the def of current node to target node. To be noted that,
+//   // the children of current node are not affected.
+//   void replaceAllDefWith(DFGNode *ReplaceNode) {
+//     for (iterator PI = parent_begin(), PE = parent_end(); PI != PE;) {
+//       DFGNode *ParentNode = *PI++;
+// 
+//       ParentNode->removeChildNode(this);
+//       ReplaceNode->addParentNode(ParentNode);
+//     }
+// 
+//     assert(Parents.empty() && "Unexpected defs remain!");
+//   }
+//   void replaceAllWith(DFGNode *ReplaceNode) {
+//     replaceAllDefWith(ReplaceNode);
+//     replaceAllUseWith(ReplaceNode);
+//   }
+};
+
+class ConstantIntDFGNode : public DFGNode {
+private:
+  uint64_t Val;
+
+public:
+  ConstantIntDFGNode(unsigned Idx, std::string Name, uint64_t Val, unsigned BitWidth)
+    : DFGNode(Idx, Name, NULL, NULL, DFGNode::ConstantInt, BitWidth), Val(Val) {}
+
+  uint64_t getIntValue() { return Val; }
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast;
+  static inline bool classof(const ConstantIntDFGNode *CINode) { return true; }
+  static inline bool classof(const DFGNode *Node) {
+    DFGNode::NodeType Ty = Node->getType();
+
+    return Ty == DFGNode::ConstantInt;
+  }
+};
+
+class CommutativeDFGNode : public DFGNode {
+public:
+  CommutativeDFGNode(unsigned Idx, std::string Name, Value *V,
+                     BasicBlock *BB, NodeType Ty, unsigned BitWidth)
+    : DFGNode(Idx, Name, V, BB, Ty, BitWidth) {
+    if (V) assert(!isa<Function>(V) && "Unexpected value type!");
+
+    assert(Ty == DFGNode::Add || Ty == DFGNode::Mul || Ty == DFGNode::And ||
+           Ty == DFGNode::Or || Ty == DFGNode::Xor || Ty == DFGNode::EQ ||
+           Ty == DFGNode::NE || Ty == DFGNode::CompressorTree &&
+           "Unexpected node type!");
   }
 
-  // Replace all the use of current node to target node. To be noted that,
-  // the parents of current node are not affected.
-  void replaceAllUseWith(DFGNode *ReplaceNode) {
-    for (iterator CI = child_begin(), CE = child_end(); CI != CE;) {
-      DFGNode *ChildNode = *CI++;
+  /// Methods for support type inquiry through isa, cast, and dyn_cast;
+  static inline bool classof(const CommutativeDFGNode *CNode) { return true; }
+  static inline bool classof(const DFGNode *Node) {
+    DFGNode::NodeType Ty = Node->getType();
 
-      ChildNode->removeParentNode(this);
-      ReplaceNode->addChildNode(ChildNode);
-    }
-
-    assert(Childs.empty() && "Unexpected uses remain!");
+    return Ty == DFGNode::Add || Ty == DFGNode::Mul || Ty == DFGNode::And ||
+           Ty == DFGNode::Or || Ty == DFGNode::Xor || Ty == DFGNode::EQ ||
+           Ty == DFGNode::NE || Ty == DFGNode::CompressorTree;
   }
-  // Replace all the def of current node to target node. To be noted that,
-  // the children of current node are not affected.
-  void replaceAllDefWith(DFGNode *ReplaceNode) {
-    for (iterator PI = parent_begin(), PE = parent_end(); PI != PE;) {
-      DFGNode *ParentNode = *PI++;
+};
 
-      ParentNode->removeChildNode(this);
-      ReplaceNode->addParentNode(ParentNode);
-    }
+class NonCommutativeDFGNode : public DFGNode {
+private:
+  // Map of parent nodes order.
+  std::map<unsigned, DFGNode *> ParentsIdx;
 
-    assert(Parents.empty() && "Unexpected defs remain!");
+public:
+  NonCommutativeDFGNode(unsigned Idx, std::string Name, Value *V,
+                        BasicBlock *BB, NodeType Ty, unsigned BitWidth)
+    : DFGNode(Idx, Name, V, BB, Ty, BitWidth) {
+    if (V) assert(!isa<Function>(V) && "Unexpected value type!");
+
+    assert(Ty == DFGNode::Div || Ty == DFGNode::LShr || Ty == DFGNode::AShr ||
+           Ty == DFGNode::Shl || Ty == DFGNode::GT || Ty == DFGNode::LT ||
+           Ty == DFGNode::BitExtract || Ty == DFGNode::BitCat ||
+           Ty == DFGNode::BitRepeat || Ty == DFGNode::Register &&
+           "Unexpected node type!");
   }
-  void replaceAllWith(DFGNode *ReplaceNode) {
-    replaceAllDefWith(ReplaceNode);
-    replaceAllUseWith(ReplaceNode);
+
+  DFGNode *getParentNode(unsigned Idx) {
+    assert(ParentsIdx.count(Idx) && "Unexpected index!");
+
+    return ParentsIdx[Idx];
+  }
+
+  void addParentNode(DFGNode *ParentNode, unsigned Idx) {
+    DFGNode::addParentNode(ParentNode);
+
+    ParentsIdx.insert(std::make_pair(Idx, ParentNode));
+  }
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast;
+  static inline bool classof(const NonCommutativeDFGNode *CNode) { return true; }
+  static inline bool classof(const DFGNode *Node) {
+    DFGNode::NodeType Ty = Node->getType();
+
+    return Ty == DFGNode::Div || Ty == DFGNode::LShr || Ty == DFGNode::AShr ||
+           Ty == DFGNode::Shl || Ty == DFGNode::GT || Ty == DFGNode::LT ||
+           Ty == DFGNode::BitExtract || Ty == DFGNode::BitCat ||
+           Ty == DFGNode::BitRepeat || Ty == DFGNode::Register;
   }
 };
 
@@ -879,7 +972,7 @@ template<> struct GraphTraits<const DFGNode *> {
   }
 };
 
-struct DataFlowGraph {
+class DataFlowGraph {
 public:
   typedef iplist<DFGNode> DFGNodeListTy;
   typedef std::pair<std::vector<DFGNode *>,
@@ -888,6 +981,10 @@ public:
 
 private:
   SIR *SM;
+
+  // Index the Entry and Exit node.
+  DFGNode *Entry;
+  DFGNode *Exit;
 
   // The list of all nodes in DFG.
   DFGNodeListTy DFGNodeList;
@@ -901,30 +998,36 @@ private:
 public:
   DataFlowGraph(SIR *SM) : SM(SM) {
     // Create the entry SU.
-    DFGNodeList.push_back(new DFGNode("Entry", NULL, DFGNode::Entry, 0));
+    this->Entry = new DFGNode(0, "Entry", NULL, NULL, DFGNode::Entry, 0);
+    DFGNodeList.push_back(Entry);
     // Create the exit SU.
-    DFGNodeList.push_back(new DFGNode("Exit", NULL, DFGNode::Exit, 0));
+    this->Exit = new DFGNode(UINT_MAX, "Exit", NULL, NULL, DFGNode::Exit, 0);
+    DFGNodeList.push_back(Exit);
   }
 
   unsigned size() const { return DFGNodeList.size(); }
-  DFGNode *getEntry() { return &DFGNodeList.front(); }
-  const DFGNode *getEntry() const { return &DFGNodeList.front(); }
+  DFGNode *getEntry() { return Entry; }
+  const DFGNode *getEntry() const { return Entry; }
 
-  DFGNode *getExit() { return &DFGNodeList.front(); }
-  const DFGNode *getExit() const { return &DFGNodeList.front(); }
+  DFGNode *getExit() { return Exit; }
+  const DFGNode *getExit() const { return Exit; }
 
-  DFGNode *creatDFGNode(std::string Name, Value *Val,
-                        DFGNode::NodeType Ty, unsigned BitWidth);
+  // Sort the DFG nodes in topological order.
+  void toposortCone(DFGNode *Root, std::set<DFGNode *> &Visited);
+  void topologicalSortNodes();
+
+  DFGNode *createDFGNode(std::string Name, Value *Val, BasicBlock *BB,
+                         DFGNode::NodeType Ty, unsigned BitWidth);
+
   DFGNode *createDataPathNode(Instruction *Inst, unsigned BitWidth);
-  DFGNode *createConstantIntNode(APInt Val);
+  DFGNode *createConstantIntNode(uint64_t Val, unsigned BitWidth);
   DFGNode *createConstantIntNode(ConstantInt *CI, unsigned BitWidth);
   DFGNode *createGlobalValueNode(GlobalValue *GV, unsigned BitWidth);
   DFGNode *createUndefValueNode(UndefValue *UV, unsigned BitWidth);
   DFGNode *createArgumentNode(Argument *Arg, unsigned BitWidth);
   DFGNode *createSequentialNode(Value *Val, unsigned BitWidth);
 
-  void createDependencies(DFGNode *Node);
-  void createDependency(DFGNode *From, DFGNode *To);
+  void createDependency(DFGNode *From, DFGNode *To, unsigned Idx);
 
   std::vector<DFGNode *> getOperationsOfLOC(DFGNode *RootNode) {
     assert(LOC.count(RootNode) && "LOC not existed!");
@@ -1675,16 +1778,16 @@ public:
     return at->second;
   }
 
-  bool IndexVal2BitMask(Value *Val, BitMask BitMask) {
-    BitMask.verify();
+  bool IndexVal2BitMask(Value *Val, BitMask Mask) {
+    Mask.verify();
 
     if (hasBitMask(Val)) {
-      Val2BitMask[Val] = BitMask;
+      Val2BitMask[Val] = Mask;
 
       return true;
     }
 
-    return Val2BitMask.insert(std::make_pair(Val, BitMask)).second;
+    return Val2BitMask.insert(std::make_pair(Val, Mask)).second;
   }
   bool hasBitMask(Value *Val) const {
     const_val2bitmask_iterator at = Val2BitMask.find(Val);
@@ -1697,16 +1800,16 @@ public:
     return at->second;
   }
 
-  bool IndexNode2BitMask(DFGNode *Node, BitMask BitMask) {
-    BitMask.verify();
+  bool IndexNode2BitMask(DFGNode *Node, BitMask Mask) {
+    Mask.verify();
 
     if (hasBitMask(Node)) {
-      Node2BitMask[Node] = BitMask;
+      Node2BitMask[Node] = Mask;
 
       return true;
     }
 
-    return Node2BitMask.insert(std::make_pair(Node, BitMask)).second;
+    return Node2BitMask.insert(std::make_pair(Node, Mask)).second;
   }
   bool hasBitMask(DFGNode *Node) const {
     const_node2bitmask_iterator at = Node2BitMask.find(Node);
