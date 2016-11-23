@@ -164,8 +164,9 @@ DFGNode *DataFlowGraph::createDFGNode(std::string Name, Value *Val, BasicBlock *
   // Create the DFG node.
   DFGNode *Node;
   if (Ty == DFGNode::Add || Ty == DFGNode::Mul || Ty == DFGNode::And ||
-      Ty == DFGNode::Or || Ty == DFGNode::Xor || Ty == DFGNode::EQ ||
-      Ty == DFGNode::NE || Ty == DFGNode::CompressorTree) {
+      Ty == DFGNode::Not || Ty == DFGNode::Or || Ty == DFGNode::Xor ||
+      Ty == DFGNode::RAnd || Ty == DFGNode::EQ || Ty == DFGNode::NE ||
+      Ty == DFGNode::TypeConversion || Ty == DFGNode::CompressorTree) {
     assert(BB && "Unexpected parent basic block!");
 
     Node = new CommutativeDFGNode(DFGNodeIdx++, Name, Val, BB, Ty, BitWidth);
@@ -345,8 +346,15 @@ void DataFlowGraph::createDependency(DFGNode *From, DFGNode *To, unsigned Idx) {
   if (NonCommutativeDFGNode *NCNode = dyn_cast<NonCommutativeDFGNode>(To)) {
     NCNode->addParentNode(From, Idx);
   }
+  else if (CommutativeDFGNode *CTo = dyn_cast<CommutativeDFGNode>(To)){
+    CTo->addParentNode(From, 1);
+  }
   else {
-    From->addChildNode(To);
+    assert(From->isEntryOrExit() || To->isEntryOrExit() ||
+           To->getType() == DFGNode::LogicOperationChain ||
+           To->getType() == DFGNode::Ret &&
+           "Unexpected type!");
+    To->addParentNode(From);
   }
 
   assert(From->hasChildNode(To) && "Fail to create dependency!");

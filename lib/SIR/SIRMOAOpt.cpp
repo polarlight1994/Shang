@@ -264,7 +264,7 @@ bool SIRMOAOpt::runOnSIR(SIR &SM) {
   this->DFG = DB.getDFG();
 
   // Extract multi-operand adders
-  //collectMOAs();
+  collectMOAs();
 
   // Generate hybrid tree.
   generateHybridTrees();
@@ -290,7 +290,7 @@ float SIRMOAOpt::hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
   printTMatrixForDebug(Matrix);
 
   // Consider use normal adder to sum some rows which have earlier arrival time.
-  Matrix = sumRowsByAdder(Matrix, Output);
+  //Matrix = sumRowsByAdder(Matrix, Output);
 
   // Optimize the dot matrix taking advantage of the known bits.
   MatrixType TMatrix = transportMatrix(Matrix, RowNum, ColNum);
@@ -409,7 +409,7 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
 
       Node = ReplaceNode;
     }
-    else {
+    else if (DFG->hasLOCNode(Node)) {
       DFGNode *LOCNode = DFG->getLOCNode(Node);
       Node = LOCNode;
     }

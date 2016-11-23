@@ -39,9 +39,6 @@ struct DFGOpt : public SIRPass {
   void traverseFromRootNode(DFGNode *RootNode);
   DFGNode *LOCBuild(DFGNode *RootNode);
 
-  void createDependency(DFGNode *From, DFGNode *To);
-  void removeDependency(DFGNode *From, DFGNode *To);
-
   void getAnalysisUsage(AnalysisUsage &AU) const {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
@@ -154,190 +151,212 @@ bool DFGOpt::runOnSIR(SIR &SM) {
 // //     }
 // //   }
 // }
+
+void DFGOpt::mergeLogicOperations() {
+  // Collect the potential root of logic operations to be merged.
+  std::vector<DFGNode *> RootNodes = collectMergeRootNodes();
+
+//   /// Debug code
+//   std::string DebugFile = LuaI::GetString("DebugFile");
+//   std::string ErrorInDebugFile;
+//   raw_fd_ostream OutputForDebugFile(DebugFile.c_str(), ErrorInDebugFile);
+
+  // Traverse from root and extract the logic operations chain.
+  typedef std::vector<DFGNode *>::iterator node_iterator;
+  for (node_iterator NI = RootNodes.begin(), NE = RootNodes.end(); NI != NE; ++NI)
+    traverseFromRootNode(*NI);
+
+  // Merge the logic operations chain as a single special datapath DFG node.
+  typedef DataFlowGraph::loc_iterator loc_iterator;
+  for (loc_iterator LI = DFG->loc_begin(), LE = DFG->loc_end(); LI != LE; ++LI) {
+    DFGNode *RootNode = LI->first;
+    LOCBuild(RootNode);
+
+//     OutputForDebugFile << "Root is [" << RootNode->getName() << "]\n";
+//     OutputForDebugFile << "\tuse operands {";
+//     DFGNode *LOCNode = LOCRoot2DFGNode[RootNode];
+//     typedef DFGNode::iterator iterator;
+//     for (iterator I = LOCNode->parent_begin(), E = LOCNode->parent_end(); I != E; ++I) {
+//       DFGNode *ParentNode = *I;
 // 
-// void DFGOpt::mergeLogicOperations() {
-//   // Collect the potential root of logic operations to be merged.
-//   std::vector<DFGNode *> RootNodes = collectMergeRootNodes();
-// 
-// //   /// Debug code
-// //   std::string DebugFile = LuaI::GetString("DebugFile");
-// //   std::string ErrorInDebugFile;
-// //   raw_fd_ostream OutputForDebugFile(DebugFile.c_str(), ErrorInDebugFile);
-// 
-//   // Traverse from root and extract the logic operations chain.
-//   typedef std::vector<DFGNode *>::iterator node_iterator;
-//   for (node_iterator NI = RootNodes.begin(), NE = RootNodes.end(); NI != NE; ++NI)
-//     traverseFromRootNode(*NI);
-// 
-//   // Merge the logic operations chain as a single special datapath DFG node.
-//   typedef DataFlowGraph::loc_iterator loc_iterator;
-//   for (loc_iterator LI = DFG->loc_begin(), LE = DFG->loc_end(); LI != LE; ++LI) {
-//     DFGNode *RootNode = LI->first;
-//     LOCBuild(RootNode);
-// 
-// //     OutputForDebugFile << "Root is [" << RootNode->getName() << "]\n";
-// //     OutputForDebugFile << "\tuse operands {";
-// //     DFGNode *LOCNode = LOCRoot2DFGNode[RootNode];
-// //     typedef DFGNode::iterator iterator;
-// //     for (iterator I = LOCNode->parent_begin(), E = LOCNode->parent_end(); I != E; ++I) {
-// //       DFGNode *ParentNode = *I;
-// // 
-// //       OutputForDebugFile << ParentNode->getName() << ", ";
-// //     }
-// //     OutputForDebugFile << "}, used by {";
-// //     for (iterator I = LOCNode->child_begin(), E = LOCNode->child_end(); I != E; ++I) {
-// //       DFGNode *ChildNode = *I;
-// // 
-// //       OutputForDebugFile << ChildNode->getName() << ", ";
-// //     }
-// //     OutputForDebugFile << "}\n";
-//   } 
-// }
-// 
-// std::vector<DFGNode *> DFGOpt::collectMergeRootNodes() {
-//   // Vector for the roots
-//   std::vector<DFGNode *> RootNodesVector;
-// 
-//   /// Traverse the whole design, and collect the nodes as merge root, which meet
-//   /// the following conditions:
-//   /// 1) the node type is Not, And, Or, Xor
-//   /// 2) the node is used by other nodes whose type is not listed in 1
-// 
-//   typedef DataFlowGraph::node_iterator node_iterator;
-//   for (node_iterator NI = DFG->begin(), NE = DFG->end(); NI != NE; ++NI) {
-//     DFGNode *Node = NI;
-//     DFGNode::NodeType Ty = Node->getType();
-// 
-//     if (Ty == DFGNode::Not || Ty == DFGNode::And || Ty == DFGNode::Or ||
-//         Ty == DFGNode::Xor) {
-//       typedef DFGNode::iterator child_iterator;
-//       for (child_iterator CI = Node->child_begin(), CE = Node->child_end();
-//            CI != CE; ++CI) {
-//         DFGNode *ChildNode = *CI;
-//         DFGNode::NodeType ChildTy = ChildNode->getType();
-// 
-//         if (ChildTy != DFGNode::Not && ChildTy != DFGNode::And &&
-//             ChildTy != DFGNode::Or && ChildTy != DFGNode::Xor) {
-//           RootNodesVector.push_back(Node);
-// 
-//           break;
-//         }
-//       }
+//       OutputForDebugFile << ParentNode->getName() << ", ";
 //     }
-//   }
+//     OutputForDebugFile << "}, used by {";
+//     for (iterator I = LOCNode->child_begin(), E = LOCNode->child_end(); I != E; ++I) {
+//       DFGNode *ChildNode = *I;
 // 
-//   return RootNodesVector;
-// }
-// 
-// void DFGOpt::traverseFromRootNode(DFGNode *RootNode) {
-//   // The operations in current logic operation chain.
-//   std::vector<DFGNode *> Operations;
-//   // The operands of current logic operation chain.
-//   std::vector<DFGNode *> Operands;
-// 
-//   std::set<DFGNode *> Visited;
-// 
-//   typedef DFGNode::iterator iterator;
-//   std::vector<std::pair<DFGNode *, iterator> > VisitStack;
-// 
-//   VisitStack.push_back(std::make_pair(RootNode, RootNode->parent_begin()));
-// 
-//   while (!VisitStack.empty()) {
-//     DFGNode *CurNode = VisitStack.back().first;
-//     iterator &It = VisitStack.back().second;
-// 
-//     // All parents of current instruction have been visited.
-//     if (It == CurNode->parent_end()) {
-//       VisitStack.pop_back();
-//       continue;
+//       OutputForDebugFile << ChildNode->getName() << ", ";
 //     }
-// 
-//     DFGNode *ParentNode = *It;
-//     ++It;
-// 
-//     // Avoid visit same value twice.
-//     if (Visited.count(ParentNode))
-//       continue;
-//     Visited.insert(ParentNode);
-// 
-//     DFGNode::NodeType Ty = ParentNode->getType();
-// 
-//     // Still part of the logic operations chain.
-//     if (Ty == DFGNode::Not || Ty == DFGNode::And || Ty == DFGNode::Or ||
-//         Ty == DFGNode::Xor) {
-//       VisitStack.push_back(std::make_pair(ParentNode, ParentNode->parent_begin()));
-// 
-//       // The operation in current logic operation chain.
-//       Operations.push_back(ParentNode);
-// 
-//       continue;
-//     }
-// 
-//     // Reach the leaf, that is, the operand of current logic operation chain.
-//     Operands.push_back(ParentNode);
-//   }
-// 
-//   // Index the logic operation chain.
-//   DFG->indexLOC(RootNode, Operations, Operands);
-// }
-// 
-// DFGNode *DFGOpt::LOCBuild(DFGNode *RootNode) {
-// //   // Get the operations and operands of LOC.
-// //   std::vector<DFGNode *> Operations = DFG->getOperationsOfLOC(RootNode);
-// //   std::vector<DFGNode *> Operands = DFG->getOperandsOfLOC(RootNode);
-// // 
-// //   // Create a DFG node represent the LOC.
-// //   std::string LOCName = "LOC_" + RootNode->getName();
-// //   unsigned LOCBitWidth = RootNode->getBitWidth();
-// //   DFGNode *LOCNode
-// //     = DFG->createDFGNode(LOCName, NULL, RootNode->getParentBB(),
-// //                          DFGNode::LogicOperationChain, LOCBitWidth);
-// // 
-// //   // Index the root and the LOC node.
-// //   DFG->indexRootOfLOC(RootNode, LOCNode);
-// // 
-// //   /// Create dependencies for LOC DFG node.
-// //   // The parents of LOC DFG node
-// //   for (unsigned i = 0; i < Operands.size(); ++i) {
-// //     DFGNode *OperandNode = Operands[i];
-// // 
-// //     createDependency(OperandNode, LOCNode);
-// //   }
-// //   // The children of LOC DFG node
-// //   typedef DFGNode::iterator child_iterator;
-// //   for (child_iterator CI = RootNode->child_begin(), CE = RootNode->child_end();
-// //        CI != CE; ++CI) {
-// //     DFGNode *ChildNode = *CI;
-// // 
-// //     createDependency(LOCNode, ChildNode);
-// //   }
-// // 
-// //   /// Remove useless dependencies for origin LOC operation nodes.
-// //   for (unsigned i = 0; i < Operands.size(); ++i) {
-// //     DFGNode *OperandNode = Operands[i];
-// // 
-// //     for (unsigned j = 0; j < Operations.size(); ++j) {
-// //       DFGNode *OperationNode = Operations[j];
-// // 
-// //       if (OperandNode->hasChildNode(OperationNode)) {
-// //         removeDependency(OperandNode, OperationNode);
-// //       }
-// //     }
-// //   }
-// // 
-// //   return LOCNode;
-// }
-// 
-// void DFGOpt::createDependency(DFGNode *From, DFGNode *To) {
-//   From->addChildNode(To);
-// 
-//   assert(From->hasChildNode(To) && "Fail to create dependency!");
-//   assert(To->hasParentNode(From) && "Fail to create dependency!");
-// }
-// 
-// void DFGOpt::removeDependency(DFGNode *From, DFGNode *To) {
-// //   From->removeChildNode(To);
-// // 
-// //   assert(!From->hasChildNode(To) && "Fail to remove dependency!");
-// //   assert(!To->hasParentNode(From) && "Fail to remove dependency!");
-// }
+//     OutputForDebugFile << "}\n";
+  } 
+}
+
+std::vector<DFGNode *> DFGOpt::collectMergeRootNodes() {
+  // Vector for the roots
+  std::vector<DFGNode *> RootNodesVector;
+
+  /// Traverse the whole design, and collect the nodes as merge root, which meet
+  /// the following conditions:
+  /// 1) the node type is Not, And, Or, Xor
+  /// 2) the node is used by other nodes whose type is not listed in 1
+
+  typedef DataFlowGraph::node_iterator node_iterator;
+  for (node_iterator NI = DFG->begin(), NE = DFG->end(); NI != NE; ++NI) {
+    DFGNode *Node = NI;
+    DFGNode::NodeType Ty = Node->getType();
+
+    if (Ty == DFGNode::Not || Ty == DFGNode::And || Ty == DFGNode::Or ||
+        Ty == DFGNode::Xor) {
+      typedef DFGNode::iterator child_iterator;
+      for (child_iterator CI = Node->child_begin(), CE = Node->child_end();
+           CI != CE; ++CI) {
+        DFGNode *ChildNode = *CI;
+        DFGNode::NodeType ChildTy = ChildNode->getType();
+
+        if (ChildTy != DFGNode::Not && ChildTy != DFGNode::And &&
+            ChildTy != DFGNode::Or && ChildTy != DFGNode::Xor) {
+          RootNodesVector.push_back(Node);
+
+          break;
+        }
+      }
+    }
+  }
+
+  return RootNodesVector;
+}
+
+void DFGOpt::traverseFromRootNode(DFGNode *RootNode) {
+  // The operations in current logic operation chain.
+  std::vector<DFGNode *> Operations;
+  // The operands of current logic operation chain.
+  std::vector<DFGNode *> Operands;
+
+  std::set<DFGNode *> Visited;
+
+  typedef DFGNode::iterator iterator;
+  std::vector<std::pair<DFGNode *, iterator> > VisitStack;
+
+  VisitStack.push_back(std::make_pair(RootNode, RootNode->parent_begin()));
+  Operations.push_back(RootNode);
+
+  while (!VisitStack.empty()) {
+    DFGNode *CurNode = VisitStack.back().first;
+    iterator &It = VisitStack.back().second;
+
+    // All parents of current instruction have been visited.
+    if (It == CurNode->parent_end()) {
+      VisitStack.pop_back();
+      continue;
+    }
+
+    DFGNode *ParentNode = *It;
+    ++It;
+
+    // Avoid visit same value twice.
+    if (Visited.count(ParentNode))
+      continue;
+    Visited.insert(ParentNode);
+
+    DFGNode::NodeType Ty = ParentNode->getType();
+
+    // Still part of the logic operations chain.
+    if (ParentNode->child_size() == 1) {
+      if (Ty == DFGNode::Not || Ty == DFGNode::And ||
+          Ty == DFGNode::Or || Ty == DFGNode::Xor) {
+        VisitStack.push_back(std::make_pair(ParentNode, ParentNode->parent_begin()));
+
+        // The operation in current logic operation chain.
+        Operations.push_back(ParentNode);
+
+        continue;
+      }
+    }
+
+    // Reach the leaf, that is, the operand of current logic operation chain.
+    Operands.push_back(ParentNode);
+  }
+
+  // Ignore the single logic operation.
+  if (Operations.size() == 1)
+    return;
+
+  // Index the logic operation chain.
+  DFG->indexLOC(RootNode, Operations, Operands);
+}
+
+DFGNode *DFGOpt::LOCBuild(DFGNode *RootNode) {
+  // Get the operations and operands of LOC.
+  std::vector<DFGNode *> Operations = DFG->getOperationsOfLOC(RootNode);
+  std::vector<DFGNode *> Operands = DFG->getOperandsOfLOC(RootNode);
+
+  // Create a DFG node represent the LOC.
+  std::string LOCName = "LOC_" + RootNode->getName();
+  unsigned LOCBitWidth = RootNode->getBitWidth();
+  DFGNode *LOCNode
+    = DFG->createDFGNode(LOCName, NULL, RootNode->getParentBB(),
+                         DFGNode::LogicOperationChain, LOCBitWidth);
+
+  // Index the root and the LOC node.
+  DFG->indexRootOfLOC(RootNode, LOCNode);
+
+  /// Create dependencies for LOC DFG node.
+  // The parents of LOC DFG node
+  for (unsigned i = 0; i < Operands.size(); ++i) {
+    DFGNode *OperandNode = Operands[i];
+
+    for (unsigned j = 0; j < Operations.size(); ++j) {
+      DFGNode *OperationNode = Operations[j];
+
+      if (OperationNode->hasParentNode(OperandNode)) {
+        OperationNode->removeParentNode(OperandNode);
+
+        if (!LOCNode->hasParentNode(OperandNode))
+          LOCNode->addParentNode(OperandNode);
+      }
+    }
+  }
+  // The children of LOC DFG node
+  typedef DFGNode::iterator child_iterator;
+  for (child_iterator CI = RootNode->child_begin(), CE = RootNode->child_end();
+       CI != CE;) {
+    DFGNode *ChildNode = *CI++;
+
+    if (CommutativeDFGNode *CNode = dyn_cast<CommutativeDFGNode>(ChildNode)) {
+      unsigned Num = CNode->getNumOfParentNode(RootNode);
+
+      // Unlink the dependencies from RootNode to child node.
+      CNode->removeParentNode(RootNode, Num);
+      // Link the dependencies from LOCNode to child node.
+      CNode->addParentNode(LOCNode, Num);
+    }
+    else if (NonCommutativeDFGNode *NCNode
+               = dyn_cast<NonCommutativeDFGNode>(ChildNode)) {
+      std::set<unsigned> IdxList = NCNode->getParentIdx(RootNode);
+      typedef std::set<unsigned>::iterator iterator;
+
+      // Unlink the dependencies from RootNode to child node.
+      for (iterator I = IdxList.begin(), E = IdxList.end(); I != E; ++I) {
+        unsigned Idx = *I;
+        NCNode->removeParentNode(RootNode, Idx);
+      }
+
+      // Link the dependencies from LOCNode to child node.
+      for (iterator I = IdxList.begin(), E = IdxList.end(); I != E; ++I) {
+        unsigned Idx = *I;
+        NCNode->addParentNode(LOCNode, Idx);
+      }
+    }
+    else
+    {
+      assert(ChildNode->getType() == DFGNode::LogicOperationChain &&
+             "Unexpected node type!");
+
+      ChildNode->removeParentNode(RootNode);
+      if (ChildNode->hasParentNode(LOCNode))
+        ChildNode->addParentNode(LOCNode);
+    }
+  }
+
+  return LOCNode;
+}
