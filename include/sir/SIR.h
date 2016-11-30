@@ -375,8 +375,6 @@ public:
   }
 
   void print(raw_ostream &Output) {
-    Output << "[";
-
     unsigned BitWidth = getMaskWidth();
     for (unsigned i = 0; i < BitWidth; ++i) {
       if (KnownZeros[BitWidth - 1 - i] == 1)
@@ -388,8 +386,6 @@ public:
       else
         Output << 'x';
     }
-
-    Output << "]";
   }
 };
 

@@ -1066,14 +1066,14 @@ bool BitMaskAnalysis::runOnSIR(SIR &SM) {
 
   unsigned IterationNum = 0;
 
-  errs() << "==========BitMask Analysis Start==========\n";
+  errs() << "==============BitMask Analysis Start===============\n";
   bool Changed = true;
   while (Changed) {
     errs() << "Running BitMask Analysis in iteration #"
            << utostr_32(IterationNum++) << "\n";
     Changed = runIteration();
   }
-  errs() << "==========BitMask Analysis End============\n";
+  errs() << "==============BitMask Analysis End=================\n";
 
   printMask(Output);
   //verifyMaskCorrectness();

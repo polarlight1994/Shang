@@ -24,6 +24,8 @@ typedef std::vector<MatrixRowType> MatrixType;
 
 static unsigned Component_NUM = 0;
 static bool sortMatrixByArrivalTime = false;
+static bool enableBitMaskOpt = true;
+static bool useGPCWithCarryChain = false;
 
 namespace {
 struct SIRMOAOpt : public SIRPass {
@@ -264,11 +266,15 @@ bool SIRMOAOpt::runOnSIR(SIR &SM) {
   DFGBuild &DB = getAnalysis<DFGBuild>();
   this->DFG = DB.getDFG();
 
+  errs() << "==========Compressor Tree Synthesis Start==========\n";
+
   // Extract multi-operand adders
   collectMOAs();
 
   // Generate hybrid tree.
   generateHybridTrees();
+
+  errs() << "==========Compressor Tree Synthesis End============\n";
 
   return false;
 }
@@ -291,7 +297,7 @@ float SIRMOAOpt::hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
   printTMatrixForDebug(Matrix);
 
   // Consider use normal adder to sum some rows which have earlier arrival time.
-  Matrix = sumRowsByAdder(Matrix, ColNum, Output);
+  //Matrix = sumRowsByAdder(Matrix, ColNum, Output);
   RowNum = Matrix.size();
 
   // Optimize the dot matrix taking advantage of the known bits.
@@ -640,8 +646,15 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
     else {
       // Get the arrival time of the dots.
       float ArrivalTime = getOperandArrivalTime(Operand);
+      // Get the bit mask of the dots.
+      DFGNode *OpNode = SM->getDFGNodeOfVal(Operand);
+      assert(OpNode && "DFG node not created?");
+      BitMask Mask = SM->getBitMask(OpNode);
 
-      errs() << "Operand_" + utostr_32(i) << " has arrival time of " << ArrivalTime << "\n";
+      errs() << "Operand_" + utostr_32(i) << ": ArrivalTime[ " << ArrivalTime << "], ";
+      errs() << "BitMask[";
+      Mask.print(errs());
+      errs() << "];\n";
 
       // Get the name of the operand to denote the name of the dot later.
       std::string OpName = "operand_" + utostr_32(i);
@@ -651,13 +664,10 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
         // When the dot position is within the range of operand bit width,
         // we get the name of dot considering the bit mask.
         if (j < OpWidth) {
-          // If it is a known bit, then use the known value.
-          DFGNode *OpNode = SM->getDFGNodeOfVal(Operand);
-          assert(OpNode && "DFG node not created?");
-
-          if (SM->hasBitMask(OpNode)) {
-            BitMask Mask = SM->getBitMask(OpNode);
-
+          // If we enable the optimization based on bitmask analysis. Then
+          // the content of dot should be decided by mask.
+          if (enableBitMaskOpt) {
+            // If it is a known bit, then use the known value.
             if (Mask.isOneKnownAt(j)) {
               Matrix[i][j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
               continue;
@@ -723,24 +733,14 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
   unsigned MatrixRowNum = OptOperands.size();
   unsigned MatrixColNum = TD->getTypeSizeInBits(MOA->getType());
   std::string MatrixName = Mangle(PseudoHybridTreeInst->getName());
+
+  errs() << "Synthesize compressor tree for " << MatrixName << "......\n";
+
   MatrixType
     Matrix = createDotMatrix(OptOperands, MatrixRowNum, MatrixColNum);
 
   DebugOutput << "---------- Matrix for " << MatrixName << " ------------\n";
   printTMatrixForDebug(Matrix);
-
-//   // Code for debug
-//   errs() << "Operands for hybrid tree " << MatrixName << "is indexed as:\n";
-//   for (unsigned i = 0; i < OptOperands.size(); ++i) {
-//     std::stringstream ss;
-//     ss << getOperandArrivalTime(OptOperands[i]);
-// 
-//     std::string delay_string;
-//     ss >> delay_string;
-//     ss.clear();
-//     errs() << "[" + utostr_32(i) + "--" << delay_string << "],";
-//   }
-//   errs() << "\n";
 
   float ResultArrivalTime = hybridTreeCodegen(Matrix, MatrixName,
                                               MatrixRowNum, MatrixColNum, Output);
@@ -1474,16 +1474,31 @@ void SIRMOAOpt::initGPCs() {
                             GPC_5_3_LUT_InputsVector, 3, 2, 0.049f);
   Library.push_back(GPC_5_3_LUT);
 
-  /// GPC_6_3
-  // Inputs & Outputs
-  unsigned GPC_6_3_Inputs[1] = { 6 };
-  std::vector<unsigned> GPC_6_3_InputsVector(GPC_6_3_Inputs,
-                                             GPC_6_3_Inputs + 1);
+  if (useGPCWithCarryChain) {
+    /// GPC_6_3
+    // Inputs & Outputs
+    unsigned GPC_6_3_Inputs[1] = { 6 };
+    std::vector<unsigned> GPC_6_3_InputsVector(GPC_6_3_Inputs,
+                                               GPC_6_3_Inputs + 1);
 
-  CompressComponent *GPC_6_3
-    = new CompressComponent(GPCType, "GPC_6_3",
-                            GPC_6_3_InputsVector, 3, 2, 0.293f);
-  Library.push_back(GPC_6_3);
+    CompressComponent *GPC_6_3
+      = new CompressComponent(GPCType, "GPC_6_3",
+                              GPC_6_3_InputsVector, 3, 2, 0.293f);
+    Library.push_back(GPC_6_3);
+  }
+  else {
+    /// GPC_6_3_LUT
+    // Inputs & Outputs
+    unsigned GPC_6_3_LUT_Inputs[1] = { 6 };
+    std::vector<unsigned> GPC_6_3_LUT_InputsVector(GPC_6_3_LUT_Inputs,
+                                                   GPC_6_3_LUT_Inputs + 1);
+
+    CompressComponent *GPC_6_3_LUT
+      = new CompressComponent(GPCType, "GPC_6_3_LUT",
+                              GPC_6_3_LUT_InputsVector, 3, 3, 0.049f);
+    Library.push_back(GPC_6_3_LUT);
+  }
+  
 
 //   /// GPC_6_3 with extra 1'b1 in rank of 0
 //   // Inputs & Outputs
@@ -1538,111 +1553,128 @@ void SIRMOAOpt::initGPCs() {
 //                              GPC_14_3_LUT_SP_InputsVector, 3, 2, 0.049f, 0);
 //   Library.push_back(GPC_14_3_LUT_ExtraOne_Rank0);
 
-  /// GPC_15_3
-  // Inputs & Outputs
-  unsigned GPC_15_3_Inputs[2] = { 5, 1 };
-  std::vector<unsigned> GPC_15_3_InputsVector(GPC_15_3_Inputs,
-                                              GPC_15_3_Inputs + 2);
+  if (useGPCWithCarryChain) {
+    /// GPC_15_3
+    // Inputs & Outputs
+    unsigned GPC_15_3_Inputs[2] = { 5, 1 };
+    std::vector<unsigned> GPC_15_3_InputsVector(GPC_15_3_Inputs,
+                                                GPC_15_3_Inputs + 2);
 
-  CompressComponent *GPC_15_3
-    = new CompressComponent(GPCType, "GPC_15_3",
-                            GPC_15_3_InputsVector, 3, 2, 0.274f);
-  Library.push_back(GPC_15_3);
+    CompressComponent *GPC_15_3
+      = new CompressComponent(GPCType, "GPC_15_3",
+                              GPC_15_3_InputsVector, 3, 2, 0.274f);
+    Library.push_back(GPC_15_3);
+  }
+  else
+  {
+    /// GPC_15_3_LUT
+    // Inputs & Outputs
+    unsigned GPC_15_3_LUT_Inputs[2] = { 5, 1 };
+    std::vector<unsigned> GPC_15_3_LUT_InputsVector(GPC_15_3_LUT_Inputs,
+                                                    GPC_15_3_LUT_Inputs + 2);
 
-  /// GPC_506_5
-  // Inputs & Outputs
-  unsigned GPC_506_5_Inputs[3] = { 6, 0, 5 };
-  std::vector<unsigned> GPC_506_5_InputsVector(GPC_506_5_Inputs,
-                                               GPC_506_5_Inputs + 3);
+    CompressComponent *GPC_15_3_LUT
+      = new CompressComponent(GPCType, "GPC_15_3_LUT",
+                              GPC_15_3_LUT_InputsVector, 3, 3, 0.049f);
+    Library.push_back(GPC_15_3_LUT);
+  }
+  
+  if (useGPCWithCarryChain) {
+    /// GPC_506_5
+    // Inputs & Outputs
+    unsigned GPC_506_5_Inputs[3] = { 6, 0, 5 };
+    std::vector<unsigned> GPC_506_5_InputsVector(GPC_506_5_Inputs,
+                                                 GPC_506_5_Inputs + 3);
 
-  CompressComponent *GPC_506_5
-    = new CompressComponent(GPCType, "GPC_506_5",
-                            GPC_506_5_InputsVector, 5, 4, 0.31f);
-  Library.push_back(GPC_506_5);
+    CompressComponent *GPC_506_5
+      = new CompressComponent(GPCType, "GPC_506_5",
+                              GPC_506_5_InputsVector, 5, 4, 0.31f);
+    Library.push_back(GPC_506_5);
 
-//   /// GPC_506_5 with extra 1'b1 in rank of 0
-//   // Inputs & Outputs
-//   unsigned GPC_506_5_LUT_SP_Inputs[3] = { 7, 0, 5 };
-//   std::vector<unsigned> GPC_506_5_LUT_SP_InputsVector(GPC_506_5_LUT_SP_Inputs,
-//                                                       GPC_506_5_LUT_SP_Inputs + 3);
-//   GPC_with_extra_One *GPC_506_5_ExtraOne_Rank0
-//     = new GPC_with_extra_One("GPC_506_5_ExtraOne_Rank0",
-//                              GPC_506_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
-//   Library.push_back(GPC_506_5_ExtraOne_Rank0);
+    //   /// GPC_506_5 with extra 1'b1 in rank of 0
+    //   // Inputs & Outputs
+    //   unsigned GPC_506_5_LUT_SP_Inputs[3] = { 7, 0, 5 };
+    //   std::vector<unsigned> GPC_506_5_LUT_SP_InputsVector(GPC_506_5_LUT_SP_Inputs,
+    //                                                       GPC_506_5_LUT_SP_Inputs + 3);
+    //   GPC_with_extra_One *GPC_506_5_ExtraOne_Rank0
+    //     = new GPC_with_extra_One("GPC_506_5_ExtraOne_Rank0",
+    //                              GPC_506_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
+    //   Library.push_back(GPC_506_5_ExtraOne_Rank0);
 
-  // GPC_606_5
-  // Inputs & Outputs
-  unsigned GPC_606_5_Inputs[3] = { 6, 0, 6 };
-  std::vector<unsigned> GPC_606_5_InputsVector(GPC_606_5_Inputs,
-                                               GPC_606_5_Inputs + 3);
+    // GPC_606_5
+    // Inputs & Outputs
+    unsigned GPC_606_5_Inputs[3] = { 6, 0, 6 };
+    std::vector<unsigned> GPC_606_5_InputsVector(GPC_606_5_Inputs,
+                                                 GPC_606_5_Inputs + 3);
 
-  CompressComponent *GPC_606_5
-    = new CompressComponent(GPCType, "GPC_606_5",
-                            GPC_606_5_InputsVector, 5, 4, 0.31f);
-  Library.push_back(GPC_606_5);
+    CompressComponent *GPC_606_5
+      = new CompressComponent(GPCType, "GPC_606_5",
+                              GPC_606_5_InputsVector, 5, 4, 0.31f);
+    Library.push_back(GPC_606_5);
 
-//   /// GPC_606_5 with extra 1'b1 in rank of 0
-//   // Inputs & Outputs
-//   unsigned GPC_606_5_LUT_SP_Inputs[3] = { 7, 0, 6 };
-//   std::vector<unsigned> GPC_606_5_LUT_SP_InputsVector(GPC_606_5_LUT_SP_Inputs,
-//                                                       GPC_606_5_LUT_SP_Inputs + 3);
-//   GPC_with_extra_One *GPC_606_5_ExtraOne_Rank0
-//     = new GPC_with_extra_One("GPC_606_5_ExtraOne_Rank0",
-//                              GPC_606_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
-//   Library.push_back(GPC_606_5_ExtraOne_Rank0);
+    //   /// GPC_606_5 with extra 1'b1 in rank of 0
+    //   // Inputs & Outputs
+    //   unsigned GPC_606_5_LUT_SP_Inputs[3] = { 7, 0, 6 };
+    //   std::vector<unsigned> GPC_606_5_LUT_SP_InputsVector(GPC_606_5_LUT_SP_Inputs,
+    //                                                       GPC_606_5_LUT_SP_Inputs + 3);
+    //   GPC_with_extra_One *GPC_606_5_ExtraOne_Rank0
+    //     = new GPC_with_extra_One("GPC_606_5_ExtraOne_Rank0",
+    //                              GPC_606_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
+    //   Library.push_back(GPC_606_5_ExtraOne_Rank0);
 
-  // GPC_1325_5
-  // Inputs & Outputs
-  unsigned GPC_1325_5_Inputs[4] = { 5, 2, 3, 1 };
-  std::vector<unsigned> GPC_1325_5_InputsVector(GPC_1325_5_Inputs,
-                                                GPC_1325_5_Inputs + 4);
+    // GPC_1325_5
+    // Inputs & Outputs
+    unsigned GPC_1325_5_Inputs[4] = { 5, 2, 3, 1 };
+    std::vector<unsigned> GPC_1325_5_InputsVector(GPC_1325_5_Inputs,
+                                                  GPC_1325_5_Inputs + 4);
 
-  CompressComponent *GPC_1325_5
-    = new CompressComponent(GPCType, "GPC_1325_5",
-                            GPC_1325_5_InputsVector, 5, 4, 0.302f);
-  Library.push_back(GPC_1325_5);
+    CompressComponent *GPC_1325_5
+      = new CompressComponent(GPCType, "GPC_1325_5",
+                              GPC_1325_5_InputsVector, 5, 4, 0.302f);
+    Library.push_back(GPC_1325_5);
 
-//   /// GPC_1325_5 with extra 1'b1 in rank of 1
-//   // Inputs & Outputs
-//   unsigned GPC_1325_5_LUT_SP_Inputs[4] = { 5, 3, 3, 1 };
-//   std::vector<unsigned> GPC_1325_5_LUT_SP_InputsVector(GPC_1325_5_LUT_SP_Inputs,
-//                                                        GPC_1325_5_LUT_SP_Inputs + 4);
-//   GPC_with_extra_One *GPC_1325_5_ExtraOne_Rank1
-//     = new GPC_with_extra_One("GPC_1325_5_ExtraOne_Rank1",
-//                              GPC_1325_5_LUT_SP_InputsVector, 5, 4, 0.31f, 1);
-//   Library.push_back(GPC_1325_5_ExtraOne_Rank1);
+    //   /// GPC_1325_5 with extra 1'b1 in rank of 1
+    //   // Inputs & Outputs
+    //   unsigned GPC_1325_5_LUT_SP_Inputs[4] = { 5, 3, 3, 1 };
+    //   std::vector<unsigned> GPC_1325_5_LUT_SP_InputsVector(GPC_1325_5_LUT_SP_Inputs,
+    //                                                        GPC_1325_5_LUT_SP_Inputs + 4);
+    //   GPC_with_extra_One *GPC_1325_5_ExtraOne_Rank1
+    //     = new GPC_with_extra_One("GPC_1325_5_ExtraOne_Rank1",
+    //                              GPC_1325_5_LUT_SP_InputsVector, 5, 4, 0.31f, 1);
+    //   Library.push_back(GPC_1325_5_ExtraOne_Rank1);
 
-  // GPC_1406_5
-  // Inputs & Outputs
-  unsigned GPC_1406_5_Inputs[4] = { 6, 0, 4, 1 };
-  std::vector<unsigned> GPC_1406_5_InputsVector(GPC_1406_5_Inputs,
-                                                GPC_1406_5_Inputs + 4);
+    // GPC_1406_5
+    // Inputs & Outputs
+    unsigned GPC_1406_5_Inputs[4] = { 6, 0, 4, 1 };
+    std::vector<unsigned> GPC_1406_5_InputsVector(GPC_1406_5_Inputs,
+                                                  GPC_1406_5_Inputs + 4);
 
-  CompressComponent *GPC_1406_5
-    = new CompressComponent(GPCType, "GPC_1406_5",
-                            GPC_1406_5_InputsVector, 5, 4, 0.31f);
-  Library.push_back(GPC_1406_5);
+    CompressComponent *GPC_1406_5
+      = new CompressComponent(GPCType, "GPC_1406_5",
+                              GPC_1406_5_InputsVector, 5, 4, 0.31f);
+    Library.push_back(GPC_1406_5);
 
-//   /// GPC_1406_5 with extra 1'b1 in rank of 0
-//   // Inputs & Outputs
-//   unsigned GPC_1406_5_LUT_SP_Inputs[4] = { 7, 0, 4, 1 };
-//   std::vector<unsigned> GPC_1406_5_LUT_SP_InputsVector(GPC_1406_5_LUT_SP_Inputs,
-//                                                        GPC_1406_5_LUT_SP_Inputs + 4);
-//   GPC_with_extra_One *GPC_1406_5_ExtraOne_Rank0
-//     = new GPC_with_extra_One("GPC_1406_5_ExtraOne_Rank0",
-//                              GPC_1406_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
-//   Library.push_back(GPC_1406_5_ExtraOne_Rank0);
+    //   /// GPC_1406_5 with extra 1'b1 in rank of 0
+    //   // Inputs & Outputs
+    //   unsigned GPC_1406_5_LUT_SP_Inputs[4] = { 7, 0, 4, 1 };
+    //   std::vector<unsigned> GPC_1406_5_LUT_SP_InputsVector(GPC_1406_5_LUT_SP_Inputs,
+    //                                                        GPC_1406_5_LUT_SP_Inputs + 4);
+    //   GPC_with_extra_One *GPC_1406_5_ExtraOne_Rank0
+    //     = new GPC_with_extra_One("GPC_1406_5_ExtraOne_Rank0",
+    //                              GPC_1406_5_LUT_SP_InputsVector, 5, 4, 0.31f, 0);
+    //   Library.push_back(GPC_1406_5_ExtraOne_Rank0);
 
-  // GPC_1415_5
-  // Inputs & Outputs
-  unsigned GPC_1415_5_Inputs[4] = { 5, 1, 4, 1 };
-  std::vector<unsigned> GPC_1415_5_InputsVector(GPC_1415_5_Inputs,
-                                                GPC_1415_5_Inputs + 4);
+    // GPC_1415_5
+    // Inputs & Outputs
+    unsigned GPC_1415_5_Inputs[4] = { 5, 1, 4, 1 };
+    std::vector<unsigned> GPC_1415_5_InputsVector(GPC_1415_5_Inputs,
+                                                  GPC_1415_5_Inputs + 4);
 
-  CompressComponent *GPC_1415_5
-    = new CompressComponent(GPCType, "GPC_1415_5",
-                            GPC_1415_5_InputsVector, 5, 4, 0.31f);
-  Library.push_back(GPC_1415_5);
+    CompressComponent *GPC_1415_5
+      = new CompressComponent(GPCType, "GPC_1415_5",
+                              GPC_1415_5_InputsVector, 5, 4, 0.31f);
+    Library.push_back(GPC_1415_5);
+  }
 }
 
 void SIRMOAOpt::initAddChains() {
@@ -2197,6 +2229,13 @@ void SIRMOAOpt::printGPCModule(raw_fd_ostream &Output) {
   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5];\n\n";
   Output << "endmodule\n\n";
 
+  Output << "module GPC_6_3_LUT(\n";
+  Output << "\tinput wire[5:0] col0,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + col0[5];\n\n";
+  Output << "endmodule\n\n";
+
   // Generate the 6-3_ExtraOne_Rank0 compressor.
   Output << "module GPC_6_3_ExtraOne_Rank0(\n";
   Output << "\tinput wire[5:0] col0,\n";
@@ -2234,6 +2273,14 @@ void SIRMOAOpt::printGPCModule(raw_fd_ostream &Output) {
 
   // Generate the 15-3 compressor.
   Output << "module GPC_15_3(\n";
+  Output << "\tinput wire[4:0] col0,\n";
+  Output << "\tinput wire col1,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + 2 * col1;\n\n";
+  Output << "endmodule\n\n";
+
+  Output << "module GPC_15_3_LUT(\n";
   Output << "\tinput wire[4:0] col0,\n";
   Output << "\tinput wire col1,\n";
   Output << "\toutput wire[2:0] sum\n";
