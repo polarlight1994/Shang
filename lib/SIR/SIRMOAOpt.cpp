@@ -26,7 +26,7 @@ static unsigned Component_NUM = 0;
 static bool sortMatrixByArrivalTime = true;
 static bool enableBitMaskOpt = true;
 static bool useGPCWithCarryChain = true;
-static bool sumFirstRowsByAdder = false;
+static bool sumFirstRowsByAdder = true;
 
 namespace {
 struct SIRMOAOpt : public SIRPass {

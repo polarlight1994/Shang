@@ -46,6 +46,8 @@ using namespace llvm;
 // To use the LUA in VAST
 using namespace vast;
 
+static bool extractMode = false;
+
 namespace llvm {
   struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
     raw_ostream &OS;
@@ -761,22 +763,6 @@ void SIRControlPathPrinter::generateCodeForMemoryBank() {
   }
 }
 
-void SIRDatapathPrinter::generateBoothMulArray(IntrinsicInst &I) {
-  assert(I.getIntrinsicID() == Intrinsic::shang_mul && "Unexpected intrinsic instruction type!");
-
-  Value *LHS = I.getOperand(0), *RHS = I.getOperand(1);
-  SIRBitMask LHSMask = SM->getBitMask(LHS), RHSMask = SM->getBitMask(RHS);
-
-  unsigned BitWidth = TD.getTypeSizeInBits(I.getType());
-  unsigned LHSBitWidth = LHSMask.getMaskWidth(), RHSBitWidth = RHSMask.getMaskWidth();
-
-  unsigned partial_product_num = floor(RHSBitWidth / 2.0) + 1;
-  
-  // Initialize the partial product dot matrix.
-  std::set<std::set<string> > DotMatrix;
-  
-}
-
 void SIRDatapathPrinter::printSimpleOp(ArrayRef<Value *> Ops, const char *Opc) {
   unsigned BitWidth = TD.getTypeSizeInBits(Ops[0]->getType());
 
@@ -874,37 +860,6 @@ bool SIRDatapathPrinter::printFUAdd(IntrinsicInst &I) {
   return true;
 }
 
-bool SIRDatapathPrinter::printFUMul(IntrinsicInst &I) {
-  // Extract the called function
-  Function *Callee = I.getCalledFunction();
-
-  assert(Callee->arg_size() == 2 && "Not a binary expression!");
-
-  SmallVector<Value *, 2> Ops;
-  typedef CallInst::op_iterator iterator;
-  for (iterator i = I.op_begin(); i != I.op_end(); i++)
-    Ops.push_back(*i);
-
-  OS << "booth_mul" << "#("
-    << TD.getTypeSizeInBits(Ops[0]->getType()) << ", "
-    << TD.getTypeSizeInBits(Ops[1]->getType()) << ", "
-    << TD.getTypeSizeInBits(Callee->getReturnType()) << ") ";
-
-  // Here need to print a module name, not value name
-  printName(OS, I);
-  OS << '_' << getFUName(I);
-
-  OS << '(';
-
-  printAsOperand(OS, Ops[0], TD.getTypeSizeInBits(Ops[0]->getType()));
-  OS << ", ";
-  printAsOperand(OS, Ops[1], TD.getTypeSizeInBits(Ops[1]->getType()));
-  OS << ", ";
-  printAsOperand(OS, &I, TD.getTypeSizeInBits(Callee->getReturnType()));
-  OS << ");\n";
-  return true;
-}
-
 bool SIRDatapathPrinter::printBinaryFU(IntrinsicInst &I) {
   // Extract the called function
   Function *Callee = I.getCalledFunction();
@@ -973,8 +928,6 @@ bool SIRDatapathPrinter::printSubModuleInstantiation(IntrinsicInst &I) {
     if (printFUAdd(I)) return true;
     break;
   case Intrinsic::shang_mul:
-    if (printFUMul(I)) return true;
-    break;
   case Intrinsic::shang_udiv:
   case Intrinsic::shang_sdiv:
   case Intrinsic::shang_shl:
@@ -1145,55 +1098,58 @@ void SIRDatapathPrinter::visitBitCastInst(BitCastInst &I) {
 void SIRDatapathPrinter::visitBasicBlock(BasicBlock *BB) {
   typedef BasicBlock::iterator iterator;
   for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
+    if (extractMode && !SM->hasKeepVal(I))
+      continue;
+
     visit(I);
   }
 }
 
 namespace {
-  struct SIR2RTL : public SIRPass {
-    vlang_raw_ostream Out;
+struct SIR2RTL : public SIRPass {
+  vlang_raw_ostream Out;
 
-    /// @name FunctionPass interface
+  /// @name FunctionPass interface
 
-    static char ID;
-    SIR2RTL() : SIRPass(ID), Out() {
-      initializeSIR2RTLPass(*PassRegistry::getPassRegistry());
-    }
+  static char ID;
+  SIR2RTL() : SIRPass(ID), Out() {
+    initializeSIR2RTLPass(*PassRegistry::getPassRegistry());
+  }
 
-    ~SIR2RTL() {}
+  ~SIR2RTL() {}
 
-    // Should be moved into Control path printer in the future
-    void printRegisterBlock(const SIRRegister *Reg, raw_ostream &OS,
-      DataLayout &TD, uint64_t InitVal = 0);
-    void printRegisterBlock(const SIRRegister *Reg, vlang_raw_ostream &OS,
-      DataLayout &TD, uint64_t InitVal = 0);
+  // Should be moved into Control path printer in the future
+  void printRegisterBlock(const SIRRegister *Reg, raw_ostream &OS,
+    DataLayout &TD, uint64_t InitVal = 0);
+  void printRegisterBlock(const SIRRegister *Reg, vlang_raw_ostream &OS,
+    DataLayout &TD, uint64_t InitVal = 0);
 
-    void printOutPort(const SIROutPort *OutPort, raw_ostream &OS, DataLayout &TD);
+  void printOutPort(const SIROutPort *OutPort, raw_ostream &OS, DataLayout &TD);
 
-    void generateCodeForTopModule(SIR &SM, DataLayout &TD);
-    void generateCodeForDecl(SIR &SM, DataLayout &TD);
-    void generateCodeForDatapath(SIR &SM, DataLayout &TD);
-    void generateCodeForControlpath(SIR &SM, DataLayout &TD);
-    void generateCodeForMemoryBank(SIR &SM, DataLayout &TD);
-    void generateCodeForOutPort(SIR &SM, DataLayout &TD);
+  void generateCodeForTopModule(SIR &SM, DataLayout &TD);
+  void generateCodeForDecl(SIR &SM, DataLayout &TD);
+  void generateCodeForDatapath(SIR &SM, DataLayout &TD);
+  void generateCodeForControlpath(SIR &SM, DataLayout &TD);
+  void generateCodeForMemoryBank(SIR &SM, DataLayout &TD);
+  void generateCodeForOutPort(SIR &SM, DataLayout &TD);
 
-    void generateCodeForGlobalVariableScript(SIR &SM, DataLayout &TD);
-    void generateCodeForSCIFScript(SIR &SM, DataLayout &TD);
-    void generateCodeForTestsuite(SIR &SM, DataLayout &TD);
+  void generateCodeForGlobalVariableScript(SIR &SM, DataLayout &TD);
+  void generateCodeForSCIFScript(SIR &SM, DataLayout &TD);
+  void generateCodeForTestsuite(SIR &SM, DataLayout &TD);
 
-    bool runOnSIR(SIR &SM);
+  bool runOnSIR(SIR &SM);
 
-    void getAnalysisUsage(AnalysisUsage &AU) const {
-      SIRPass::getAnalysisUsage(AU);
-      AU.addRequired<DataLayout>();
-      AU.addRequiredID(SIRSchedulingID);
-      AU.addRequiredID(SIRMOAOptID);
-      AU.addRequiredID(BitMaskAnalysisID);
-      AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
-      AU.addRequiredID(SIRTimingScriptGenID);
-      AU.setPreservesAll();
-    }
-  };
+  void getAnalysisUsage(AnalysisUsage &AU) const {
+    SIRPass::getAnalysisUsage(AU);
+    AU.addRequired<DataLayout>();
+    AU.addRequiredID(SIRSchedulingID);
+    AU.addRequiredID(SIRMOAOptID);
+    AU.addRequiredID(BitMaskAnalysisID);
+    AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
+    AU.addRequiredID(SIRTimingScriptGenID);
+    AU.setPreservesAll();
+  }
+};
 }
 
 void SIR2RTL::generateCodeForTopModule(SIR &SM, DataLayout &TD) {
@@ -1228,6 +1184,19 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
     Port->printDecl(Out.indent(4));
   }
 
+  if (extractMode) {
+    typedef SIR::register_iterator reg_iterator;
+    for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
+      SIRRegister *Reg = I;
+
+      if (extractMode && !SM.hasKeepVal(Reg->getLLVMValue()))
+        continue;
+
+      Out << ",\n input wire [" << utostr_32(Reg->getBitWidth() - 1) << ":0] "
+          << Mangle(Reg->getName()) + "_wire";
+    }
+  }
+
   // Get the enableCosimulation property from the Lua file.
   bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
 
@@ -1251,6 +1220,9 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
   I != E; ++I) {
     SIRRegister *Reg = I;
 
+    if (extractMode && !SM.hasKeepVal(Reg->getLLVMValue()))
+      continue;
+
     // Do not need to declaration registers for the output and FUInOut,
     // since we have do it in MemoryBank declaration part.
     if (Reg->isOutPort() || Reg->isFUInOut()) continue;
@@ -1263,7 +1235,21 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
 
   Out << "\n";
 
-  if (!enableCoSimulation) {
+  if (extractMode) {
+    Out << "always@(posedge clk) begin\n";
+    for (reg_iterator I = SM.registers_begin(), E = SM.registers_end();
+    I != E; ++I) {
+      SIRRegister *Reg = I;
+
+      if (!SM.hasKeepVal(Reg->getLLVMValue()))
+        continue;
+
+      Out << "\t" << Mangle(Reg->getName()) << " <= " << Mangle(Reg->getName()) + "_wire;\n";
+    }
+    Out << "end\n\n";
+  }
+
+  if (!extractMode && !enableCoSimulation) {
     // If we are running the co-simulation, then all registers used in memory bank will
     // have been declared in Ports, then we do need to re-declared it.
     typedef SIR::const_submodulebase_iterator submod_iterator;
@@ -1289,6 +1275,9 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
     typedef BasicBlock::iterator inst_iterator;
     for (inst_iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
       Instruction *Inst = I;
+
+      if (extractMode && !SM.hasKeepVal(Inst))
+        continue;
 
       if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst)) {
         if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
@@ -1576,10 +1565,12 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
   Out << "\n\n";
 
   // Generate the code for control-path.
-  generateCodeForControlpath(SM, TD);
+  if (!extractMode)
+    generateCodeForControlpath(SM, TD);
 
   // Generate the code for memory bank.
-  generateCodeForMemoryBank(SM, TD);
+  if (!extractMode)
+    generateCodeForMemoryBank(SM, TD);
 
   Out.module_end();
 
