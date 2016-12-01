@@ -42,132 +42,132 @@
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/Debug.h"
 
-
 using namespace llvm;
 // To use the LUA in VAST
 using namespace vast;
 
 namespace llvm {
-struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
-  raw_ostream &OS;
-  SIR *SM;
-  DataLayout &TD;
+  struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
+    raw_ostream &OS;
+    SIR *SM;
+    DataLayout &TD;
 
-  SIRDatapathPrinter(raw_ostream &OS, SIR *SM, DataLayout &TD)
-    : OS(OS), SM(SM), TD(TD) {}
+    SIRDatapathPrinter(raw_ostream &OS, SIR *SM, DataLayout &TD)
+      : OS(OS), SM(SM), TD(TD) {}
 
-  // Visit each BB in the SIR module.
-  void visitBasicBlock(BasicBlock *BB);
+    // Visit each BB in the SIR module.
+    void visitBasicBlock(BasicBlock *BB);
 
-  // All data-path instructions have been transformed
-  // into Shang-Inst, AKA Intrinsic Inst.
-  void visitIntrinsicInst(IntrinsicInst &I);
+    // All data-path instructions have been transformed
+    // into Shang-Inst, AKA Intrinsic Inst.
+    void visitIntrinsicInst(IntrinsicInst &I);
 
-  // The BitCast instructions should be treated differently,
-  // since we cannot implement them with Shang intrinsic
-  // instructions due to the different type error when we
-  // use the replaceAllUsesWith function.
-  void visitIntToPtrInst(IntToPtrInst &I);
-  void visitPtrToIntInst(PtrToIntInst &I);
-  void visitBitCastInst(BitCastInst &I);
+    // The BitCast instructions should be treated differently,
+    // since we cannot implement them with Shang intrinsic
+    // instructions due to the different type error when we
+    // use the replaceAllUsesWith function.
+    void visitIntToPtrInst(IntToPtrInst &I);
+    void visitPtrToIntInst(PtrToIntInst &I);
+    void visitBitCastInst(BitCastInst &I);
 
-  // Functions to print Verilog RTL code
-  void printAsOperand(raw_ostream &OS, Value *U, unsigned UB, unsigned LB = 0) {
-    unsigned BitWidth = TD.getTypeSizeInBits(U->getType());
+    // Functions to print Verilog RTL code
+    void printAsOperand(raw_ostream &OS, Value *U, unsigned UB, unsigned LB = 0) {
+      unsigned BitWidth = TD.getTypeSizeInBits(U->getType());
 
-    // Print correctly if this value is a ConstantInt.
-    if (ConstantInt *CI = dyn_cast<ConstantInt>(U)) {
-      // Need to slice the wanted bits.
-      if (UB != CI->getBitWidth() || LB == 0) {
-        assert(UB <= CI->getBitWidth() && UB > LB  && "Bad bit range!");
-        APInt Val = CI->getValue();
-        if (UB != CI->getBitWidth())
-          Val = Val.trunc(UB);
-        if (LB != 0) {
-          Val = Val.lshr(LB);
-          Val = Val.trunc(UB - LB);
+      // Print correctly if this value is a ConstantInt.
+      if (ConstantInt *CI = dyn_cast<ConstantInt>(U)) {
+        // Need to slice the wanted bits.
+        if (UB != CI->getBitWidth() || LB == 0) {
+          assert(UB <= CI->getBitWidth() && UB > LB  && "Bad bit range!");
+          APInt Val = CI->getValue();
+          if (UB != CI->getBitWidth())
+            Val = Val.trunc(UB);
+          if (LB != 0) {
+            Val = Val.lshr(LB);
+            Val = Val.trunc(UB - LB);
+          }
+          CI = ConstantInt::get(CI->getContext(), Val);
         }
-        CI = ConstantInt::get(CI->getContext(), Val);
-      }
-      OS << "((";
-      printConstantIntValue(OS, CI);
-      OS << "))";
-      return;
-    }
-    else if (ConstantVector *CV = dyn_cast<ConstantVector>(U)) {
-      unsigned Num = CV->getNumOperands();
-
-      OS << "{";
-
-      for (unsigned i = 0; i < Num; i++) {
-        Constant *Elem = CV->getAggregateElement(i);
-
-        if (ConstantInt *CI = dyn_cast<ConstantInt>(Elem)) {
-          printConstantIntValue(OS, CI);
-        }
-
-        if (UndefValue *UV = dyn_cast<UndefValue>(Elem)) {
-          OS << TD.getTypeSizeInBits(UV->getType()) << "'hx";
-        }
-
-        if (i != Num -1)
-          OS << ", ";
-      }
-
-      OS << "}";
-      return;
-    }
-    else if (ConstantAggregateZero *CAZ = dyn_cast<ConstantAggregateZero>(U)) {
-      OS << "((";
-      OS << UB - LB;
-      OS << "'h0))";
-      return;
-    }
-    else if (ConstantPointerNull *CPN = dyn_cast<ConstantPointerNull>(U)) {
-      OS << "((";
-      OS << UB - LB;
-      OS << "'hx))";
-      return;
-    }
-    else if (UndefValue *UV = dyn_cast<UndefValue>(U)) {
-      OS << "((";
-      OS << UB - LB;
-      OS << "'hx))";
-      return;
-    }
-    else if (GlobalValue *GV = dyn_cast<GlobalValue>(U)) {
-      // Get the enableCosimulation property from the Lua file.
-      bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
-      if (enableCoSimulation) {
-        // If we are running the co-simulation, then the we should
-        // get the address of the GVs from the imported DPI-C SW
-        // functions.
-        OS << "((" << "`gv" + Mangle(GV->getName()) << "))";
-
+        OS << "((";
+        printConstantIntValue(OS, CI);
+        OS << "))";
         return;
-      } else
-        OS << "((" << Mangle(GV->getName());
-    }
-    // Print correctly if this value is a argument.
-    else if (Argument *Arg = dyn_cast<Argument>(U)) {
-      OS << "((" << Mangle(Arg->getName());
-    }
-    // Print correctly if this value is a SeqValue.
-    else if (Instruction *Inst = dyn_cast<Instruction>(U)) {
-      if (SIRRegister *Reg = SM->lookupSIRReg(Inst))
-        OS << "((" << Mangle(Reg->getName());
-      else
-        OS << "((" << Mangle(Inst->getName());
+      }
+      else if (ConstantVector *CV = dyn_cast<ConstantVector>(U)) {
+        unsigned Num = CV->getNumOperands();
+
+        OS << "{";
+
+        for (unsigned i = 0; i < Num; i++) {
+          Constant *Elem = CV->getAggregateElement(i);
+
+          if (ConstantInt *CI = dyn_cast<ConstantInt>(Elem)) {
+            printConstantIntValue(OS, CI);
+          }
+
+          if (UndefValue *UV = dyn_cast<UndefValue>(Elem)) {
+            OS << TD.getTypeSizeInBits(UV->getType()) << "'hx";
+          }
+
+          if (i != Num - 1)
+            OS << ", ";
+        }
+
+        OS << "}";
+        return;
+      }
+      else if (ConstantAggregateZero *CAZ = dyn_cast<ConstantAggregateZero>(U)) {
+        OS << "((";
+        OS << UB - LB;
+        OS << "'h0))";
+        return;
+      }
+      else if (ConstantPointerNull *CPN = dyn_cast<ConstantPointerNull>(U)) {
+        OS << "((";
+        OS << UB - LB;
+        OS << "'hx))";
+        return;
+      }
+      else if (UndefValue *UV = dyn_cast<UndefValue>(U)) {
+        OS << "((";
+        OS << UB - LB;
+        OS << "'hx))";
+        return;
+      }
+      else if (GlobalValue *GV = dyn_cast<GlobalValue>(U)) {
+        // Get the enableCosimulation property from the Lua file.
+        bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
+        if (enableCoSimulation) {
+          // If we are running the co-simulation, then the we should
+          // get the address of the GVs from the imported DPI-C SW
+          // functions.
+          OS << "((" << "`gv" + Mangle(GV->getName()) << "))";
+
+          return;
+        }
+        else
+          OS << "((" << Mangle(GV->getName());
+      }
+      // Print correctly if this value is a argument.
+      else if (Argument *Arg = dyn_cast<Argument>(U)) {
+        OS << "((" << Mangle(Arg->getName());
+      }
+      // Print correctly if this value is a SeqValue.
+      else if (Instruction *Inst = dyn_cast<Instruction>(U)) {
+        if (SIRRegister *Reg = SM->lookupSIRReg(Inst))
+          OS << "((" << Mangle(Reg->getName());
+        else
+          OS << "((" << Mangle(Inst->getName());
+      }
+
+      unsigned OperandWidth = UB - LB;
+      if (UB && BitWidth != 1)
+        OS << BitRange(UB, LB, OperandWidth == 1);
+      OS << "))";
     }
 
-    unsigned OperandWidth = UB - LB;
-    if (UB && BitWidth != 1)
-      OS << BitRange(UB, LB, OperandWidth == 1);
-    OS << "))";
-  }
-
-  void printSimpleOpImpl(raw_ostream &OS, ArrayRef<Value *> Ops,
-    const char *Opc, unsigned BitWidth) {
+    void printSimpleOpImpl(raw_ostream &OS, ArrayRef<Value *> Ops,
+      const char *Opc, unsigned BitWidth) {
       unsigned NumOps = Ops.size();
       assert(NumOps && "Unexpected zero operand!");
       printAsOperand(OS, Ops[0], BitWidth);
@@ -176,153 +176,152 @@ struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
         OS << Opc;
         printAsOperand(OS, Ops[i], BitWidth);
       }
-  }
+    }
 
-  void generateBoothMulArray(IntrinsicInst &I);
+    bool printExpr(IntrinsicInst &I);
+    bool printFUAdd(IntrinsicInst &I);
+    bool printBinaryFU(IntrinsicInst &I);
+    bool printSubModuleInstantiation(IntrinsicInst &I);
+    void printInvertExpr(ArrayRef<Value *> Ops);
+    void printBitRepeat(ArrayRef<Value *> Ops);
+    void printBitExtract(ArrayRef<Value *> Ops);
+    void printBitCat(ArrayRef<Value *> Ops);
+    void printUnaryOps(ArrayRef<Value *>Ops, const char *Opc);
+    void printSimpleOp(ArrayRef<Value *> Ops, const char *Opc);
+    bool printCompressor(IntrinsicInst &I);
+  };
 
-  bool printExpr(IntrinsicInst &I);
-  bool printFUAdd(IntrinsicInst &I);
-  bool printFUMul(IntrinsicInst &I);
-  bool printBinaryFU(IntrinsicInst &I);  
-  bool printSubModuleInstantiation(IntrinsicInst &I);
-  void printInvertExpr(ArrayRef<Value *> Ops);
-  void printBitRepeat(ArrayRef<Value *> Ops);
-  void printBitExtract(ArrayRef<Value *> Ops);
-  void printBitCat(ArrayRef<Value *> Ops);
-  void printUnaryOps(ArrayRef<Value *>Ops, const char *Opc);
-  void printSimpleOp(ArrayRef<Value *> Ops, const char *Opc);
-};
+  struct SIRControlPathPrinter {
+    raw_ostream &OS;
+    SIR *SM;
+    DataLayout &TD;
 
-struct SIRControlPathPrinter {
-  raw_ostream &OS;
-  SIR *SM;
-  DataLayout &TD;
+    SIRControlPathPrinter(raw_ostream &OS, SIR *SM, DataLayout &TD)
+      : OS(OS), SM(SM), TD(TD) {}
 
-  SIRControlPathPrinter(raw_ostream &OS, SIR *SM, DataLayout &TD)
-    : OS(OS), SM(SM), TD(TD) {}
+    /// Basic Print Functions
+    void printAsOperand(raw_ostream &OS, Value *U, unsigned UB, unsigned LB = 0) {
+      unsigned BitWidth = TD.getTypeSizeInBits(U->getType());
 
-  /// Basic Print Functions
-  void printAsOperand(raw_ostream &OS, Value *U, unsigned UB, unsigned LB = 0) {
-    unsigned BitWidth = TD.getTypeSizeInBits(U->getType());
-
-    // Print correctly if this value is a ConstantInt.
-    if (ConstantInt *CI = dyn_cast<ConstantInt>(U)) {
-      // Need to slice the wanted bits.
-      if (UB != CI->getBitWidth() || LB == 0) {
-        assert(UB <= CI->getBitWidth() && UB > LB  && "Bad bit range!");
-        APInt Val = CI->getValue();
-        if (UB != CI->getBitWidth())
-          Val = Val.trunc(UB);
-        if (LB != 0) {
-          Val = Val.lshr(LB);
-          Val = Val.trunc(UB - LB);
+      // Print correctly if this value is a ConstantInt.
+      if (ConstantInt *CI = dyn_cast<ConstantInt>(U)) {
+        // Need to slice the wanted bits.
+        if (UB != CI->getBitWidth() || LB == 0) {
+          assert(UB <= CI->getBitWidth() && UB > LB  && "Bad bit range!");
+          APInt Val = CI->getValue();
+          if (UB != CI->getBitWidth())
+            Val = Val.trunc(UB);
+          if (LB != 0) {
+            Val = Val.lshr(LB);
+            Val = Val.trunc(UB - LB);
+          }
+          CI = ConstantInt::get(CI->getContext(), Val);
         }
-        CI = ConstantInt::get(CI->getContext(), Val);
-      }
-      OS << "((";
-      printConstantIntValue(OS, CI);
-      OS << "))";
-      return;
-    }
-    else if (ConstantVector *CV = dyn_cast<ConstantVector>(U)) {
-      unsigned Num = CV->getNumOperands();
-
-      OS << "{";
-
-      for (unsigned i = 0; i < Num; i++) {
-        Constant *Elem = CV->getAggregateElement(i);
-
-        if (ConstantInt *CI = dyn_cast<ConstantInt>(Elem)) {
-          printConstantIntValue(OS, CI);
-        }
-
-        if (UndefValue *UV = dyn_cast<UndefValue>(Elem)) {
-          OS << TD.getTypeSizeInBits(UV->getType()) << "'hx";
-        }
-
-        if (i != Num -1)
-          OS << ", ";
-      }
-
-      OS << "}";
-      return;
-    }
-    else if (ConstantAggregateZero *CAZ = dyn_cast<ConstantAggregateZero>(U)) {
-      OS << "((";
-      OS << UB - LB;
-      OS << "'h0))";
-      return;
-    }
-    else if (ConstantPointerNull *CPN = dyn_cast<ConstantPointerNull>(U)) {
-      OS << "((";
-      OS << UB - LB;
-      OS << "'hx))";
-      return;
-    }
-    else if (UndefValue *UV = dyn_cast<UndefValue>(U)) {
-      OS << "((";
-      OS << UB - LB;
-      OS << "'hx))";
-      return;
-    }
-    else if (GlobalValue *GV = dyn_cast<GlobalValue>(U)) {
-      // Get the enableCosimulation property from the Lua file.
-      bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
-      if (enableCoSimulation) {
-        // If we are running the co-simulation, then the we should
-        // get the address of the GVs from the imported DPI-C SW
-        // functions.
-        OS << "((" << "`gv" + GV->getName() << "))";
-
+        OS << "((";
+        printConstantIntValue(OS, CI);
+        OS << "))";
         return;
-      } else
-        OS << "((" << Mangle(GV->getName());
+      }
+      else if (ConstantVector *CV = dyn_cast<ConstantVector>(U)) {
+        unsigned Num = CV->getNumOperands();
+
+        OS << "{";
+
+        for (unsigned i = 0; i < Num; i++) {
+          Constant *Elem = CV->getAggregateElement(i);
+
+          if (ConstantInt *CI = dyn_cast<ConstantInt>(Elem)) {
+            printConstantIntValue(OS, CI);
+          }
+
+          if (UndefValue *UV = dyn_cast<UndefValue>(Elem)) {
+            OS << TD.getTypeSizeInBits(UV->getType()) << "'hx";
+          }
+
+          if (i != Num - 1)
+            OS << ", ";
+        }
+
+        OS << "}";
+        return;
+      }
+      else if (ConstantAggregateZero *CAZ = dyn_cast<ConstantAggregateZero>(U)) {
+        OS << "((";
+        OS << UB - LB;
+        OS << "'h0))";
+        return;
+      }
+      else if (ConstantPointerNull *CPN = dyn_cast<ConstantPointerNull>(U)) {
+        OS << "((";
+        OS << UB - LB;
+        OS << "'hx))";
+        return;
+      }
+      else if (UndefValue *UV = dyn_cast<UndefValue>(U)) {
+        OS << "((";
+        OS << UB - LB;
+        OS << "'hx))";
+        return;
+      }
+      else if (GlobalValue *GV = dyn_cast<GlobalValue>(U)) {
+        // Get the enableCosimulation property from the Lua file.
+        bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
+        if (enableCoSimulation) {
+          // If we are running the co-simulation, then the we should
+          // get the address of the GVs from the imported DPI-C SW
+          // functions.
+          OS << "((" << "`gv" + GV->getName() << "))";
+
+          return;
+        }
+        else
+          OS << "((" << Mangle(GV->getName());
+      }
+      // Print correctly if this value is a argument.
+      else if (Argument *Arg = dyn_cast<Argument>(U)) {
+        OS << "((" << Mangle(Arg->getName());
+      }
+      // Print correctly if this value is a SeqValue.
+      else if (Instruction *Inst = dyn_cast<Instruction>(U)) {
+        if (SIRRegister *Reg = SM->lookupSIRReg(Inst))
+          OS << "((" << Mangle(Reg->getName());
+        else
+          OS << "((" << Mangle(Inst->getName());
+      }
+
+      unsigned OperandWidth = UB - LB;
+      if (UB && BitWidth != 1)
+        OS << BitRange(UB, LB, OperandWidth == 1);
+      OS << "))";
     }
-    // Print correctly if this value is a argument.
-    else if (Argument *Arg = dyn_cast<Argument>(U)) {
-      OS << "((" << Mangle(Arg->getName());
+
+    void printSimpleOpImpl(raw_ostream &OS, ArrayRef<Value *> Ops,
+      const char *Opc, unsigned BitWidth) {
+      unsigned NumOps = Ops.size();
+      assert(NumOps && "Unexpected zero operand!");
+      printAsOperand(OS, Ops[0], BitWidth);
+
+      for (unsigned i = 1; i < NumOps; ++i) {
+        OS << Opc;
+        printAsOperand(OS, Ops[i], BitWidth);
+      }
     }
-    // Print correctly if this value is a SeqValue.
-    else if (Instruction *Inst = dyn_cast<Instruction>(U)) {
-      if (SIRRegister *Reg = SM->lookupSIRReg(Inst))
-        OS << "((" << Mangle(Reg->getName());
-      else
-        OS << "((" << Mangle(Inst->getName());
-    }
 
-    unsigned OperandWidth = UB - LB;
-    if (UB && BitWidth != 1)
-      OS << BitRange(UB, LB, OperandWidth == 1);
-    OS << "))";
-  }
+    /// Functions to print registers
+    void printMuxInReg(SIRRegister *Reg, bool UsedAsGuard = false);
+    void printRegister(SIRRegister *Reg, bool UsedAsGuard = false);
 
-  void printSimpleOpImpl(raw_ostream &OS, ArrayRef<Value *> Ops,
-                         const char *Opc, unsigned BitWidth) {
-    unsigned NumOps = Ops.size();
-    assert(NumOps && "Unexpected zero operand!");
-    printAsOperand(OS, Ops[0], BitWidth);
+    /// Functions to print SubModules
+    void printInitializeFile(SIRMemoryBank *SMB);
+    void printMemoryBankImpl(SIRMemoryBank *SMB, unsigned BytesPerGV,
+      unsigned ByteAddrWidth, unsigned NumWords);
+    void printMemoryBank(SIRMemoryBank *SMB);
 
-    for (unsigned i = 1; i < NumOps; ++i) {
-      OS << Opc;
-      printAsOperand(OS, Ops[i], BitWidth);
-    }
-  }
+    void printVirtualMemoryBank(SIRMemoryBank *SMB);
 
-  /// Functions to print registers
-  void printMuxInReg(SIRRegister *Reg, bool UsedAsGuard = false);
-  void printRegister(SIRRegister *Reg, bool UsedAsGuard = false);
-
-  /// Functions to print SubModules
-  void printInitializeFile(SIRMemoryBank *SMB);
-  void printMemoryBankImpl(SIRMemoryBank *SMB, unsigned BytesPerGV,
-                           unsigned ByteAddrWidth, unsigned NumWords);
-  void printMemoryBank(SIRMemoryBank *SMB);
-
-  void printVirtualMemoryBank(SIRMemoryBank *SMB);
-
-  void generateCodeForRegisters();
-  void generateCodeForMemoryBank();
-};
+    void generateCodeForRegisters();
+    void generateCodeForMemoryBank();
+  };
 }
 
 void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg, bool UsedAsGuard) {
@@ -330,8 +329,8 @@ void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg, bool UsedAsGuard) {
   if (Reg->fanin_empty()) return;
 
   // Register must have been synthesized
-  Value *RegVal = Reg->getRegVal();
-  Value *RegGuard = Reg->getRegGuard();
+  Value *RegVal = dyn_cast<Instruction>(Reg->getLLVMValue())->getOperand(0);
+  Value *RegGuard = dyn_cast<Instruction>(Reg->getLLVMValue())->getOperand(1);
 
   if (RegVal) {
     OS << "// Synthesized MUX\n";
@@ -347,7 +346,7 @@ void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg, bool UsedAsGuard) {
     // Print (or implement) the MUX by:
     // output = (Sel0 & FANNIN0) | (Sel1 & FANNIN1) ...
     OS << "wire " << BitRange(Reg->getBitWidth(), 0, false)
-       << Mangle(Reg->getName()) << "_register_wire = ";
+      << Mangle(Reg->getName()) << "_register_wire = ";
     printAsOperand(OS, RegVal, Reg->getBitWidth());
     OS << ";\n";
   }
@@ -369,18 +368,19 @@ void SIRControlPathPrinter::printRegister(SIRRegister *Reg, bool UsedAsGuard) {
   VOS.always_ff_begin();
   // Reset the register.
   VOS << Mangle(Reg->getName()) << " <= "
-      << buildLiteralUnsigned(Reg->getInitVal(), Reg->getBitWidth()) << ";\n";
+    << buildLiteralUnsigned(Reg->getInitVal(), Reg->getBitWidth()) << ";\n";
 
   VOS.else_begin();
 
   // Print the assignment.
   if (UsedAsGuard) {
     VOS << Mangle(Reg->getName()) << " <= " << Mangle(Reg->getName())
-        << "_register_guard" << ";\n";
-  } else {
+      << "_register_guard" << ";\n";
+  }
+  else {
     VOS.if_begin(Twine(Mangle(Reg->getName())) + Twine("_register_guard"));
     VOS << Mangle(Reg->getName()) << " <= " << Mangle(Reg->getName())
-        << "_register_wire" << BitRange(Reg->getBitWidth(), 0, false) << ";\n";
+      << "_register_wire" << BitRange(Reg->getBitWidth(), 0, false) << ";\n";
     VOS.exit_block();
   }
 
@@ -389,85 +389,85 @@ void SIRControlPathPrinter::printRegister(SIRRegister *Reg, bool UsedAsGuard) {
 }
 
 namespace {
-static inline int base_addr_less(const std::pair<GlobalVariable *, unsigned> *P1,
-                                 const std::pair<GlobalVariable *, unsigned> *P2) {
-  return P2->second - P1->second;
-}
-
-typedef SmallVector<uint8_t, 1024> ByteBuffer;
-
-static unsigned FillByteBuffer(ByteBuffer &Buf, uint64_t Val, unsigned SizeInBytes) {
-  SizeInBytes = std::max(1u, SizeInBytes);
-  for (unsigned i = 0; i < SizeInBytes; ++i) {
-    Buf.push_back(Val & 0xff);
-    Val >>= 8;
+  static inline int base_addr_less(const std::pair<GlobalVariable *, unsigned> *P1,
+    const std::pair<GlobalVariable *, unsigned> *P2) {
+    return P2->second - P1->second;
   }
 
-  return SizeInBytes;
-}
+  typedef SmallVector<uint8_t, 1024> ByteBuffer;
 
-static void FillByteBuffer(ByteBuffer &Buf, const Constant *C) {
-  if (const ConstantInt *CI = dyn_cast<ConstantInt>(C)) {
-    FillByteBuffer(Buf, CI->getZExtValue(), CI->getBitWidth() / 8);
-    return;
-  }
-
-  if (isa<ConstantPointerNull>(C)) {
-    unsigned PtrSizeInBytes = LuaI::Get<VFUMemBus>()->getAddrWidth() / 8;
-    FillByteBuffer(Buf, 0, PtrSizeInBytes);
-    return;
-  }
-
-  if (const ConstantDataSequential *CDS = dyn_cast<ConstantDataSequential>(C)) {
-    for (unsigned i = 0, e = CDS->getNumElements(); i != e; ++i)
-      FillByteBuffer(Buf, CDS->getElementAsConstant(i));
-
-    return;
-  }
-
-  if (const ConstantArray *CA = dyn_cast<ConstantArray>(C)) {
-    for (unsigned i = 0, e = CA->getNumOperands(); i != e; ++i)
-      FillByteBuffer(Buf, cast<Constant>(CA->getOperand(i)));
-
-    return;
-  }
-
-  llvm_unreachable("Unsupported constant type to bind to script engine!");
-}
-
-struct MemContextWriter {
-  raw_ostream &OS;
-  typedef SmallVector<std::pair<GlobalVariable *, unsigned>, 8> VarVector;
-  VarVector &Vars;
-  unsigned WordSizeInBytes;
-  unsigned EndByteAddr;
-  const Twine &CombROMLHS;
-
-  MemContextWriter(raw_ostream &OS, VarVector &Vars, unsigned WordSizeInBytes,
-                   unsigned EndByteAddr, const Twine &CombROMLHS)
-    : OS(OS), Vars(Vars), WordSizeInBytes(WordSizeInBytes),
-    EndByteAddr(EndByteAddr), CombROMLHS(CombROMLHS) {}
-
-  void padZeroToByteAddr(raw_ostream &OS, unsigned CurByteAddr,
-                         unsigned TargetByteAddr) {
-    assert(TargetByteAddr % WordSizeInBytes == 0 && "Bad target byte address!");
-    assert(CurByteAddr <= TargetByteAddr && "Bad current byte address!");
-    while (CurByteAddr != TargetByteAddr) {
-      OS << "00";
-      ++CurByteAddr;
-      if (CurByteAddr % WordSizeInBytes == 0)
-        OS << "// " << CurByteAddr << '\n';
+  static unsigned FillByteBuffer(ByteBuffer &Buf, uint64_t Val, unsigned SizeInBytes) {
+    SizeInBytes = std::max(1u, SizeInBytes);
+    for (unsigned i = 0; i < SizeInBytes; ++i) {
+      Buf.push_back(Val & 0xff);
+      Val >>= 8;
     }
+
+    return SizeInBytes;
   }
 
-  void writeContext();
+  static void FillByteBuffer(ByteBuffer &Buf, const Constant *C) {
+    if (const ConstantInt *CI = dyn_cast<ConstantInt>(C)) {
+      FillByteBuffer(Buf, CI->getZExtValue(), CI->getBitWidth() / 8);
+      return;
+    }
 
-  static void WriteContext(raw_ostream &OS, VarVector &Vars, unsigned WordSizeInBytes,
-                           unsigned EndByteAddr, const Twine &CombROMLHS) {
-    MemContextWriter MCW(OS, Vars, WordSizeInBytes, EndByteAddr, CombROMLHS);
-    MCW.writeContext();
+    if (isa<ConstantPointerNull>(C)) {
+      unsigned PtrSizeInBytes = LuaI::Get<VFUMemBus>()->getAddrWidth() / 8;
+      FillByteBuffer(Buf, 0, PtrSizeInBytes);
+      return;
+    }
+
+    if (const ConstantDataSequential *CDS = dyn_cast<ConstantDataSequential>(C)) {
+      for (unsigned i = 0, e = CDS->getNumElements(); i != e; ++i)
+        FillByteBuffer(Buf, CDS->getElementAsConstant(i));
+
+      return;
+    }
+
+    if (const ConstantArray *CA = dyn_cast<ConstantArray>(C)) {
+      for (unsigned i = 0, e = CA->getNumOperands(); i != e; ++i)
+        FillByteBuffer(Buf, cast<Constant>(CA->getOperand(i)));
+
+      return;
+    }
+
+    llvm_unreachable("Unsupported constant type to bind to script engine!");
   }
-};
+
+  struct MemContextWriter {
+    raw_ostream &OS;
+    typedef SmallVector<std::pair<GlobalVariable *, unsigned>, 8> VarVector;
+    VarVector &Vars;
+    unsigned WordSizeInBytes;
+    unsigned EndByteAddr;
+    const Twine &CombROMLHS;
+
+    MemContextWriter(raw_ostream &OS, VarVector &Vars, unsigned WordSizeInBytes,
+      unsigned EndByteAddr, const Twine &CombROMLHS)
+      : OS(OS), Vars(Vars), WordSizeInBytes(WordSizeInBytes),
+      EndByteAddr(EndByteAddr), CombROMLHS(CombROMLHS) {}
+
+    void padZeroToByteAddr(raw_ostream &OS, unsigned CurByteAddr,
+      unsigned TargetByteAddr) {
+      assert(TargetByteAddr % WordSizeInBytes == 0 && "Bad target byte address!");
+      assert(CurByteAddr <= TargetByteAddr && "Bad current byte address!");
+      while (CurByteAddr != TargetByteAddr) {
+        OS << "00";
+        ++CurByteAddr;
+        if (CurByteAddr % WordSizeInBytes == 0)
+          OS << "// " << CurByteAddr << '\n';
+      }
+    }
+
+    void writeContext();
+
+    static void WriteContext(raw_ostream &OS, VarVector &Vars, unsigned WordSizeInBytes,
+      unsigned EndByteAddr, const Twine &CombROMLHS) {
+      MemContextWriter MCW(OS, Vars, WordSizeInBytes, EndByteAddr, CombROMLHS);
+      MCW.writeContext();
+    }
+  };
 }
 
 void MemContextWriter::writeContext() {
@@ -523,8 +523,8 @@ void MemContextWriter::writeContext() {
     padZeroToByteAddr(OS, CurByteAddr, EndByteAddr);
   else
     OS.indent(2) << "default: " << CombROMLHS << " = "
-                 << WordSizeInBytes << "'b" << (NumCasesWritten ? 'x' : '0')
-                 << ";\n";
+    << WordSizeInBytes << "'b" << (NumCasesWritten ? 'x' : '0')
+    << ";\n";
 }
 
 void SIRControlPathPrinter::printInitializeFile(SIRMemoryBank *SMB) {
@@ -546,9 +546,10 @@ void SIRControlPathPrinter::printInitializeFile(SIRMemoryBank *SMB) {
     OS << "initial  $readmemh(\"";
     OS.write_escaped(FullInitFilePath);
     OS << "\", " << SMB->getArrayName() << ");\n";
-  } else {
+  }
+  else {
     report_fatal_error("Cannot open file '" + FullInitFilePath.str() +
-                       "' for writing block RAM initialize file!\n");
+      "' for writing block RAM initialize file!\n");
     return;
   }
 
@@ -556,21 +557,21 @@ void SIRControlPathPrinter::printInitializeFile(SIRMemoryBank *SMB) {
 
   typedef std::map<GlobalVariable*, unsigned>::const_iterator iterator;
   for (iterator I = SMB->const_baseaddrs_begin(), E = SMB->const_baseaddrs_end();
-       I != E; ++I) {
+  I != E; ++I) {
     Vars.push_back(*I);
 
     // Print the information about the global variable in the memory.
     VOS << "/* Offset: " << I->second << ' ' << I->first->getType() << ' '
-        << I->first->getName() << "*/\n";
+      << I->first->getName() << "*/\n";
   }
 
   array_pod_sort(Vars.begin(), Vars.end(), base_addr_less);
   MemContextWriter::WriteContext(InitFileO, Vars, SMB->getDataWidth() / 8,
-                                 SMB->getEndByteAddr(), Twine());
+    SMB->getEndByteAddr(), Twine());
 }
 
 void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned BytesPerGV,
-                                                unsigned ByteAddrWidth, unsigned NumWords) {
+  unsigned ByteAddrWidth, unsigned NumWords) {
   vlang_raw_ostream VOS(OS);
 
   SIRRegister *Addr = SMB->getAddr();
@@ -604,8 +605,8 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
         for (unsigned i = 0; i < BytesPerGV; ++i) {
           VOS.if_() << SMB->getByteEnName() << "[" << i << "]";
           VOS._then() << SMB->getArrayName() << "[0]" << "[" << i
-                      << "] <= " << SMB->getWDataName()
-                      << BitRange((i + 1) * 8, i * 8) << ";\n";
+            << "] <= " << SMB->getWDataName()
+            << BitRange((i + 1) * 8, i * 8) << ";\n";
 
           VOS.exit_block();
         }
@@ -613,18 +614,19 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
         VOS.else_begin();
 
         VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
-            << SMB->getArrayName() << "[0];\n";
+          << SMB->getArrayName() << "[0];\n";
 
         VOS.exit_block();
 
-      } else {
+      }
+      else {
         for (unsigned i = 0; i < BytesPerGV; ++i) {
           VOS.if_() << SMB->getByteEnName() << "[" << i << "]";
           VOS._then() << SMB->getArrayName() << "["
-                      << SMB->getAddrName()
-                      << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true)
-                      << "][" << i	<< "] <= " << SMB->getWDataName()
-                      << BitRange((i + 1) * 8, i * 8) << ";\n";
+            << SMB->getAddrName()
+            << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true)
+            << "][" << i << "] <= " << SMB->getWDataName()
+            << BitRange((i + 1) * 8, i * 8) << ";\n";
 
           VOS.exit_block();
         }
@@ -632,12 +634,13 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
         VOS.else_begin();
 
         VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
-            << SMB->getArrayName() << "[" << SMB->getAddrName()
-            << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
+          << SMB->getArrayName() << "[" << SMB->getAddrName()
+          << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
 
         VOS.exit_block();
       }
-    } else {
+    }
+    else {
       VOS.if_begin(SMB->getWriteEnName());
 
       // Handle a special circumstance when only one GV in memory bank.
@@ -645,39 +648,42 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
       // So we should just cout the memXram[0];
       if (SMB->getAddrWidth() == ByteAddrWidth) {
         VOS << SMB->getArrayName() << "[0]"
-            << " <= " << SMB->getWDataName() << BitRange(SMB->getDataWidth()) << ";\n";
+          << " <= " << SMB->getWDataName() << BitRange(SMB->getDataWidth()) << ";\n";
 
         VOS.else_begin();
 
         VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
-            << SMB->getArrayName() << "[0];\n";
+          << SMB->getArrayName() << "[0];\n";
 
         VOS.exit_block();
-      } else {
+      }
+      else {
         VOS << SMB->getArrayName() << "[" << SMB->getAddrName()
-            << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "]"
-            << " <= " << SMB->getWDataName() << BitRange(SMB->getDataWidth()) << ";\n";
+          << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "]"
+          << " <= " << SMB->getWDataName() << BitRange(SMB->getDataWidth()) << ";\n";
 
         VOS.else_begin();
 
         VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
-            << SMB->getArrayName() << "[" << SMB->getAddrName()
-            << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
+          << SMB->getArrayName() << "[" << SMB->getAddrName()
+          << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
 
         VOS.exit_block();
       }
     }
-  } else {
+  }
+  else {
     // Handle a special circumstance when only one GV in memory bank.
     // Then the AddrWidth will be just the same with ByteAddrWidth.
     // So we should just cout the memXram[0];
     if (SMB->getAddrWidth() == ByteAddrWidth) {
       VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
-          << SMB->getArrayName() << "[0];\n";
-    } else {
+        << SMB->getArrayName() << "[0];\n";
+    }
+    else {
       VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
-          << SMB->getArrayName() << "[" << SMB->getAddrName()
-          << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
+        << SMB->getArrayName() << "[" << SMB->getAddrName()
+        << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
     }
   }
   VOS.always_ff_end(false);
@@ -695,8 +701,8 @@ void SIRControlPathPrinter::printMemoryBank(SIRMemoryBank *SMB) {
   // word. Please note that the bytes is ordered from 0 to 7 ([0:7]) because
   // so that the byte address can access the correct byte.
   OS << "(* ramstyle = \"no_rw_check\", max_depth = " << NumWords << " *) logic"
-     << BitRange(BytesPerGV) << BitRange(8) << ' ' << SMB->getArrayName()
-     << "[0:" << NumWords << "-1];\n";
+    << BitRange(BytesPerGV) << BitRange(8) << ' ' << SMB->getArrayName()
+    << "[0:" << NumWords << "-1];\n";
 
   printInitializeFile(SMB);
 
@@ -726,7 +732,7 @@ void SIRControlPathPrinter::printVirtualMemoryBank(SIRMemoryBank *SMB) {
 void SIRControlPathPrinter::generateCodeForRegisters() {
   typedef SIR::register_iterator iterator;
   for (iterator I = SM->registers_begin(), E = SM->registers_end();
-       I != E; ++I) {
+  I != E; ++I) {
     SIRRegister *Reg = I;
 
     // Ignore the registers created for FUnits like memory bank, since
@@ -743,7 +749,7 @@ void SIRControlPathPrinter::generateCodeForMemoryBank() {
 
   typedef SIR::const_submodulebase_iterator iterator;
   for (iterator I = SM->const_submodules_begin(), E = SM->const_submodules_end();
-       I != E; ++I) {
+  I != E; ++I) {
     if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) {
       if (enableCoSimulation)
         // If we are running the co-simulation, we should handle the
@@ -776,7 +782,7 @@ void SIRDatapathPrinter::printSimpleOp(ArrayRef<Value *> Ops, const char *Opc) {
 
   for (unsigned i = 0; i < Ops.size(); i++)
     assert(BitWidth == TD.getTypeSizeInBits(Ops[i]->getType())
-           && "The BitWidth not match!");
+      && "The BitWidth not match!");
 
   printSimpleOpImpl(OS, Ops, Opc, BitWidth);
 }
@@ -834,7 +840,7 @@ bool SIRDatapathPrinter::printFUAdd(IntrinsicInst &I) {
   Function *Callee = I.getCalledFunction();
 
   assert(Callee->arg_size() >= 2 && Callee->arg_size() <= 3
-         && "bad operand number!");
+    && "bad operand number!");
 
   SmallVector<Value *, 3> Ops;
   typedef CallInst::op_iterator iterator;
@@ -842,9 +848,9 @@ bool SIRDatapathPrinter::printFUAdd(IntrinsicInst &I) {
     Ops.push_back(*i);
 
   OS << getFUName(I) << "#("
-     << TD.getTypeSizeInBits(Ops[0]->getType()) << ", "
-     << TD.getTypeSizeInBits(Ops[1]->getType()) << ", "
-     << TD.getTypeSizeInBits(Callee->getReturnType()) << ") ";
+    << TD.getTypeSizeInBits(Ops[0]->getType()) << ", "
+    << TD.getTypeSizeInBits(Ops[1]->getType()) << ", "
+    << TD.getTypeSizeInBits(Callee->getReturnType()) << ") ";
 
   // Here need to print a module name, not value name
   printName(OS, I);
@@ -859,7 +865,8 @@ bool SIRDatapathPrinter::printFUAdd(IntrinsicInst &I) {
   if (Ops.size() == 3) {
     assert(TD.getTypeSizeInBits(Ops[2]->getType()) == 1 && "Expected carry bit!");
     printAsOperand(OS, Ops[2], 1);
-  } else
+  }
+  else
     OS << "1'b0";
   OS << ", ";
   printAsOperand(OS, &I, TD.getTypeSizeInBits(Callee->getReturnType()));
@@ -910,9 +917,9 @@ bool SIRDatapathPrinter::printBinaryFU(IntrinsicInst &I) {
     Ops.push_back(*i);
 
   OS << getFUName(I) << "#("
-     << TD.getTypeSizeInBits(Ops[0]->getType()) << ", "
-     << TD.getTypeSizeInBits(Ops[1]->getType()) << ", "
-     << TD.getTypeSizeInBits(Callee->getReturnType()) << ") ";
+    << TD.getTypeSizeInBits(Ops[0]->getType()) << ", "
+    << TD.getTypeSizeInBits(Ops[1]->getType()) << ", "
+    << TD.getTypeSizeInBits(Callee->getReturnType()) << ") ";
 
   // Here need to print a module name, not value name
   printName(OS, I);
@@ -926,6 +933,34 @@ bool SIRDatapathPrinter::printBinaryFU(IntrinsicInst &I) {
   OS << ", ";
   printAsOperand(OS, &I, TD.getTypeSizeInBits(Callee->getReturnType()));
   OS << ");\n";
+  return true;
+}
+
+bool SIRDatapathPrinter::printCompressor(IntrinsicInst &I) {
+  // Extract all operands to be added.
+  OS << "compressor_" + Mangle(I.getName()) + " compressor_" + Mangle(I.getName()) << "(\n";
+
+  std::vector<Value *> Ops = SM->lookupOpsOfChain(&I);
+  for (unsigned i = 0; i < Ops.size(); ++i) {
+    Value *Op = Ops[i];
+    std::string OpName = Op->getName();
+
+    if (isa<ConstantInt>(Op)) {
+      OS.indent(2) << ".operand_" << utostr_32(i) << "(";
+      printAsOperand(OS, Op, TD.getTypeSizeInBits(Op->getType()));
+      OS << "),\n";
+    }
+    else if (SIRRegister *Reg = SM->lookupSIRReg(Op)) {
+      OpName = Reg->getName();
+      OS.indent(2) << ".operand_" << utostr_32(i) << "(" << Mangle(OpName) << "),\n";
+    }
+    else {
+      OS.indent(2) << ".operand_" << utostr_32(i) << "(" << Mangle(Op->getName()) << "),\n";
+    }
+  }
+  OS.indent(2) << ".result(" << Mangle(I.getName()) << ")\n";
+  OS << ");\n";
+
   return true;
 }
 
@@ -946,8 +981,11 @@ bool SIRDatapathPrinter::printSubModuleInstantiation(IntrinsicInst &I) {
   case Intrinsic::shang_lshr:
   case Intrinsic::shang_ashr:
   case Intrinsic::shang_sgt:
-  case Intrinsic::shang_ugt: 
+  case Intrinsic::shang_ugt:
     if (printBinaryFU(I)) return true;
+    break;
+  case Intrinsic::shang_compressor:
+    if (printCompressor(I)) return true;
     break;
   }
 
@@ -992,6 +1030,10 @@ bool SIRDatapathPrinter::printExpr(IntrinsicInst &I) {
     printBitExtract(Ops); break;
   case Intrinsic::shang_bit_cat:
     printBitCat(Ops); break;
+  case Intrinsic::shang_eq:
+    printSimpleOp(Ops, " == "); break;
+  case Intrinsic::shang_ne:
+    printSimpleOp(Ops, " != "); break;
 
 
   default: llvm_unreachable("Unknown datapath opcode!"); break;
@@ -1020,6 +1062,7 @@ void SIRDatapathPrinter::visitIntrinsicInst(IntrinsicInst &I) {
   case Intrinsic::shang_sgt:
   case Intrinsic::shang_ugt:
   case Intrinsic::shang_addc:
+  case Intrinsic::shang_compressor:
     if (printSubModuleInstantiation(I)) return;
     break;
 
@@ -1032,6 +1075,8 @@ void SIRDatapathPrinter::visitIntrinsicInst(IntrinsicInst &I) {
   case Intrinsic::shang_bit_repeat:
   case Intrinsic::shang_bit_extract:
   case Intrinsic::shang_bit_cat:
+  case Intrinsic::shang_eq:
+  case Intrinsic::shang_ne:
     if (printExpr(I)) return;
     break;
   }
@@ -1099,53 +1144,56 @@ void SIRDatapathPrinter::visitBitCastInst(BitCastInst &I) {
 
 void SIRDatapathPrinter::visitBasicBlock(BasicBlock *BB) {
   typedef BasicBlock::iterator iterator;
-  for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) 
+  for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
     visit(I);
+  }
 }
 
 namespace {
-struct SIR2RTL : public SIRPass {
-  vlang_raw_ostream Out;
+  struct SIR2RTL : public SIRPass {
+    vlang_raw_ostream Out;
 
-  /// @name FunctionPass interface
+    /// @name FunctionPass interface
 
-  static char ID;
-  SIR2RTL() : SIRPass(ID), Out() {
-    initializeSIR2RTLPass(*PassRegistry::getPassRegistry());
-  }
+    static char ID;
+    SIR2RTL() : SIRPass(ID), Out() {
+      initializeSIR2RTLPass(*PassRegistry::getPassRegistry());
+    }
 
-  ~SIR2RTL(){}
+    ~SIR2RTL() {}
 
-  // Should be moved into Control path printer in the future
-  void printRegisterBlock(const SIRRegister *Reg, raw_ostream &OS,
-                          DataLayout &TD, uint64_t InitVal = 0);
-  void printRegisterBlock(const SIRRegister *Reg, vlang_raw_ostream &OS,
-                          DataLayout &TD, uint64_t InitVal = 0);
+    // Should be moved into Control path printer in the future
+    void printRegisterBlock(const SIRRegister *Reg, raw_ostream &OS,
+      DataLayout &TD, uint64_t InitVal = 0);
+    void printRegisterBlock(const SIRRegister *Reg, vlang_raw_ostream &OS,
+      DataLayout &TD, uint64_t InitVal = 0);
 
-  void printOutPort(const SIROutPort *OutPort, raw_ostream &OS, DataLayout &TD);
+    void printOutPort(const SIROutPort *OutPort, raw_ostream &OS, DataLayout &TD);
 
-  void generateCodeForTopModule(SIR &SM, DataLayout &TD);
-  void generateCodeForDecl(SIR &SM, DataLayout &TD);
-  void generateCodeForDatapath(SIR &SM, DataLayout &TD);
-  void generateCodeForControlpath(SIR &SM, DataLayout &TD);
-  void generateCodeForMemoryBank(SIR &SM, DataLayout &TD);
-  void generateCodeForOutPort(SIR &SM, DataLayout &TD);
+    void generateCodeForTopModule(SIR &SM, DataLayout &TD);
+    void generateCodeForDecl(SIR &SM, DataLayout &TD);
+    void generateCodeForDatapath(SIR &SM, DataLayout &TD);
+    void generateCodeForControlpath(SIR &SM, DataLayout &TD);
+    void generateCodeForMemoryBank(SIR &SM, DataLayout &TD);
+    void generateCodeForOutPort(SIR &SM, DataLayout &TD);
 
-  void generateCodeForGlobalVariableScript(SIR &SM, DataLayout &TD);
-  void generateCodeForSCIFScript(SIR &SM, DataLayout &TD);
-  void generateCodeForTestsuite(SIR &SM, DataLayout &TD);
+    void generateCodeForGlobalVariableScript(SIR &SM, DataLayout &TD);
+    void generateCodeForSCIFScript(SIR &SM, DataLayout &TD);
+    void generateCodeForTestsuite(SIR &SM, DataLayout &TD);
 
-  bool runOnSIR(SIR &SM);
+    bool runOnSIR(SIR &SM);
 
-  void getAnalysisUsage(AnalysisUsage &AU) const {
-    SIRPass::getAnalysisUsage(AU);
-    AU.addRequired<DataLayout>();
-    AU.addRequiredID(SIRSchedulingID);
-    AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
-    AU.addRequiredID(SIRTimingScriptGenID);
-    AU.setPreservesAll();
-  }
-};
+    void getAnalysisUsage(AnalysisUsage &AU) const {
+      SIRPass::getAnalysisUsage(AU);
+      AU.addRequired<DataLayout>();
+      AU.addRequiredID(SIRSchedulingID);
+      AU.addRequiredID(SIRMOAOptID);
+      AU.addRequiredID(BitMaskAnalysisID);
+      AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
+      AU.addRequiredID(SIRTimingScriptGenID);
+      AU.setPreservesAll();
+    }
+  };
 }
 
 void SIR2RTL::generateCodeForTopModule(SIR &SM, DataLayout &TD) {
@@ -1161,7 +1209,9 @@ void SIR2RTL::generateCodeForTopModule(SIR &SM, DataLayout &TD) {
 void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
   // Print code for module declaration.
   Function *F = SM.getFunction();
-  Out << "module " << F->getValueName()->getKey();
+
+  std::string RTLModuleName = LuaI::GetString("RTLModuleName");
+  Out << "module " << RTLModuleName;
 
   Out << "(\n";
 
@@ -1170,7 +1220,7 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
   Port->printDecl(Out.indent(4));
   typedef SIR::const_port_iterator port_iterator;
   for (port_iterator I = SM.const_ports_begin() + 1, E = SM.const_ports_end();
-       I != E; ++I) {
+  I != E; ++I) {
     SIRPort *Port = *I;
 
     // Assign the ports to virtual pins.
@@ -1186,7 +1236,7 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
     // memory bank transfer interface ports with the software part.
     typedef SIR::const_submodulebase_iterator submod_iterator;
     for (submod_iterator I = SM.const_submodules_begin(), E = SM.const_submodules_end();
-         I != E; ++I) {
+    I != E; ++I) {
       if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) {
         SMB->printVirtualPortDecl(Out);
       }
@@ -1198,7 +1248,7 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
   // Print code for register declaration.
   typedef SIR::register_iterator reg_iterator;
   for (reg_iterator I = SM.registers_begin(), E = SM.registers_end();
-       I != E; ++I) {
+  I != E; ++I) {
     SIRRegister *Reg = I;
 
     // Do not need to declaration registers for the output and FUInOut,
@@ -1218,7 +1268,7 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
     // have been declared in Ports, then we do need to re-declared it.
     typedef SIR::const_submodulebase_iterator submod_iterator;
     for (submod_iterator I = SM.const_submodules_begin(), E = SM.const_submodules_end();
-         I != E; ++I) {
+    I != E; ++I) {
       if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) {
         // Do not need to print declaration for SIRMemoryBank#0,
         // since it is a interface in HW/SW co-simulation and
@@ -1346,7 +1396,7 @@ void SIR2RTL::generateCodeForGlobalVariableScript(SIR &SM, DataLayout &TD) {
   raw_string_ostream GVSS(GVScript);
   // Push the global variable information into the script engine.
   for (Module::global_iterator GI = M->global_begin(), E = M->global_end();
-       GI != E; ++GI ) {
+  GI != E; ++GI) {
     GlobalVariable *GV = GI;
 
     GVSS << "GlobalVariables." << Mangle(GV->getName()) << " = { ";
@@ -1382,7 +1432,8 @@ void SIR2RTL::generateCodeForGlobalVariableScript(SIR &SM, DataLayout &TD) {
           GVSS << ", ";
           ExtractConstant(GVSS, Null, &TD);
         }
-      } else
+      }
+      else
         ExtractConstant(GVSS, C, &TD);
 
       GVSS << "}";
@@ -1402,28 +1453,28 @@ void SIR2RTL::generateCodeForGlobalVariableScript(SIR &SM, DataLayout &TD) {
   // Push the virtual memory bank information into the script engine.
   for (SIR::const_submodulebase_iterator I = SM.const_submodules_begin(),
     E = SM.const_submodules_end(); I != E; I++) {
-      SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I);
+    SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I);
 
-      MBSS << "VirtualMBs." << SMB->getArrayName() << " = { ";
-      MBSS << "BankAccessFunc = '" << "bus_transaction_" + utostr_32(SMB->getNum()) << "', ";
-      MBSS << "EnableName = '" << SMB->getEnableName() << "', ";
-      MBSS << "WriteEnName = '" << SMB->getWriteEnName() << "', ";
-      MBSS << "RequireByteEn = " << SMB->requireByteEnable() << ", ";
-      if (SMB->requireByteEnable()) {
-        MBSS << "ByteEnName = '" << SMB->getByteEnName() << "', ";
-        MBSS << "ByteEnWidth = " << SMB->getByteEnWidth() << ", ";
-      }
-      MBSS << "RDataName = '" << SMB->getRDataName() << "', ";
-      MBSS << "WDataName = '" << SMB->getWDataName() << "', ";
-      MBSS << "AddrName = '" << SMB->getAddrName() << "', ";
-      MBSS << "DataWidth = " << SMB->getDataWidth() << ", ";
-      MBSS << "AddrWidth = " << SMB->getAddrWidth() << " }";
+    MBSS << "VirtualMBs." << SMB->getArrayName() << " = { ";
+    MBSS << "BankAccessFunc = '" << "bus_transaction_" + utostr_32(SMB->getNum()) << "', ";
+    MBSS << "EnableName = '" << SMB->getEnableName() << "', ";
+    MBSS << "WriteEnName = '" << SMB->getWriteEnName() << "', ";
+    MBSS << "RequireByteEn = " << SMB->requireByteEnable() << ", ";
+    if (SMB->requireByteEnable()) {
+      MBSS << "ByteEnName = '" << SMB->getByteEnName() << "', ";
+      MBSS << "ByteEnWidth = " << SMB->getByteEnWidth() << ", ";
+    }
+    MBSS << "RDataName = '" << SMB->getRDataName() << "', ";
+    MBSS << "WDataName = '" << SMB->getWDataName() << "', ";
+    MBSS << "AddrName = '" << SMB->getAddrName() << "', ";
+    MBSS << "DataWidth = " << SMB->getDataWidth() << ", ";
+    MBSS << "AddrWidth = " << SMB->getAddrWidth() << " }";
 
-      MBSS.flush();
-      if (!LuaI::EvalString(MBScript, Err)) {
-        llvm_unreachable("Cannot create virtualmb infomation!");
-      }
-      MBScript.clear();
+    MBSS.flush();
+    if (!LuaI::EvalString(MBScript, Err)) {
+      llvm_unreachable("Cannot create virtualmb infomation!");
+    }
+    MBScript.clear();
   }
 
 
@@ -1462,12 +1513,12 @@ void SIR2RTL::generateCodeForSCIFScript(SIR &SM, DataLayout &TD) {
   if (F->arg_size()) {
     Function::const_arg_iterator I = F->arg_begin();
     BI << "{ Name = '" << I->getName() << "', Size = "
-       << TD.getTypeStoreSizeInBits(I->getType()) << "}";
+      << TD.getTypeStoreSizeInBits(I->getType()) << "}";
     ++I;
 
     for (Function::const_arg_iterator E = F->arg_end(); I != E; ++I)
       BI << " , { Name = '" << I->getName() << "', Size = "
-         << TD.getTypeStoreSizeInBits(I->getType()) << "}";
+      << TD.getTypeStoreSizeInBits(I->getType()) << "}";
   }
 
   BI << "} }";
@@ -1495,6 +1546,14 @@ void SIR2RTL::generateCodeForTestsuite(SIR &SM, DataLayout &TD) {
 bool SIR2RTL::runOnSIR(SIR &SM) {
   // Remove the dead SIR instruction before the CodeGen.
   SM.gc();
+
+//   /// Debug code
+//   std::string FinalSIR = LuaI::GetString("FinalSIR");
+//   std::string ErrorInFinalSIR;
+//   raw_fd_ostream OutputForFinalSIR(FinalSIR.c_str(), ErrorInFinalSIR);
+//   vlang_raw_ostream OutForFinalSIR;
+//   OutForFinalSIR.setStream(OutputForFinalSIR);
+//   OutForFinalSIR << *SM.getFunction();
 
   DataLayout &TD = getAnalysis<DataLayout>();
 
@@ -1543,13 +1602,15 @@ Pass *llvm::createSIR2RTLPass() {
 //===----------------------------------------------------------------------===//
 
 INITIALIZE_PASS_BEGIN(SIR2RTL, "shang-sir-verilog-writer",
-                      "Write the RTL verilog code to output file.",
-                      false, true)
+  "Write the RTL verilog code to output file.",
+  false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(SIRScheduling)
+  INITIALIZE_PASS_DEPENDENCY(SIRMOAOpt)
+  INITIALIZE_PASS_DEPENDENCY(BitMaskAnalysis)
   INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForCodeGen)
   INITIALIZE_PASS_DEPENDENCY(SIRTimingScriptGen)
-INITIALIZE_PASS_END(SIR2RTL, "shang-sir-verilog-writer",
-                    "Write the RTL verilog code to output file.",
-                    false, true)
+  INITIALIZE_PASS_END(SIR2RTL, "shang-sir-verilog-writer",
+    "Write the RTL verilog code to output file.",
+    false, true)
 

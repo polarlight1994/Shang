@@ -70,7 +70,7 @@ using namespace llvm;
 
   namespace VFUs {
     const char *VFUNames[] = {
-      "Trivial", "AddSub", "Shift", "Mult", "ICmp",  "MemoryBus", "Mux"
+      "Trivial", "AddSub", "Shift", "Mult", "ICmp", "Div", "RAnd", "MemoryBus", "Mux"
     };
 
     // Default area cost parameter.
@@ -78,6 +78,7 @@ using namespace llvm;
     unsigned RegCost = 4;
     unsigned MaxLutSize = 4;
     float LUTDelay = 0.5f;
+    float WireDelay = 0.5f;
     float RegDelay = 0.5f;
     float ClkEnDelay = 0.5f;
     double Period = 10.0;

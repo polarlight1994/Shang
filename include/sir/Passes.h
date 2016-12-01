@@ -23,8 +23,11 @@ class PassRegistry;
 }
 
 namespace llvm {
-//extern char &SIRFSMSynthesisID;
-extern char &SIRBitLevelOptID;
+extern char &DFGBuildID;
+extern char &BitMaskAnalysisID;
+extern char &DFGOptID;
+extern char &DFGAnalysisID;
+extern char &SIRMOAOptID;
 extern char &SIRRegisterSynthesisForAnnotationID;
 extern char &SIRRegisterSynthesisForCodeGenID;
 extern char &SIRSchedulingID;
@@ -36,10 +39,14 @@ Pass *createSIRAllocationPass();
 Pass *createSIR2RTLPass();
 Pass *createSIRSchedulingPass();
 
+void initializeDFGBuildPass(PassRegistry &Registry);
 void initializeSIRLowerIntrinsicPass(PassRegistry &Registry);
 void initializeSIRAllocationPass(PassRegistry &Registry);
 void initializeSIRMemoryPartitionPass(PassRegistry &Registry);
-void initializeSIRBitLevelOptPass(PassRegistry &Registry);
+void initializeBitMaskAnalysisPass(PassRegistry &Registry);
+void initializeDFGOptPass(PassRegistry &Registry);
+void initializeDFGAnalysisPass(PassRegistry &Registry);
+void initializeSIRMOAOptPass(PassRegistry &Registry);
 void initializeSIRSchedulingPass(PassRegistry &Registry);
 void initializeSIRTimingAnalysisPass(PassRegistry &Registry);
 void initializeSIRFSMSynthesisPass(PassRegistry &Registry);

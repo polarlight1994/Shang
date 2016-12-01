@@ -690,6 +690,8 @@ void SIRDelayModel::updateArrival() {
     return updateShrArrival();
   case Intrinsic::shang_sgt:
   case Intrinsic::shang_ugt:
+  case Intrinsic::shang_eq:
+  case Intrinsic::shang_ne:
     return updateCmpArrivial();
 
   case  Intrinsic::shang_reg_assign:
@@ -829,6 +831,8 @@ void SIRDelayModel::calcArrival() {
 
   case Intrinsic::shang_sgt:
   case Intrinsic::shang_ugt:
+  case Intrinsic::shang_eq:
+  case Intrinsic::shang_ne:
     return calcCmpArrival();
 
   case  Intrinsic::shang_reg_assign:

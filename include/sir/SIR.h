@@ -27,6 +27,7 @@
 
 #include <iostream>
 #include <set>
+#include <list>
 
 namespace llvm {
 // Get the signed value of a ConstantInt.
@@ -147,24 +148,30 @@ class SIRSubModuleBase;
 class SIRSubModule;
 class SIRMemoryBank;
 
-class SIRBitMask;
+class BitMask;
 
 class SIR;
 }
 
 namespace llvm {
-class SIRBitMask {
+class BitMask {
 private:
-  APInt KnownZeros, KnownOnes;
+  APInt KnownZeros, KnownOnes, KnownSames;
 
 public:
-  SIRBitMask(unsigned BitWidth)
-    : KnownZeros(APInt::getNullValue(BitWidth)),
-      KnownOnes(APInt::getNullValue(BitWidth)) {}
+  BitMask() : KnownZeros(APInt::getNullValue(1)),
+                 KnownOnes(APInt::getNullValue(1)),
+                 KnownSames(APInt::getNullValue(1)) {}
 
-  SIRBitMask(Value *V, unsigned BitWidth)
+  BitMask(unsigned BitWidth)
     : KnownZeros(APInt::getNullValue(BitWidth)),
-      KnownOnes(APInt::getNullValue(BitWidth)) {
+      KnownOnes(APInt::getNullValue(BitWidth)),
+      KnownSames(APInt::getNullValue(BitWidth)) {}
+
+  BitMask(Value *V, unsigned BitWidth)
+    : KnownZeros(APInt::getNullValue(BitWidth)),
+      KnownOnes(APInt::getNullValue(BitWidth)),
+      KnownSames(APInt::getNullValue(BitWidth)) {
     // Construct the mask from the constant directly.
     if (ConstantInt *CI = dyn_cast<ConstantInt>(V)) {
       APInt BitValue = CI->getValue();
@@ -174,10 +181,10 @@ public:
     }
   }
 
-  SIRBitMask(APInt KnownZeros, APInt KnownOnes)
-    : KnownZeros(KnownZeros), KnownOnes(KnownOnes) {
-    assert(KnownZeros.getBitWidth() == KnownOnes.getBitWidth()
-           && "BitWidth not matches!");
+  BitMask(APInt KnownZeros, APInt KnownOnes, APInt KnownSames)
+    : KnownZeros(KnownZeros), KnownOnes(KnownOnes), KnownSames(KnownSames) {
+    assert(KnownZeros.getBitWidth() == KnownOnes.getBitWidth() &&
+           KnownZeros.getBitWidth() == KnownSames.getBitWidth() && "BitWidth not matches!");
 
     verify();
   }
@@ -191,71 +198,81 @@ public:
 
   // Verify the correctness of KnownZeros and KnownOnes
   void verify() const {
-    assert(KnownZeros.getBitWidth() == KnownOnes.getBitWidth() && "BitWidth not matches!");
+    assert(KnownZeros.getBitWidth() == KnownOnes.getBitWidth() &&
+           KnownZeros.getBitWidth() == KnownSames.getBitWidth()
+           && "BitWidth not matches!");
     assert(!(KnownZeros & KnownOnes) && "BitMasks conflicts!");
   }
 
-  bool isCompatibleWith(const SIRBitMask &Mask) {
+  bool isCompatibleWith(const BitMask &Mask) {
     return getMaskWidth() == Mask.getMaskWidth() &&
            !(KnownOnes & Mask.KnownZeros) && !(KnownZeros & Mask.KnownOnes);
   }
 
-  // Set bit of KnownZeros and KnownOnes
+  // Set bit of KnownZeros, KnownOnes and KnownSigns
   void setKnownZeroAt(unsigned i) {
     KnownZeros.setBit(i);
     KnownOnes.clearBit(i);
+    KnownSames.clearBit(i);
     verify();
   }
   void setKnownOneAt(unsigned i) {
     KnownOnes.setBit(i);
     KnownZeros.clearBit(i);
+    KnownSames.clearBit(i);
+    verify();
+  }
+  void setKnownSignAt(unsigned i) {
+    KnownSames.setBit(i);
     verify();
   }
 
-  void mergeKnownByOr(const SIRBitMask &Mask) {
+  void mergeKnownByOr(const BitMask &Mask) {
     assert(isCompatibleWith(Mask) && "BitMask conflicts!");
 
     KnownZeros |= Mask.KnownZeros;
     KnownOnes |= Mask.KnownOnes;
+    KnownSames |= Mask.KnownSames;
     verify();
   }
-  void mergeKnownByAnd(const SIRBitMask &Mask) {
-    assert(isCompatibleWith(Mask) && "BitMask conflicts!");
+  void mergeKnownByAnd(const BitMask &Mask) {
+    assert(this->getMaskWidth() == Mask.getMaskWidth() && "BitWidth not matches!");
 
     KnownZeros &= Mask.KnownZeros;
     KnownOnes &= Mask.KnownOnes;
+    KnownSames &= Mask.KnownSames;
     verify();
   }
 
-  // Bit extraction of BitMasks.
-  APInt getBitExtraction(const APInt &OriginMask,
+  // Bit extraction of BitMask's APInt value.
+  APInt getBitExtraction(const APInt &OriginMaskAPInt,
                          unsigned UB, unsigned LB) const {
-    if (UB != OriginMask.getBitWidth() || LB != 0)
-      return OriginMask.lshr(LB).sextOrTrunc(UB - LB);
+    if (UB != OriginMaskAPInt.getBitWidth() || LB != 0)
+      return OriginMaskAPInt.lshr(LB).sextOrTrunc(UB - LB);
 
-    return OriginMask;
+    return OriginMaskAPInt;
   }
 
   // Shift left and fill the lower bits with zeros.
-  SIRBitMask shl(unsigned i) {
+  BitMask shl(unsigned i) {
     APInt PaddingZeros = APInt::getLowBitsSet(getMaskWidth(), i);
 
-    return SIRBitMask(KnownZeros.shl(i) | PaddingZeros, KnownOnes.shl(i));
+    return BitMask(KnownZeros.shl(i) | PaddingZeros, KnownOnes.shl(i), KnownSames.shl(i));
   }
   // Logic shift right and fill the higher bits with zeros.
-  SIRBitMask lshr(unsigned i) {
+  BitMask lshr(unsigned i) {
     APInt PaddingZeros = APInt::getHighBitsSet(getMaskWidth(), i);
 
-    return SIRBitMask(KnownZeros.lshr(i) | PaddingZeros, KnownOnes.lshr(i));
+    return BitMask(KnownZeros.lshr(i) | PaddingZeros, KnownOnes.lshr(i), KnownSames.lshr(i));
   }
   // Arithmetic shift right and fill the higher bits with sign bit. However,
   // this can only be down when it is known.
-  SIRBitMask ashr(unsigned i) {
-    return SIRBitMask(KnownZeros.ashr(i), KnownOnes.ashr(i));
+  BitMask ashr(unsigned i) {
+    return BitMask(KnownZeros.ashr(i), KnownOnes.ashr(i), KnownSames.ashr(i));
   }
   // Extend the width of mask
-  SIRBitMask extend(unsigned BitWidth) {
-    return SIRBitMask(KnownZeros.zextOrSelf(BitWidth), KnownOnes.zextOrSelf(BitWidth));
+  BitMask extend(unsigned BitWidth) {
+    return BitMask(KnownZeros.zextOrSelf(BitWidth), KnownOnes.zextOrSelf(BitWidth), KnownSames.zextOrSelf(BitWidth));
   }
 
 #define CREATEBITACCESSORS(WHAT, VALUE) \
@@ -287,31 +304,183 @@ public:
 
   CREATEBITACCESSORS(One, KnownOnes)
   CREATEBITACCESSORS(Zero, KnownZeros)
+  CREATEBITACCESSORS(Same, KnownSames)
   CREATEBITACCESSORS(Bit, KnownOnes | KnownZeros)
   CREATEBITACCESSORS(Value, (KnownOnes & ~KnownZeros))
 
-  // Mask evaluation function.
-  SIRBitMask evaluateAnd(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateOr(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateNot(SIRBitMask Mask);
-  SIRBitMask evaluateXor(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateRand(SIRBitMask Mask);
-  SIRBitMask evaluateRxor(SIRBitMask Mask);
-  SIRBitMask evaluateBitCat(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateBitExtract(SIRBitMask Mask, unsigned UB, unsigned LB);
-  SIRBitMask evaluateBitRepeat(SIRBitMask Mask, unsigned RepeatTimes);
-  SIRBitMask evaluateAdd(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateAddc(SIRBitMask LHS, SIRBitMask RHS, SIRBitMask Carry);
-  SIRBitMask evaluateMul(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateShl(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateLshr(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateAshr(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateUgt(SIRBitMask LHS, SIRBitMask RHS);
-  SIRBitMask evaluateSgt(SIRBitMask LHS, SIRBitMask RHS);
+  unsigned countLeadingZeros() {
+    unsigned LeadingZeros = 0;
+    unsigned MaskWidth = getMaskWidth();
 
-  void evaluateMask(Instruction *Inst, SIR *SM, DataLayout *TD);
+    for (unsigned i = 0; i < MaskWidth; ++i) {
+      if (isZeroKnownAt(MaskWidth - 1 - i))
+        ++LeadingZeros;
+      else
+        break;
+    }
 
-  void print(raw_ostream &Output);
+    return LeadingZeros;
+  }
+  unsigned countTrailingZeros() {
+    unsigned TrailingZeros = 0;
+    unsigned MaskWidth = getMaskWidth();
+
+    for (unsigned i = 0; i < MaskWidth; ++i) {
+      if (isZeroKnownAt(i))
+        ++TrailingZeros;
+      else
+        break;
+    }
+
+    return TrailingZeros;
+  }
+  unsigned countLeadingOnes() {
+    unsigned LeadingOnes = 0;
+    unsigned MaskWidth = getMaskWidth();
+
+    for (unsigned i = 0; i < MaskWidth; ++i) {
+      if (isOneKnownAt(MaskWidth - 1 - i))
+        ++LeadingOnes;
+      else
+        break;
+    }
+
+    return LeadingOnes;
+  }
+  unsigned countTrailingOnes() {
+    unsigned TrailingOnes = 0;
+    unsigned MaskWidth = getMaskWidth();
+
+    for (unsigned i = 0; i < MaskWidth; ++i) {
+      if (isOneKnownAt(i))
+        ++TrailingOnes;
+      else
+        break;
+    }
+
+    return TrailingOnes;
+  }
+  unsigned countLeadingSigns() {
+    unsigned LeadingSigns = 0;
+    unsigned MaskWidth = getMaskWidth();
+
+    for (unsigned i = 0; i < MaskWidth; ++i) {
+      if (isSameKnownAt(MaskWidth - 1 - i))
+        ++LeadingSigns;
+      else
+        break;
+    }
+
+    return LeadingSigns;
+  }
+
+  void print(raw_ostream &Output) {
+    unsigned BitWidth = getMaskWidth();
+    for (unsigned i = 0; i < BitWidth; ++i) {
+      if (KnownZeros[BitWidth - 1 - i] == 1)
+        Output << 0;
+      else if (KnownOnes[BitWidth - 1 - i] == 1)
+        Output << 1;
+      else if (KnownSames[BitWidth - 1 -i] == 1)
+        Output << 's';
+      else
+        Output << 'x';
+    }
+  }
+};
+
+struct SMGNode : public ilist_node<SMGNode> {
+public:
+  struct EdgePtr {
+  private:
+    SMGNode *Node;
+    float Distance;
+
+  public:
+    EdgePtr(SMGNode *Node, float Distance) : Node(Node), Distance(Distance) {}
+
+    operator SMGNode *() const { return Node; }
+    SMGNode *operator->() const { return Node; }
+
+    float getDistance() const { return Distance; }
+  };
+
+  typedef SmallVector<EdgePtr, 4> ChildVecTy;
+  typedef ChildVecTy::iterator child_iterator;
+  typedef ChildVecTy::const_iterator const_child_iterator;
+
+  typedef SmallVector<EdgePtr, 4> ParentVecTy;
+  typedef ParentVecTy::iterator parent_iterator;
+  typedef ParentVecTy::const_iterator const_parent_iterator;
+
+private:
+  Value *Node;
+
+  ChildVecTy Childs;
+  ParentVecTy Parents;
+
+public:
+  // Construction for ilist node.
+  SMGNode() : Node(0) {}
+  // Construction for normal node.
+  SMGNode(Value *V) : Node(V) {}
+
+  Value *getValue() const { return Node; }
+
+  // Childs.
+  child_iterator child_begin() { return Childs.begin(); }
+  const_child_iterator child_begin() const { return Childs.begin(); }
+  child_iterator child_end() { return Childs.end(); }
+  const_child_iterator child_end() const { return Childs.end(); }
+  bool child_empty() const { return Childs.empty(); }
+  unsigned child_size() const { return Childs.size(); }
+
+  // Parents.
+  parent_iterator parent_begin() { return Parents.begin(); }
+  parent_iterator parent_end() { return Parents.end(); }
+  const_parent_iterator parent_begin() const { return Parents.begin(); }
+  const_parent_iterator parent_end() const { return Parents.end(); }
+  bool parent_empty() const { return Parents.empty(); }
+  unsigned parent_size() const { return Parents.size(); }
+
+  bool hasChildNode(SMGNode *ChildNode) {
+    for (const_child_iterator I = child_begin(), E = child_end(); I != E; ++I)
+      if (ChildNode == EdgePtr(*I))
+        return true;
+
+    return false;
+  }
+
+  void addChildNode(SMGNode *ChildNode, float delay) {
+    assert(!hasChildNode(ChildNode) && "Add same child twice!");
+
+    ChildNode->Parents.push_back(EdgePtr(this, delay));
+    Childs.push_back(EdgePtr(ChildNode, delay));
+  }
+};
+
+template<> struct GraphTraits<SMGNode *> {
+  typedef SMGNode NodeType;
+  typedef NodeType::child_iterator ChildIteratorType;
+  static NodeType *getEntryNode(NodeType* N) { return N; }
+  static inline ChildIteratorType child_begin(NodeType *N) {
+    return N->child_begin();
+  }
+  static inline ChildIteratorType child_end(NodeType *N) {
+    return N->child_end();
+  }
+};
+
+template<> struct GraphTraits<const SMGNode *> {
+  typedef SMGNode NodeType;
+  typedef NodeType::const_child_iterator ChildIteratorType;
+  static NodeType *getEntryNode(NodeType* N) { return N; }
+  static inline ChildIteratorType child_begin(NodeType *N) {
+    return N->child_begin();
+  }
+  static inline ChildIteratorType child_end(NodeType *N) {
+    return N->child_end();
+  }
 };
 
 // Represent the registers in the Verilog.
@@ -526,6 +695,478 @@ public:
   static inline bool classof(const SIRPort *A) {
     return !(A->isInput());
   }
+};
+}
+
+namespace llvm {
+class DFGNode : public ilist_node<DFGNode> {
+public:
+  enum NodeType {
+    /// Virtual node as Entry & Exit
+    Entry,
+    Exit,
+    /// the argument of design
+    Argument,
+    /// the constant values
+    ConstantInt,
+    GlobalVal,
+    UndefVal,
+    /// normal datapath value type
+    Add,
+    Mul,
+    Div,
+    LShr,
+    AShr,
+    Shl,
+    Not,
+    And,
+    Or,
+    Xor,
+    RAnd,
+    GT,
+    LT,
+    EQ,
+    NE,
+    BitExtract,
+    BitCat,
+    BitRepeat,
+    BitManipulate,
+    TypeConversion,
+    Ret,
+    /// special datapath value type
+    CompressorTree,
+    LogicOperationChain,
+    /// sequential value type
+    Register,
+    /// invalid
+    InValid,
+  };
+
+private:
+  // Index
+  unsigned Idx;
+  // Name
+  std::string Name;
+  // Corresponding llvm value in IR.
+  Value *Val;
+  // Corresponding basic block in IR.
+  BasicBlock *ParentBB;
+  // Node type.
+  NodeType Ty;
+  // BitWidth
+  unsigned BitWidth;
+
+  // Child nodes & Parent nodes.
+  std::set<DFGNode *> Childs;
+  std::set<DFGNode *> Parents;
+
+public:
+  // Construction for ilist node.
+  DFGNode() : Idx(NULL), Name(""), Val(NULL), Ty(InValid), BitWidth(0) {}
+  // Construction for normal node.
+  DFGNode(unsigned Idx, std::string Name, Value *V, BasicBlock *BB,
+          NodeType Ty, unsigned BitWidth)
+    : Idx(Idx), Name(Name), Val(V), ParentBB(BB), Ty(Ty), BitWidth(BitWidth) {
+    if (V)
+      assert(!isa<Function>(V) && "Unexpected value type!");
+  }
+
+  unsigned getIdx() const { return Idx; }
+  std::string getName() const { return Name; }
+  Value *getValue() const { return Val; }
+  BasicBlock *getParentBB() const { return ParentBB; }
+  NodeType getType() const { return Ty; }
+  unsigned getBitWidth() const { return BitWidth; }
+
+  bool isEntryOrExit() const {
+    return Ty == Entry || Ty == Exit;
+  }
+  bool isSequentialNode() const {
+    return Ty == Register || Ty == GlobalVal;
+  }
+
+  typedef std::set<DFGNode *>::iterator iterator;
+  typedef std::set<DFGNode *>::const_iterator const_iterator;
+
+  // Childs.  
+  iterator child_begin() { return Childs.begin(); }
+  const_iterator child_begin() const { return Childs.begin(); }
+  iterator child_end() { return Childs.end(); }
+  const_iterator child_end() const { return Childs.end(); }
+  bool child_empty() const { return Childs.empty(); }
+  unsigned child_size() const { return Childs.size(); }
+
+  // Parents.
+  iterator parent_begin() { return Parents.begin(); }
+  const_iterator parent_begin() const { return Parents.begin(); }
+  iterator parent_end() { return Parents.end(); }
+  const_iterator parent_end() const { return Parents.end(); }
+  bool parent_empty() const { return Parents.empty(); }
+  virtual unsigned parent_size() const {
+    llvm_unreachable("Should be implemented in derived class!");
+  };
+
+  bool hasChildNode(DFGNode *ChildNode) const {
+    return Childs.count(ChildNode);
+  }
+  bool hasParentNode(DFGNode *ParentNode) const {
+    return Parents.count(ParentNode);
+  }
+
+  virtual void addParentNode(DFGNode *ParentNode) {
+    assert(!Parents.count(ParentNode) && "Already exists!");
+    assert(!ParentNode->Childs.count(this) && "Already exists!");
+
+    ParentNode->Childs.insert(this);
+    Parents.insert(ParentNode);
+  }
+  virtual void removeParentNode(DFGNode *ParentNode) {
+    assert(Parents.count(ParentNode) && "Do not exists!");
+    assert(ParentNode->Childs.count(this) && "Do not exists!");
+
+    ParentNode->Childs.erase(this);
+    Parents.erase(ParentNode);
+  }
+};
+
+class ConstantIntDFGNode : public DFGNode {
+private:
+  uint64_t Val;
+
+public:
+  ConstantIntDFGNode(unsigned Idx, std::string Name, uint64_t Val, unsigned BitWidth)
+    : DFGNode(Idx, Name, NULL, NULL, DFGNode::ConstantInt, BitWidth), Val(Val) {}
+
+  uint64_t getIntValue() { return Val; }
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast;
+  static inline bool classof(const ConstantIntDFGNode *CINode) { return true; }
+  static inline bool classof(const DFGNode *Node) {
+    DFGNode::NodeType Ty = Node->getType();
+
+    return Ty == DFGNode::ConstantInt;
+  }
+};
+
+class CommutativeDFGNode : public DFGNode {
+private:
+  // Repeat times of parent node.
+  std::map<DFGNode *, unsigned> NumOfParentNode;
+
+public:
+  CommutativeDFGNode(unsigned Idx, std::string Name, Value *V,
+                     BasicBlock *BB, NodeType Ty, unsigned BitWidth)
+    : DFGNode(Idx, Name, V, BB, Ty, BitWidth) {
+    if (V) assert(!isa<Function>(V) && "Unexpected value type!");
+
+    assert(Ty == DFGNode::Add || Ty == DFGNode::Mul || Ty == DFGNode::And ||
+           Ty == DFGNode::Not || Ty == DFGNode::Or || Ty == DFGNode::Xor ||
+           Ty == DFGNode::RAnd || Ty == DFGNode::EQ || Ty == DFGNode::NE ||
+           Ty == DFGNode::TypeConversion || Ty == DFGNode::CompressorTree &&
+           "Unexpected node type!");
+  }
+
+  unsigned getNumOfParentNode(DFGNode *ParentNode) {
+    assert(NumOfParentNode.count(ParentNode) && "Not parent node at all!");
+
+    return NumOfParentNode[ParentNode];
+  }
+
+  unsigned parent_size() const {
+    unsigned Size = 0;
+    for (const_pnnum_iterator PI = pn_begin(), PE = pn_end(); PI != PE; ++PI) {
+      Size += PI->second;
+    }
+
+    return Size;
+  }
+
+  void addParentNode(DFGNode *ParentNode, unsigned Num) {
+    // If the parent node already exists, then update the number.
+    if (hasParentNode(ParentNode)) {
+      assert(NumOfParentNode.count(ParentNode) && "Index not created yet?");
+
+      NumOfParentNode[ParentNode] += Num;
+    }
+    else {
+      DFGNode::addParentNode(ParentNode);
+
+      bool Insert = NumOfParentNode.insert(std::make_pair(ParentNode, Num)).second;
+      assert(Insert && "Insert failure!");
+    }
+  }
+  void removeParentNode(DFGNode *ParentNode, unsigned Num) {
+    // Update the number.
+    assert(NumOfParentNode.count(ParentNode) && "Index not created yet?");
+    if (NumOfParentNode[ParentNode] > Num) {
+      NumOfParentNode[ParentNode] -= Num;
+    }
+    else if (NumOfParentNode[ParentNode] == Num) {
+      DFGNode::removeParentNode(ParentNode);
+
+      NumOfParentNode.erase(ParentNode);
+    }
+  }
+
+  typedef std::map<DFGNode *, unsigned>::iterator pnnum_iterator;
+  typedef std::map<DFGNode *, unsigned>::const_iterator const_pnnum_iterator;
+
+  pnnum_iterator pn_begin() { return NumOfParentNode.begin(); }
+  const_pnnum_iterator pn_begin() const { return NumOfParentNode.begin(); }
+  pnnum_iterator pn_end() { return NumOfParentNode.end(); }
+  const_pnnum_iterator pn_end() const { return NumOfParentNode.end(); }
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast;
+  static inline bool classof(const CommutativeDFGNode *CNode) { return true; }
+  static inline bool classof(const DFGNode *Node) {
+    DFGNode::NodeType Ty = Node->getType();
+
+    return Ty == DFGNode::Add || Ty == DFGNode::Mul || Ty == DFGNode::And ||
+           Ty == DFGNode::Not || Ty == DFGNode::Or || Ty == DFGNode::Xor ||
+           Ty == DFGNode::RAnd || Ty == DFGNode::EQ || Ty == DFGNode::NE ||
+           Ty == DFGNode::TypeConversion || Ty == DFGNode::CompressorTree;
+  }
+};
+
+class NonCommutativeDFGNode : public DFGNode {
+private:
+  // Repeat times of parent node.
+  std::map<DFGNode *, unsigned> NumOfParentNode;
+  // Map of parent nodes order.
+  std::map<unsigned, DFGNode *> ParentsIdx;
+  std::map<DFGNode *, std::set<unsigned> > MirrorParentsIdx;
+
+public:
+  NonCommutativeDFGNode(unsigned Idx, std::string Name, Value *V,
+                        BasicBlock *BB, NodeType Ty, unsigned BitWidth)
+    : DFGNode(Idx, Name, V, BB, Ty, BitWidth) {
+    if (V) assert(!isa<Function>(V) && "Unexpected value type!");
+
+    assert(Ty == DFGNode::Div || Ty == DFGNode::LShr || Ty == DFGNode::AShr ||
+           Ty == DFGNode::Shl || Ty == DFGNode::GT || Ty == DFGNode::LT ||
+           Ty == DFGNode::BitExtract || Ty == DFGNode::BitCat ||
+           Ty == DFGNode::BitRepeat || Ty == DFGNode::Register &&
+           "Unexpected node type!");
+  }
+
+  unsigned parent_size() const {
+    return ParentsIdx.size();
+  }
+
+  DFGNode *getParentNode(unsigned Idx) {
+    assert(ParentsIdx.count(Idx) && "Not exist!");
+
+    return ParentsIdx[Idx];
+  }
+  std::set<unsigned> getParentIdx(DFGNode *ParentNode) {
+    assert(MirrorParentsIdx.count(ParentNode) && "Not exist");
+
+    return MirrorParentsIdx[ParentNode];
+  }
+
+  void addParentNode(DFGNode *ParentNode, unsigned ParentIdx) {
+    // If the parent node already exists, then update the number.
+    if (hasParentNode(ParentNode)) {
+      assert(NumOfParentNode.count(ParentNode) && "Index not created yet?");
+      NumOfParentNode[ParentNode] += 1;
+
+      assert(MirrorParentsIdx.count(ParentNode) && "Index not created yet?");
+      bool LocalInsert = MirrorParentsIdx[ParentNode].insert(ParentIdx).second;
+      assert(LocalInsert && "Insert failure!");
+    }
+    else {
+      DFGNode::addParentNode(ParentNode);
+
+      bool LocalInsert0 = NumOfParentNode.insert(std::make_pair(ParentNode, 1)).second;
+      assert(LocalInsert0 && "Insert failure!");
+
+      std::set<unsigned> IdxList;
+      IdxList.insert(ParentIdx);
+      bool LocalInsert1 = MirrorParentsIdx.insert(std::make_pair(ParentNode, IdxList)).second;
+      assert(LocalInsert1 && "Insert failure!");
+    }
+
+    bool Insert = ParentsIdx.insert(std::make_pair(ParentIdx, ParentNode)).second;
+    assert(Insert && "Insert failure!");
+  }
+  void removeParentNode(DFGNode *ParentNode, unsigned Idx) {
+    // Update the number.
+    assert(NumOfParentNode.count(ParentNode) && "Index not created yet?");
+    if (NumOfParentNode[ParentNode] > 1) {
+      NumOfParentNode[ParentNode] -= 1;
+
+      assert(MirrorParentsIdx.count(ParentNode) && "Not exists!");
+      MirrorParentsIdx[ParentNode].erase(Idx);
+    }
+    else if (NumOfParentNode[ParentNode] == 1) {
+      DFGNode::removeParentNode(ParentNode);
+
+      NumOfParentNode.erase(ParentNode);
+
+      assert(MirrorParentsIdx.count(ParentNode) && "Not exists!");
+      assert(MirrorParentsIdx[ParentNode].size() == 1 && "Unexpected size!");
+      MirrorParentsIdx.erase(ParentNode);
+    }
+
+    assert(ParentsIdx.count(Idx) && "Not exists!");
+    ParentsIdx.erase(Idx);
+  }
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast;
+  static inline bool classof(const NonCommutativeDFGNode *CNode) { return true; }
+  static inline bool classof(const DFGNode *Node) {
+    DFGNode::NodeType Ty = Node->getType();
+
+    return Ty == DFGNode::Div || Ty == DFGNode::LShr || Ty == DFGNode::AShr ||
+           Ty == DFGNode::Shl || Ty == DFGNode::GT || Ty == DFGNode::LT ||
+           Ty == DFGNode::BitExtract || Ty == DFGNode::BitCat ||
+           Ty == DFGNode::BitRepeat || Ty == DFGNode::Register;
+  }
+};
+
+template<> struct GraphTraits<DFGNode *> {
+  typedef DFGNode NodeType;
+  typedef NodeType::iterator ChildIteratorType;
+  static NodeType *getEntryNode(NodeType* N) { return N; }
+  static inline ChildIteratorType child_begin(NodeType *N) {
+    return N->child_begin();
+  }
+  static inline ChildIteratorType child_end(NodeType *N) {
+    return N->child_end();
+  }
+};
+
+template<> struct GraphTraits<const DFGNode *> {
+  typedef DFGNode NodeType;
+  typedef NodeType::const_iterator ChildIteratorType;
+  static NodeType *getEntryNode(NodeType* N) { return N; }
+  static inline ChildIteratorType child_begin(NodeType *N) {
+    return N->child_begin();
+  }
+  static inline ChildIteratorType child_end(NodeType *N) {
+    return N->child_end();
+  }
+};
+
+class DataFlowGraph {
+public:
+  typedef iplist<DFGNode> DFGNodeListTy;
+  typedef std::pair<std::vector<DFGNode *>,
+                    std::vector<DFGNode *> > OperationsAndOperandsTy;
+  typedef std::map<DFGNode *, OperationsAndOperandsTy> LOCType;
+
+private:
+  SIR *SM;
+
+  // Index the Entry and Exit node.
+  DFGNode *Entry;
+  DFGNode *Exit;
+
+  // The list of all nodes in DFG.
+  DFGNodeListTy DFGNodeList;
+  // The logic operation chains
+  LOCType LOC;
+  // The map between Root and the LOC DFG node we creat
+  std::map<DFGNode *, DFGNode *> RootOfLOC;
+
+  std::map<DFGNode *, DFGNode *> ReplacedNodes;
+
+public:
+  DataFlowGraph(SIR *SM) : SM(SM) {
+    // Create the entry SU.
+    this->Entry = new DFGNode(0, "Entry", NULL, NULL, DFGNode::Entry, 0);
+    DFGNodeList.push_back(Entry);
+    // Create the exit SU.
+    this->Exit = new DFGNode(UINT_MAX, "Exit", NULL, NULL, DFGNode::Exit, 0);
+    DFGNodeList.push_back(Exit);
+  }
+
+  unsigned size() const { return DFGNodeList.size(); }
+  DFGNode *getEntry() { return Entry; }
+  const DFGNode *getEntry() const { return Entry; }
+
+  DFGNode *getExit() { return Exit; }
+  const DFGNode *getExit() const { return Exit; }
+
+  // Sort the DFG nodes in topological order.
+  void toposortCone(DFGNode *Root, std::set<DFGNode *> &Visited);
+  void topologicalSortNodes();
+
+  DFGNode *createDFGNode(std::string Name, Value *Val, BasicBlock *BB,
+                         DFGNode::NodeType Ty, unsigned BitWidth);
+
+  DFGNode *createDataPathNode(Instruction *Inst, unsigned BitWidth);
+  DFGNode *createConstantIntNode(uint64_t Val, unsigned BitWidth);
+  DFGNode *createConstantIntNode(ConstantInt *CI, unsigned BitWidth);
+  DFGNode *createGlobalValueNode(GlobalValue *GV, unsigned BitWidth);
+  DFGNode *createUndefValueNode(UndefValue *UV, unsigned BitWidth);
+  DFGNode *createArgumentNode(Argument *Arg, unsigned BitWidth);
+  DFGNode *createSequentialNode(Value *Val, unsigned BitWidth);
+
+  void createDependency(DFGNode *From, DFGNode *To, unsigned Idx);
+
+  std::vector<DFGNode *> getOperationsOfLOC(DFGNode *RootNode) {
+    assert(LOC.count(RootNode) && "LOC not existed!");
+
+    return LOC[RootNode].first;
+  }
+  std::vector<DFGNode *> getOperandsOfLOC(DFGNode *RootNode) {
+    assert(LOC.count(RootNode) && "LOC not existed!");
+
+    return LOC[RootNode].second;
+  }
+  void indexLOC(DFGNode *RootNode, std::vector<DFGNode *> Operations,
+                std::vector<DFGNode *> Operands) {
+    assert(!LOC.count(RootNode) && "Already existed!");
+
+    LOC.insert(std::make_pair(RootNode, std::make_pair(Operations, Operands)));
+  }
+
+  bool hasLOCNode(DFGNode *RootNode) {
+    return RootOfLOC.count(RootNode);
+  }
+  DFGNode *getLOCNode(DFGNode *RootNode) {
+    assert(RootOfLOC.count(RootNode) && "Not existed!");
+
+    return RootOfLOC[RootNode];
+  }
+  void indexRootOfLOC(DFGNode *RootNode, DFGNode *LOCNode) {
+    assert(!RootOfLOC.count(RootNode) && "Already existed!");
+
+    RootOfLOC.insert(std::make_pair(RootNode, LOCNode));
+  }
+
+  bool hasReplaceNode(DFGNode *OriginNode) {
+    return ReplacedNodes.count(OriginNode);
+  }
+  DFGNode *getReplaceNode(DFGNode *OriginNode) {
+    assert(ReplacedNodes.count(OriginNode) && "Not existed!");
+
+    return ReplacedNodes[OriginNode];
+  }
+  void indexReplaceNode(DFGNode *OriginNode, DFGNode *ReplaceNode) {
+    assert(!ReplacedNodes.count(OriginNode) && "Already existed!");
+
+    ReplacedNodes.insert(std::make_pair(OriginNode, ReplaceNode));
+  }
+
+  typedef DFGNodeListTy::iterator node_iterator;
+  typedef DFGNodeListTy::const_iterator const_node_iterator;
+
+  node_iterator begin() { return DFGNodeList.begin(); }
+  node_iterator end() { return DFGNodeList.end(); }
+
+  const_node_iterator begin() const { return DFGNodeList.begin(); }
+  const_node_iterator end() const { return DFGNodeList.end(); }
+
+  typedef LOCType::iterator loc_iterator;
+  typedef LOCType::const_iterator const_loc_iterator;
+
+  loc_iterator loc_begin() { return LOC.begin(); }
+  loc_iterator loc_end() { return LOC.end(); }
+
+  const_loc_iterator loc_begin() const { return LOC.begin(); }
+  const_loc_iterator loc_end() const { return LOC.end(); }
 };
 }
 
@@ -927,9 +1568,17 @@ public:
   typedef MemInst2SeqOpsMapTy::iterator meminst2seqops_iterator;
   typedef MemInst2SeqOpsMapTy::const_iterator const_meminst2seqops_iterator;
 
-  typedef std::map<Value *, SIRBitMask> Val2BitMaskMapTy;
+  typedef std::map<Value *, BitMask> Val2BitMaskMapTy;
   typedef Val2BitMaskMapTy::iterator val2bitmask_iterator;
   typedef Val2BitMaskMapTy::const_iterator const_val2bitmask_iterator;
+
+  typedef std::map<DFGNode *, BitMask> Node2BitMaskMapTy;
+  typedef Node2BitMaskMapTy::iterator node2bitmask_iterator;
+  typedef Node2BitMaskMapTy::const_iterator const_node2bitmask_iterator;
+
+  typedef std::map<IntrinsicInst *, std::vector<Value *> > Ops2AdderChainTy;
+  typedef Ops2AdderChainTy::iterator ops2adderchain_iterator;
+  typedef Ops2AdderChainTy::const_iterator const_ops2adderchain_iterator;
 
   typedef DenseMap<Value *, Value *> Val2SeqValMapTy;
   typedef Val2SeqValMapTy::iterator val2valseq_iterator;
@@ -942,6 +1591,18 @@ public:
   typedef DenseMap<SIRRegister *, SIRSlot *> Reg2SlotMapTy;
   typedef Reg2SlotMapTy::iterator reg2slot_iterator;
   typedef Reg2SlotMapTy::const_iterator const_reg2slot_iterator;
+
+  typedef DenseMap<Value *, float> Val2ValidTimeMapTy;
+  typedef Val2ValidTimeMapTy::iterator val2validtime_iterator;
+  typedef Val2ValidTimeMapTy::const_iterator const_val2validtime_iterator;
+
+  typedef std::map<Instruction *, std::vector<Value *> > OpsOfLOCTy;
+  typedef OpsOfLOCTy::iterator opsofloc_iterator;
+  typedef OpsOfLOCTy::const_iterator const_opsofloc_iterator;
+
+  typedef DenseMap<Value *, DFGNode *> DFGNodeOfValMapTy;
+
+  typedef std::set<SIRRegister *> ArgRegsTy;
 
 private:
   // Input/Output ports of the module
@@ -962,13 +1623,27 @@ private:
   Val2SeqValMapTy Val2SeqVal;
   // The map between Value in SIR and BitMask.
   Val2BitMaskMapTy Val2BitMask;
+  // The map between DFG node and BitMask.
+  Node2BitMaskMapTy Node2BitMask;
+  // The map between ChainRoot and its operands
+  Ops2AdderChainTy Ops2AdderChain;
   // The map between SeqVal in SIR and Reg in SIR
   SeqVal2RegMapTy SeqVal2Reg;
   // The map between Reg and SIRSlot
   Reg2SlotMapTy Reg2Slot;
+  // The map between Value and its valid time
+  Val2ValidTimeMapTy Val2ValidTimeMap;
+  // The map between logic operation chain and its operands
+  OpsOfLOCTy OpsOfLOC;
+  // The map between value and its corresponding DFGNode
+  DFGNodeOfValMapTy DFGNodeOfVal;
+  // The registers created for Arguments of the module
+  ArgRegsTy ArgRegs;
 
   // Registers that should be kept.
   std::set<SIRRegister *> KeepRegs;
+
+  std::set<Value *> KeepVals;
 
   // Record the Idx of FinPort and RetPort.
   unsigned RetPortIdx;
@@ -1003,6 +1678,63 @@ public:
   void indexKeepReg(SIRRegister *Reg) {
     if (!KeepRegs.count(Reg))
       KeepRegs.insert(Reg);
+  }
+
+  bool hasKeepVal(Value *Val) const { return KeepVals.count(Val); }
+  void indexKeepVal(Value *Val) {
+    if (!KeepVals.count(Val))
+      KeepVals.insert(Val);
+  }
+
+  void indexValidTime(Value *Val, float ValidTime) {
+    assert(!Val2ValidTimeMap.count(Val) && "Already existed!");
+
+    Val2ValidTimeMap.insert(std::make_pair(Val, ValidTime));
+  }
+  float getValidTime(Value *Val) {
+    assert(Val2ValidTimeMap.count(Val) && "Not existed!");
+
+    return Val2ValidTimeMap[Val];
+  }
+
+  bool isLOCRoot(Instruction *Inst) { return OpsOfLOC.count(Inst); }
+  void indexOpsOfLOC(Instruction *LOCRott, std::vector<Value *> Ops) {
+    assert(!OpsOfLOC.count(LOCRott) && "Already existed!");
+
+    OpsOfLOC.insert(std::make_pair(LOCRott, Ops));
+  }
+  std::vector<Value *> getOpsOfLOC(Instruction *LOCRott) {
+    assert(OpsOfLOC.count(LOCRott) && "Not existed!");
+
+    return OpsOfLOC[LOCRott];
+  }
+
+  bool isDFGNodeExisted(Value *Val) const { return DFGNodeOfVal.count(Val); }
+  void indexDFGNodeOfVal(Value *Val, DFGNode *Node) {
+    assert(!DFGNodeOfVal.count(Val) && "Already existed!");
+
+    DFGNodeOfVal.insert(std::make_pair(Val, Node));
+  }
+  DFGNode *getDFGNodeOfVal(Value *Val) {
+    assert(DFGNodeOfVal.count(Val) && "Not existed!");
+
+    return DFGNodeOfVal[Val];
+  }
+
+  void indexArgReg(SIRRegister *Reg) {
+    ArgRegs.insert(Reg);
+  }
+  bool isArgReg(Value *Val) {
+    SIRRegister *Reg = lookupSIRReg(Val);
+
+    if (Reg) {
+      return ArgRegs.count(Reg);
+    }
+
+    return false;
+  }
+  std::set<SIRRegister *> getArgRegs() {
+    return ArgRegs;
   }
 
   Function *getFunction() const { return F; }
@@ -1044,6 +1776,12 @@ public:
 
   const_seqop_iterator const_seqop_begin() { return SeqOps.begin(); }
   const_seqop_iterator const_seqop_end() { return SeqOps.end(); }
+
+  opsofloc_iterator loc_begin() { return OpsOfLOC.begin(); }
+  opsofloc_iterator loc_end() { return OpsOfLOC.end(); }
+
+  const_opsofloc_iterator const_loc_begin() { return OpsOfLOC.begin(); }
+  const_opsofloc_iterator const_loc_end() { return OpsOfLOC.end(); }
 
   unsigned getSlotsSize() const { return Slots.size(); }
   unsigned getPortsSize() const { return Ports.size(); }
@@ -1119,20 +1857,56 @@ public:
     return at->second;
   }
 
-  bool IndexVal2BitMask(Value *Val, SIRBitMask BitMask) {
-    BitMask.verify();
+  bool IndexVal2BitMask(Value *Val, BitMask Mask) {
+    Mask.verify();
 
-    return Val2BitMask.insert(std::make_pair(Val, BitMask)).second;
+    if (hasBitMask(Val)) {
+      Val2BitMask[Val] = Mask;
+
+      return true;
+    }
+
+    return Val2BitMask.insert(std::make_pair(Val, Mask)).second;
   }
   bool hasBitMask(Value *Val) const {
     const_val2bitmask_iterator at = Val2BitMask.find(Val);
     return at != Val2BitMask.end();
   }
-  SIRBitMask getBitMask(Value *Val) const {
+  BitMask getBitMask(Value *Val) const {
     assert(hasBitMask(Val) && "Mask not created yet?");
 
     const_val2bitmask_iterator at = Val2BitMask.find(Val);
     return at->second;
+  }
+
+  bool IndexNode2BitMask(DFGNode *Node, BitMask Mask) {
+    Mask.verify();
+
+    if (hasBitMask(Node)) {
+      Node2BitMask[Node] = Mask;
+
+      return true;
+    }
+
+    return Node2BitMask.insert(std::make_pair(Node, Mask)).second;
+  }
+  bool hasBitMask(DFGNode *Node) const {
+    const_node2bitmask_iterator at = Node2BitMask.find(Node);
+    return at != Node2BitMask.end();
+  }
+  BitMask getBitMask(DFGNode *Node) const {
+    assert(hasBitMask(Node) && "Mask not created yet?");
+
+    const_node2bitmask_iterator at = Node2BitMask.find(Node);
+    return at->second;
+  }
+
+  bool IndexOps2AdderChain(IntrinsicInst *ChainRoot, std::vector<Value *> Ops) {
+    return Ops2AdderChain.insert(std::make_pair(ChainRoot, Ops)).second;
+  }
+  std::vector<Value *> lookupOpsOfChain(IntrinsicInst *ChainRoot) const {
+    const_ops2adderchain_iterator at = Ops2AdderChain.find(ChainRoot);
+    return at == Ops2AdderChain.end() ? std::vector<Value *>() : at->second;
   }
 
   bool IndexVal2SeqVal(Value *Val, Value *SeqVal) {

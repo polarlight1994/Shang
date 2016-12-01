@@ -419,7 +419,7 @@ result_out[idx] =  feig_dct( in00,  in01,  in02,  in03,
 //    main_result = (result_out != exp_res);
     //        printf("%d\n", main_result);
 //  return main_result;
-//    printf("return return_value != %d", return_value);
+	printf("return return_value != %d", return_value);
 //    return return_value;
     // return 0;
   return return_value != -673245;

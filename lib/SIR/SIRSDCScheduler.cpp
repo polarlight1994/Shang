@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 #include "sir/SIRSDCScheduler.h"
 #include "llvm/ADT/STLExtras.h"
-#include "lp_solve/lp_lib.h"
+#include "lp_lib.h"
 #include "vast/LuaI.h"
 
 using namespace llvm;

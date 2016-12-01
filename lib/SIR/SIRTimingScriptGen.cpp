@@ -296,15 +296,15 @@ bool SIRTimingScriptGen::runOnSIR(SIR &SM) {
   Output << "set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0";
   Output << "\n\n";
 
-  typedef SIR::register_iterator reg_iterator;
-  for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
-    SIRRegister *Reg = I;
-
-    if (Reg->fanin_empty() || (Reg->getLLVMValue()->use_empty() && !Reg->isFUInput()))
-      continue;
-
-    generateConstraints(Reg, Output);
-  }
+//   typedef SIR::register_iterator reg_iterator;
+//   for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
+//     SIRRegister *Reg = I;
+// 
+//     if (Reg->fanin_empty() || (Reg->getLLVMValue()->use_empty() && !Reg->isFUInput()))
+//       continue;
+// 
+//     generateConstraints(Reg, Output);
+//   }
 
   return false;
 }

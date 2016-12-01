@@ -153,8 +153,8 @@ struct SIRRegisterSynthesisForCodeGen : public SIRPass {
   void getAnalysisUsage(AnalysisUsage &AU) const;
 
   bool synthesizeRegister(SIRRegister *Reg,
-    Value *InsertPosition,
-    SIRDatapathBuilder &Builder);
+                          Value *InsertPosition,
+                          SIRDatapathBuilder &Builder);
 };
 }
 

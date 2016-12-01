@@ -450,7 +450,7 @@ int main()
   //    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
   //    return main_result;
- //      printf("return return_value != %d", return_value);
+ printf("return return_value != %d", return_value);
  //  return return_value;
  return return_value != -798516913;
 }

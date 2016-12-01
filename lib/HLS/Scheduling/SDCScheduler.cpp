@@ -27,7 +27,7 @@
 #define DEBUG_TYPE "sdc-scheduler"
 #include "llvm/Support/Debug.h"
 
-#include "lpsolve/lp_lib.h"
+#include "lp_lib.h"
 
 using namespace llvm;
 

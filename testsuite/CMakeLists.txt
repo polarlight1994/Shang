@@ -41,6 +41,9 @@ add_custom_target(benchmark_cosimulation
 add_custom_target(benchmark_synthesis
 									COMMENT "Run the synthesis of whole benchmark")
 
+add_custom_target(benchmark_hls
+									COMMENT "Run the hls of whole benchmark")
+
 macro(add_synthesis_test test_name)
 	set(TEST "${test_name}")
 	set(TEST_RTL_ENTITY		"main")
@@ -56,7 +59,12 @@ macro(add_synthesis_test test_name)
 	set(TEST_LL        		"${TEST_BINARY_ROOT}/${TEST}.ll")
 
 	set(TEST_RTL_SRC   		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sv")
+	set(COMPRESSOR_RTL_SRC	"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}_compressor.sv")
 	set(TEST_SDC     		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sdc")
+	
+	set(TEST_CompressorInfo	"${TEST_BINARY_ROOT}/CompressorInfo.txt")
+	set(TEST_CompressorName	"${TEST_RTL_ENTITY}")
+	set(TEST_CompressorPath	"${TEST_BINARY_ROOT}")
 
 	set(CycleCounter		"${TEST_BINARY_ROOT}/${test_name}_DUT_RTL.txt")
 
@@ -65,7 +73,12 @@ macro(add_synthesis_test test_name)
 	set(DEBUG_LS_RESULT		"${TEST_BINARY_ROOT}/${TEST}.lsresult")
 	set(DEBUG_IMS_RESULT  	"${TEST_BINARY_ROOT}/${TEST}.imsresult")
 	set(DEBUG_SchedGraph	"${TEST_BINARY_ROOT}/${TEST}.schedgraph")
-
+	set(DEBUG_MaskOutput	"${TEST_BINARY_ROOT}/${TEST}.maskoutput")
+	set(DEBUG_MulMaskOutput	"${TEST_BINARY_ROOT}/${TEST}.mulmaskoutput")
+	set(DEBUG_Chain			"${TEST_BINARY_ROOT}/${TEST}.chain")
+	set(DEBUG_DotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.dotmatrix")
+	set(DEBUG_ValidTime		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.validtime")
+	
 	set(enableCoSimulation false)
 
 	configure_file(
@@ -77,8 +90,8 @@ macro(add_synthesis_test test_name)
 		"${TEST_BINARY_ROOT}/test_config_main.lua"
 	)
 	configure_file(
-		"${SIR_SOURCE_ROOT}/EP2C70F896C6.lua"
-		"${TEST_BINARY_ROOT}/EP2C70F896C6.lua"
+		"${SIR_SOURCE_ROOT}/XC7K70TFBV676.lua"
+		"${TEST_BINARY_ROOT}/XC7K70TFBV676.lua"
 	)
 	configure_file(
 		"${SIR_SOURCE_ROOT}/verilog_synthesis_altera.tcl.in"
@@ -99,7 +112,7 @@ macro(add_synthesis_test test_name)
   )
 
 	#Run the Shang.exe to compile cpp into verilog and software part.
-	add_custom_command(OUTPUT ${TEST_RTL_SRC} ${TEST_SDC}
+	add_custom_command(OUTPUT ${TEST_RTL_SRC} ${COMPRESSOR_RTL_SRC} ${TEST_SDC}
 		COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} ${TEST_BINARY_ROOT}/test_config_main.lua"
 		DEPENDS ${TMIEOUT} ${TEST_BC} ${SHANG} "${TEST_BINARY_ROOT}/test_config_main.lua"
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
@@ -107,13 +120,12 @@ macro(add_synthesis_test test_name)
 	)
 
 	#Run the quartus to compile the verilog and get report.
-	add_custom_command(OUTPUT ${BenchmarkSummaryTmp}
+	add_custom_target(${TEST}_synthesis
 		COMMAND ${QUARTUS_BIN_DIR}/quartus_sh -t "${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl" > /dev/null
-		DEPENDS ${TEST_RTL_SRC} ${TEST_SDC} "${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl" ${CycleCounter}
+		DEPENDS ${TEST_RTL_SRC} ${COMPRESSOR_RTL_SRC} ${TEST_SDC} "${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl" ${CycleCounter} ${BenchmarkSummaryTmp}
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
 		COMMENT "Compile the verilog and get report"
 	)
-	add_custom_target(${TEST}_synthesis	DEPENDS ${BenchmarkSummaryTmp})
 
 endmacro(add_synthesis_test)
 
@@ -133,6 +145,7 @@ macro(add_cosimulation_test test_name)
 	set(TEST_LL        		"${TEST_BINARY_ROOT}/${TEST}.ll")
 	
 	set(TEST_RTL_SRC   		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sv")
+	set(COMPRESSOR_RTL_SRC	"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}_compressor.sv")
 	set(TEST_SDC     		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sdc")
 	set(TEST_SW_LL				"${TEST_BINARY_ROOT}/${DUT_NAME}_SW.ll")
 
@@ -147,13 +160,23 @@ macro(add_cosimulation_test test_name)
 	set(TEST_SC_EXE				"${TEST_RTL_OBJ_ROOT}/V${DUT_NAME}_RTL")
 
 	set(CycleCounter			"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.txt")
+	
+	set(TEST_CompressorInfo	"${TEST_BINARY_ROOT}/CompressorInfo.txt")
+	set(TEST_CompressorName	"${TEST_RTL_ENTITY}")
+	set(TEST_CompressorPath	"${TEST_BINARY_ROOT}")
 
 	set(DEBUG_FINAL_IR		"${TEST_BINARY_ROOT}/${TEST}.finalir")
 	set(DEBUG_SDC_RESULT	"${TEST_BINARY_ROOT}/${TEST}.sdcresult")
 	set(DEBUG_LS_RESULT		"${TEST_BINARY_ROOT}/${TEST}.lsresult")
-	set(DEBUG_IMS_RESULT  "${TEST_BINARY_ROOT}/${TEST}.imsresult")
+	set(DEBUG_IMS_RESULT  	"${TEST_BINARY_ROOT}/${TEST}.imsresult")
 	set(DEBUG_SchedGraph	"${TEST_BINARY_ROOT}/${TEST}.schedgraph")
-
+	set(DEBUG_MaskOutput	"${TEST_BINARY_ROOT}/${TEST}.maskoutput")
+	set(DEBUG_MulMaskOutput	"${TEST_BINARY_ROOT}/${TEST}.mulmaskoutput")
+	set(DEBUG_Chain			"${TEST_BINARY_ROOT}/${TEST}.chain")
+	set(DEBUG_DotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.dotmatrixs")
+	set(DEBUG_DSDotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}_delay_stage.dotmatrixs")
+	set(DEBUG_ValidTime		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.validtime")
+	
 	set(enableCoSimulation true)
 
 	configure_file(
@@ -162,11 +185,11 @@ macro(add_cosimulation_test test_name)
 	)
 	configure_file(
 		"${SIR_SOURCE_ROOT}/test_config.lua.in"
-		"${TEST_BINARY_ROOT}/test_config.lua"
+		"${TEST_BINARY_ROOT}/${TEST}_test_config.lua"
 	)
 	configure_file(
-		"${SIR_SOURCE_ROOT}/EP2C70F896C6.lua"
-		"${TEST_BINARY_ROOT}/EP2C70F896C6.lua"
+		"${SIR_SOURCE_ROOT}/XC7K70TFBV676.lua"
+		"${TEST_BINARY_ROOT}/XC7K70TFBV676.lua"
 	)
 
 	#Compile the source file to IR.
@@ -183,18 +206,18 @@ macro(add_cosimulation_test test_name)
   )
 
 	#Run the IR to get expected output.
-	add_custom_command(OUTPUT ${TEST_BINARY_ROOT}/Expected.output
-		COMMAND ${LLI} ${TEST_BC} > "${TEST_BINARY_ROOT}/Expected.output"
+	add_custom_command(OUTPUT ${TEST_BINARY_ROOT}/${TEST}_Expected.output
+		COMMAND ${LLI} ${TEST_BC} > "${TEST_BINARY_ROOT}/${TEST}_Expected.output"
 		DEPENDS ${LLI} ${TEST_BC}
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
 		COMMENT "Run ${TEST_BC} to get expected output"
 	)
-	add_custom_target(${TEST}_expected_output DEPENDS "${TEST_BINARY_ROOT}/Expected.output")
+	add_custom_target(${TEST}_expected_output DEPENDS "${TEST_BINARY_ROOT}/${TEST}_Expected.output")
 
 	#Run the Shang.exe to compile cpp into verilog and software part.
-	add_custom_command(OUTPUT ${TEST_RTL_SRC} ${TEST_SDC} ${TEST_SW_LL}
-		COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} ${TEST_BINARY_ROOT}/test_config.lua"
-		DEPENDS ${TMIEOUT} ${TEST_BC} ${SHANG} "${TEST_BINARY_ROOT}/test_config.lua"
+	add_custom_command(OUTPUT ${TEST_RTL_SRC} ${COMPRESSOR_RTL_SRC} ${TEST_SDC} ${TEST_SW_LL}
+		COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} ${TEST_BINARY_ROOT}/${TEST}_test_config.lua"
+		DEPENDS ${TMIEOUT} ${TEST_BC} ${SHANG} "${TEST_BINARY_ROOT}/${TEST}_test_config.lua"
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
 		COMMENT "Run ${SHANG} to get verilog and software part"
 	)
@@ -215,8 +238,8 @@ macro(add_cosimulation_test test_name)
 	#Use the SystemC to compile the verilog into obj file.
 	add_custom_command(OUTPUT "${TEST_RTL_OBJ_ROOT}/V${DUT_NAME}_RTL.mk"
 		COMMAND rm -rf "${TEST_BINARY_ROOT}/obj_dir/*"
-		COMMAND ${VERILATOR_EXECUTABLE} ${TEST_RTL_SRC} -Wall --sc -D__DEBUG_IF +define+__VERILATOR_SIM -Wno-fatal --top-module ${TEST_RTL_ENTITY}
-		DEPENDS ${VERILATOR_EXECUTABLE} ${TEST_RTL_SRC}
+		COMMAND ${VERILATOR_EXECUTABLE} ${TEST_RTL_SRC} ${COMPRESSOR_RTL_SRC} -Wall --sc -D__DEBUG_IF +define+__VERILATOR_SIM -Wno-fatal --top-module ${TEST_RTL_ENTITY}
+		DEPENDS ${VERILATOR_EXECUTABLE} ${TEST_RTL_SRC} ${COMPRESSOR_RTL_SRC}
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
 		COMMENT "Compile the verilog into obj file"
 	)
@@ -239,19 +262,19 @@ macro(add_cosimulation_test test_name)
 	)
 
 	#Run the exe to get test output.
-	add_custom_command(OUTPUT ${TEST_BINARY_ROOT}/Test.output ${CycleCounter}
-		COMMAND	rm -rf "${TEST_BINARY_ROOT}/Test.output"
-		COMMAND "${TEST_SC_EXE}" > "${TEST_BINARY_ROOT}/Test.output"
+	add_custom_command(OUTPUT ${TEST_BINARY_ROOT}/${TEST}_Test.output ${CycleCounter}
+		COMMAND	rm -rf "${TEST_BINARY_ROOT}/${TEST}_Test.output"
+		COMMAND "${TEST_SC_EXE}" > "${TEST_BINARY_ROOT}/${TEST}_Test.output"
 		DEPENDS ${TEST_SC_EXE}
 		WORKING_DIRECTORY ${TEST_RTL_OBJ_ROOT}
 		COMMENT "Run ${TEST_SC_EXE} to get test output"
 	)
-	add_custom_target(${TEST}_test_output DEPENDS "${TEST_BINARY_ROOT}/Test.output" ${CycleCounter})
+	add_custom_target(${TEST}_test_output DEPENDS "${TEST_BINARY_ROOT}/${TEST}_Test.output" ${CycleCounter})
 
 	#Compare the output.
 	add_custom_target(${TEST}_cosimulation
-		COMMAND [ -f "${TEST_BINARY_ROOT}/Test.output" ] && diff "${TEST_BINARY_ROOT}/Expected.output" "${TEST_BINARY_ROOT}/Test.output"
-		DEPENDS "${TEST_BINARY_ROOT}/Test.output" "${TEST_BINARY_ROOT}/Expected.output"
+		COMMAND [ -f "${TEST_BINARY_ROOT}/${TEST}_Test.output" ] && diff "${TEST_BINARY_ROOT}/${TEST}_Expected.output" "${TEST_BINARY_ROOT}/${TEST}_Test.output"
+		DEPENDS "${TEST_BINARY_ROOT}/${TEST}_Test.output" "${TEST_BINARY_ROOT}/${TEST}_Expected.output"
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
 		COMMENT "Compare the output"
 	)
@@ -261,8 +284,87 @@ macro(add_cosimulation_test test_name)
 	set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
 				${MAIN_RTL_SRC}
                 ${CycleCounter}
-				${TEST_BINARY_ROOT}/Expected.output ${TEST_BINARY_ROOT}/Test.output
+				${TEST_BINARY_ROOT}/${TEST}_Expected.output ${TEST_BINARY_ROOT}/${TEST}_Test.output
 				${TEST_BINARY_ROOT}/obj_dir/V${DUT_NAME}_RTL ${TEST}_origin)
 endmacro(add_cosimulation_test)
+
+macro(add_high_level_synthesis test_name)
+	set(TEST "${test_name}")
+	set(TEST_RTL_ENTITY		"main")
+
+	set(TEST_SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+	set(TEST_BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR})
+	set(TEST_RTL_OBJ_ROOT "${TEST_BINARY_ROOT}/obj_dir")
+
+	set(SIR_MemIntrinsic_BC "${SIR_SOURCE_ROOT}/sir_mem.bc")
+
+	set(TEST_SRC       		"${TEST_SOURCE_ROOT}/${TEST}.cpp")
+	set(TEST_BC        		"${TEST_BINARY_ROOT}/${TEST}.bc")
+	set(TEST_LL        		"${TEST_BINARY_ROOT}/${TEST}.ll")
+
+	set(TEST_RTL_SRC   		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sv")
+	set(TEST_SDC     		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sdc")
+
+	set(TEST_CompressorInfo	"${TEST_BINARY_ROOT}/CompressorInfo.txt")
+	set(TEST_CompressorName	"${TEST_RTL_ENTITY}")
+	set(TEST_CompressorPath	"${TEST_BINARY_ROOT}")
+
+	set(CycleCounter		"${TEST_BINARY_ROOT}/${test_name}_DUT_RTL.txt")
+
+	set(DEBUG_FINAL_IR		"${TEST_BINARY_ROOT}/${TEST}.finalir")
+	set(DEBUG_SDC_RESULT	"${TEST_BINARY_ROOT}/${TEST}.sdcresult")
+	set(DEBUG_LS_RESULT		"${TEST_BINARY_ROOT}/${TEST}.lsresult")
+	set(DEBUG_IMS_RESULT  	"${TEST_BINARY_ROOT}/${TEST}.imsresult")
+	set(DEBUG_SchedGraph	"${TEST_BINARY_ROOT}/${TEST}.schedgraph")
+	set(DEBUG_MaskOutput	"${TEST_BINARY_ROOT}/${TEST}.maskoutput")
+	set(DEBUG_MulMaskOutput	"${TEST_BINARY_ROOT}/${TEST}.mulmaskoutput")
+	set(DEBUG_Chain			"${TEST_BINARY_ROOT}/${TEST}.chain")
+	set(DEBUG_DotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.dotmatrixs")
+	set(DEBUG_DSDotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}_delay_stage.dotmatrixs")
+	set(DEBUG_ValidTime		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.validtime")
+
+	set(enableCoSimulation false)
+
+	configure_file(
+		"${SIR_SOURCE_ROOT}/common_config.lua.in"
+		"${TEST_BINARY_ROOT}/common_config.lua"
+	)
+	configure_file(
+		"${SIR_SOURCE_ROOT}/test_config_main.lua.in"
+		"${TEST_BINARY_ROOT}/test_config_main.lua"
+	)
+	configure_file(
+		"${SIR_SOURCE_ROOT}/XC7K70TFBV676.lua"
+		"${TEST_BINARY_ROOT}/XC7K70TFBV676.lua"
+	)
+	configure_file(
+		"${SIR_SOURCE_ROOT}/verilog_synthesis_altera.tcl.in"
+		"${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl"
+	)
+
+	#Compile the source file to IR.
+  add_custom_command(OUTPUT ${TEST_BC} ${TEST_LL}
+		#Use Clang to compile to BC.
+    COMMAND ${CLANG} ${TEST_SRC}
+            -O0 -c -emit-llvm
+            -o ${TEST_BC}
+		#Use LLVMDIS to compile to IR.
+    COMMAND ${LLVM_DIS} ${TEST_BC} -o ${TEST_LL}
+    DEPENDS ${TEST_SRC} ${LLVM_LINK} ${CLANG} ${LLVM_DIS}
+    WORKING_DIRECTORY ${TEST_BINARY_ROOT}
+    COMMENT "Compiling ${TEST_SRC} to ${TEST_BC}"
+  )
+
+	#Run the Shang.exe to compile cpp into verilog and software part.
+	add_custom_command(OUTPUT ${TEST_RTL_SRC} ${COMPRESSOR_RTL_SRC} ${TEST_SDC}
+		COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} ${TEST_BINARY_ROOT}/test_config_main.lua"
+		DEPENDS ${TMIEOUT} ${TEST_BC} ${SHANG} "${TEST_BINARY_ROOT}/test_config_main.lua"
+		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
+		COMMENT "Run ${SHANG} to get verilog and software part"
+	)
+
+	add_custom_target(${TEST}_hls DEPENDS ${TEST_RTL_SRC} ${COMPRESSOR_RTL_SRC} ${TEST_SDC})
+
+endmacro(add_high_level_synthesis)
 
 add_subdirectory(benchmark)

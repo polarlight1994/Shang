@@ -16,7 +16,7 @@
 #define SIR_SDC_SCHEDULER_H
 
 #include "SIRSchedulerBase.h"
-#include "lp_solve/lp_types.h"
+#include "lp_types.h"
 
 namespace llvm {
 class SIRSDCScheduler : public SIRScheduleBase {

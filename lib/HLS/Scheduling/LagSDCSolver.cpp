@@ -26,7 +26,7 @@
 #define DEBUG_TYPE "sdc-scheduler-heuristics"
 #include "llvm/Support/Debug.h"
 
-#include "lpsolve/lp_lib.h"
+#include "lp_lib.h"
 
 using namespace llvm;
 
@@ -105,7 +105,7 @@ struct CndDepLagConstraint : public SmallConstraint<4> {
   bool updateStatus(lprec *lp);
 
   CndDepLagConstraint(ArrayRef<int> VarIdx)
-    : SmallConstraint(true, None, VarIdx) {}
+    : SmallConstraint<4>(true, None, VarIdx) {}
 };
 }
 
@@ -180,7 +180,7 @@ struct SyncDepLagConstraint : public SmallConstraint<4> {
 
   SyncDepLagConstraint(unsigned RowStart,
                        ArrayRef<double> Coeffs, ArrayRef<int> VarIdx)
-    : SmallConstraint(true, Coeffs, VarIdx), RowStart(RowStart),
+    : SmallConstraint<4>(true, Coeffs, VarIdx), RowStart(RowStart),
       Weights(VarIdx.size() / 2, 2.0) {}
 
   bool updateStatus(lprec *lp);

@@ -160,6 +160,8 @@ void LuaI::updateFUs() {
   initSimpleFU<VFUs::Shift>(FUs);
   initSimpleFU<VFUs::Mult>(FUs);
   initSimpleFU<VFUs::ICmp>(FUs);
+  initSimpleFU<VFUs::Div>(FUs);
+  initSimpleFU<VFUs::RAnd>(FUs);
 
   FUSet[VFUs::Mux]
     = new VFUMux(FUs[VFUDesc::getTypeName(VFUs::Mux)]);
@@ -176,6 +178,7 @@ void LuaI::updateFUs() {
 
   READPARAMETER(Period, double);
   READPARAMETER(LUTDelay, float);
+  READPARAMETER(WireDelay, float);
   READPARAMETER(ClkEnDelay, float);
   READPARAMETER(RegDelay, float);
   READPARAMETER(MaxLutSize, unsigned);

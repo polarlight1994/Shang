@@ -1,17 +1,27 @@
 InputFile = [[@TEST_BC@]]
 RTLOutput = [[@TEST_RTL_SRC@]]
+CompressorOutput = [[@COMPRESSOR_RTL_SRC@]]
 SDCFile = [[@TEST_SDC@]]
 SoftwareIROutput = [[@TEST_SW_LL@]]
 RTLModuleName = [[@TEST_RTL_ENTITY@]]
 test_binary_root = [[@TEST_BINARY_ROOT@]]
 SIRMemIntrinsic = [[@SIR_MemIntrinsic_BC@]]
 IFFileName = [[@TEST_IF_SRC@]]
+CompressorInfo = [[@TEST_CompressorInfo@]]
+CompressorName = [[@TEST_CompressorName@]]
+CompressorPath = [[@TEST_CompressorPath@]]
 
 FinalIR = [[@DEBUG_FINAL_IR@]]
 SDCResult = [[@DEBUG_SDC_RESULT@]]
 LSResult = [[@DEBUG_LS_RESULT@]]
 IMSResult = [[@DEBUG_IMS_RESULT@]]
 SchedGraph = [[@DEBUG_SchedGraph@]]
+MaskOutput = [[@DEBUG_MaskOutput@]]
+MulMaskOutput = [[@DEBUG_MulMaskOutput@]]
+Chain = [[@DEBUG_Chain@]]
+DotMatrix = [[@DEBUG_DotMatrix@]]
+DSDotMatrix = [[@DEBUG_DSDotMatrix@]]
+ValValidTime = [[@DEBUG_ValidTime@]]
 
 CounterFile = [[@CycleCounter@]]
 
@@ -24,7 +34,7 @@ enableCoSimulation = @enableCoSimulation@
 POINTER_SIZE_IN_BITS = @POINTER_SIZE_IN_BITS@
 
 dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
-dofile('@TEST_BINARY_ROOT@/' .. 'EP2C70F896C6.lua')
+dofile('@TEST_BINARY_ROOT@/' .. 'XC7K70TFBV676.lua')
 
 Functions.@TEST@ = RTLModuleName
 

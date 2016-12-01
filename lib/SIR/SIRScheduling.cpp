@@ -603,46 +603,46 @@ void SIRScheduling::buildSchedulingGraph() {
 
   // Build the Scheduling Units for CombOps In Loop BB so that we can Pipeline
   // it in IMS.
-  {
-    Function *F = SM->getFunction();
-
-    typedef Function::iterator bb_iterator;
-    for (bb_iterator BBI = F->begin(), BBE = F->end(); BBI != BBE; ++BBI) {
-      BasicBlock *BB = BBI;
-
-      bool isLoop = false;
-      SIRSlot *EntrySlot = SM->getLandingSlot(BB);
-      SIRSlot *ExitSlot = SM->getLatestSlot(BB);
-
-      typedef SIRSlot::succ_iterator succ_iterator;
-      for (succ_iterator SI = ExitSlot->succ_begin(), SE = ExitSlot->succ_end(); SI != SE; ++SI) {
-        SIRSlot *SuccSlot = *SI;
-
-        if (SuccSlot == EntrySlot) {
-          isLoop = true;
-          break;
-        }
-      }      
-
-      if (isLoop) {
-        typedef BasicBlock::iterator inst_iterator;
-        for (inst_iterator InstI = BB->begin(), InstE = BB->end();
-             InstI != InstE; ++InstI) {
-          Instruction *Inst = InstI;
-
-          if (!isa<IntrinsicInst>(Inst) && !isa<IntToPtrInst>(Inst) &&
-              !isa<PtrToIntInst>(Inst) && !isa<BitCastInst>(Inst))
-            continue;
-
-          if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst))
-            if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
-              continue;
-
-          buildSchedulingUnitsForCombOp(Inst);
-        }
-      }
-    }
-  }
+//   {
+//     Function *F = SM->getFunction();
+// 
+//     typedef Function::iterator bb_iterator;
+//     for (bb_iterator BBI = F->begin(), BBE = F->end(); BBI != BBE; ++BBI) {
+//       BasicBlock *BB = BBI;
+// 
+//       bool isLoop = false;
+//       SIRSlot *EntrySlot = SM->getLandingSlot(BB);
+//       SIRSlot *ExitSlot = SM->getLatestSlot(BB);
+// 
+//       typedef SIRSlot::succ_iterator succ_iterator;
+//       for (succ_iterator SI = ExitSlot->succ_begin(), SE = ExitSlot->succ_end(); SI != SE; ++SI) {
+//         SIRSlot *SuccSlot = *SI;
+// 
+//         if (SuccSlot == EntrySlot) {
+//           isLoop = true;
+//           break;
+//         }
+//       }      
+// 
+//       if (isLoop) {
+//         typedef BasicBlock::iterator inst_iterator;
+//         for (inst_iterator InstI = BB->begin(), InstE = BB->end();
+//              InstI != InstE; ++InstI) {
+//           Instruction *Inst = InstI;
+// 
+//           if (!isa<IntrinsicInst>(Inst) && !isa<IntToPtrInst>(Inst) &&
+//               !isa<PtrToIntInst>(Inst) && !isa<BitCastInst>(Inst))
+//             continue;
+// 
+//           if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst))
+//             if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
+//               continue;
+// 
+//           buildSchedulingUnitsForCombOp(Inst);
+//         }
+//       }
+//     }
+//   }
 
   // Build dependencies.
   buildDependencies();
@@ -820,7 +820,7 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
     // and OutPort SeqOps like normal BB to make sure they are scheduled
     // to last step.
     else {
-      errs() << "Failed to pipeline BB " << BB->getName() << "\n";
+      //errs() << "Failed to pipeline BB " << BB->getName() << "\n";
 
       ArrayRef<SIRSchedUnit *> SUs = G->getSUsInBB(BB);
       for (unsigned i = 0; i < SUs.size(); ++i) {

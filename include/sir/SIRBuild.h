@@ -171,6 +171,8 @@ public:
   Value *createBitCastInst(Value *V, Type *RetTy,
                            Value *InsertPosition, bool UsedAsArg);
 
+  Value *createCompressorInst(Value *InsertPosition);
+
   // Functions to help us create Shang-Inst.
   Value *getSignBit(Value *U, Value *InsertPosition);
   IntegerType *createIntegerType(unsigned BitWidth);

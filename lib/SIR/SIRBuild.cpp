@@ -168,6 +168,9 @@ void SIRBuilder::buildInterface(Function *F) {
       ArgVal = D_Builder.createPtrToIntInst(Arg, ArgReg->getLLVMValue()->getType(), InsertPosition, true);
 
     C_Builder.assignToReg(IdleStartSlot, Start, ArgVal, ArgReg);
+
+    // Index all argument registers.
+    SM->indexArgReg(ArgReg);
   }
 
   // If the Start signal is true, then slot will jump to the slot of first BB.
@@ -1547,11 +1550,24 @@ Value *SIRDatapathBuilder::createSSExtInst(Value *U, unsigned DstBitWidth,
   unsigned NumExtendBits = DstBitWidth - SrcBitWidth;
   Value *SignBit = getSignBit(U, InsertPosition);
 
-  Value *ExtendBits = createSBitRepeatInst(SignBit, NumExtendBits,
-                                           createIntegerType(NumExtendBits),
+  Value *ExtendBits = createSBitRepeatInst(SignBit, NumExtendBits + 1,
+                                           createIntegerType(NumExtendBits + 1),
                                            InsertPosition, true);
-  Value *Ops[] = { ExtendBits, U };
-  return createSBitCatInst(Ops, RetTy, InsertPosition, UsedAsArg);
+
+  if (SrcBitWidth > 1) {
+    Value *ExtractedU = createSBitExtractInst(U, SrcBitWidth - 1, 0,
+      createIntegerType(SrcBitWidth - 1),
+      InsertPosition, true);
+
+    Value *Ops[] = { ExtendBits, ExtractedU };
+    return createSBitCatInst(Ops, RetTy, InsertPosition, UsedAsArg);
+  }
+  else {
+    if (!UsedAsArg)
+      InsertPosition->replaceAllUsesWith(ExtendBits);
+
+    return ExtendBits;
+  }
 }
 
 Value *SIRDatapathBuilder::createSSExtInstOrSelf(Value *U, unsigned DstBitWidth,
@@ -1593,16 +1609,18 @@ Value *SIRDatapathBuilder::createSNEInst(ArrayRef<Value *> Ops, Type *RetTy,
   assert(getBitWidth(Ops[0]) == getBitWidth(Ops[1]) == TD.getTypeSizeInBits(RetTy)
          && "RetTy not matches!");
 
-  // Get the bitwise difference by Xor.
-  Value *BitWissDiff = createSXorInst(Ops, Ops[0]->getType(), InsertPosition, true);
-  // If there is any bitwise difference, then LHS and RHS is not equal.
-  return createSROrInst(BitWissDiff, RetTy, InsertPosition, UsedAsArg);
+  assert(TD.getTypeSizeInBits(RetTy) == 1 && "RetTy not matches!");
+
+  return createShangInstPattern(Ops, RetTy, InsertPosition,
+                                Intrinsic::shang_ne, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSEQInst(ArrayRef<Value *> Ops, Type *RetTy,
                                          Value *InsertPosition, bool UsedAsArg) {
-  return createSNotInst(createSNEInst(Ops, RetTy, InsertPosition, true),
-                        RetTy, InsertPosition, UsedAsArg);
+  assert(TD.getTypeSizeInBits(RetTy) == 1 && "RetTy not matches!");
+
+  return createShangInstPattern(Ops, RetTy, InsertPosition,
+                                Intrinsic::shang_eq, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSEQInst(Value *LHS, Value *RHS, Type *RetTy,
@@ -1842,6 +1860,76 @@ Value *SIRDatapathBuilder::createSMulInst(ArrayRef<Value *> Ops, Type *RetTy,
     return Ops[0];
   }
 
+//   if (Ops.size() == 2) {
+//     Value *LHS = Ops[0], *RHS = Ops[1];
+// 
+//     SmallVector <Value *, 4> LHSPartialProducts;
+//     if (isa<ConstantInt>(LHS) && !isa<ConstantInt>(RHS)) {
+//       ConstantInt *LHSCI = dyn_cast<ConstantInt>(LHS);
+//       unsigned LHSCIVal = LHSCI->getValue().getZExtValue();
+// 
+//       while(LHSCIVal != 0) {
+//         unsigned ShiftNum = Log2_32(LHSCIVal);
+//         LHSCIVal = LHSCIVal - unsigned(pow(double(2), double(ShiftNum)));
+// 
+//         if (ShiftNum == 0) {
+//           LHSPartialProducts.push_back(RHS);
+//           continue;
+//         }
+// 
+//         Value *ShiftNumVal = createIntegerValue(32, ShiftNum);
+//         Value *PartialProduct = createSShiftInst(RHS, ShiftNumVal, RHS->getType(), InsertPosition, Intrinsic::shang_shl, true);
+//         LHSPartialProducts.push_back(PartialProduct);
+//       }
+// 
+//       // If there are more than two operands, transform it into mutil-SAddInst.
+//       if (LHSPartialProducts.size() > 2) {
+//         Value *TempSAddInst = createSAddInst(LHSPartialProducts[0], LHSPartialProducts[1], RetTy, InsertPosition, true);
+//         for (unsigned i = 0; i < LHSPartialProducts.size() - 3; i++) {
+//           TempSAddInst = createSAddInst(TempSAddInst, LHSPartialProducts[i + 2], RetTy, InsertPosition, true);
+//         }
+// 
+//         int num = LHSPartialProducts.size();
+//         return createSAddInst(TempSAddInst, LHSPartialProducts[num - 1], RetTy, InsertPosition, UsedAsArg);
+//       }
+// 
+//       return createSAddInst(LHSPartialProducts, RetTy, InsertPosition, UsedAsArg);
+//     }
+// 
+//     SmallVector <Value *, 4> RHSPartialProducts;
+//     if (isa<ConstantInt>(RHS) && !isa<ConstantInt>(LHS)) {
+//       ConstantInt *RHSCI = dyn_cast<ConstantInt>(RHS);
+//       unsigned RHSCIVal = RHSCI->getValue().getZExtValue();
+// 
+//       while(RHSCIVal != 0) {
+//         unsigned ShiftNum = Log2_32(RHSCIVal);
+//         RHSCIVal = RHSCIVal - unsigned(pow(double(2), double(ShiftNum)));
+// 
+//         if (ShiftNum == 0) {
+//           LHSPartialProducts.push_back(LHS);
+//           continue;
+//         }
+// 
+//         Value *ShiftNumVal = createIntegerValue(32, ShiftNum);
+//         Value *PartialProduct = createSShiftInst(LHS, ShiftNumVal, LHS->getType(), InsertPosition, Intrinsic::shang_shl, true);
+//         RHSPartialProducts.push_back(PartialProduct);
+//       }
+// 
+//       // If there are more than two operands, transform it into mutil-SAddInst.
+//       if (RHSPartialProducts.size() > 2) {
+//         Value *TempSAddInst = createSAddInst(RHSPartialProducts[0], RHSPartialProducts[1], RetTy, InsertPosition, true);
+//         for (unsigned i = 0; i < RHSPartialProducts.size() - 3; i++) {
+//           TempSAddInst = createSAddInst(TempSAddInst, RHSPartialProducts[i + 2], RetTy, InsertPosition, true);
+//         }
+// 
+//         int num = RHSPartialProducts.size();
+//         return createSAddInst(TempSAddInst, RHSPartialProducts[num - 1], RetTy, InsertPosition, UsedAsArg);
+//       }
+// 
+//       return createSAddInst(RHSPartialProducts, RetTy, InsertPosition, UsedAsArg);
+//     }
+//   }
+
   return createShangInstPattern(Ops, RetTy, InsertPosition,
                                 Intrinsic::shang_mul, UsedAsArg);
 }
@@ -1910,11 +1998,36 @@ Value *SIRDatapathBuilder::createSShiftInst(ArrayRef<Value *> Ops, Type *RetTy,
   if (getBitWidth(RHS) > RHSMaxSize)
     // Extract the useful bits.
     RHS = createSBitExtractInst(Ops[1], RHSMaxSize, 0, createIntegerType(RHSMaxSize), 
-    InsertPosition, true);
+                                InsertPosition, true);
 
   Value *NewOps[] = {LHS, RHS};
 
   assert(LHS->getType() == RetTy && "RetTy not matches!");
+
+  if (ConstantInt *RHSCI = dyn_cast<ConstantInt>(RHS)) {
+    unsigned RHSCIVal = RHSCI->getValue().getZExtValue();
+
+    unsigned LHSBitWidth = getBitWidth(LHS);
+
+    if (FuncID == Intrinsic::shang_shl) {
+      Value *ExtractResult = createSBitExtractInst(LHS, LHSBitWidth - RHSCIVal, 0, createIntegerType(LHSBitWidth - RHSCIVal), InsertPosition, true);
+      Value *PaddingBits = createIntegerValue(RHSCIVal, 0);
+
+      return createSBitCatInst(ExtractResult, PaddingBits, RetTy, InsertPosition, UsedAsArg);
+    } else if (FuncID == Intrinsic::shang_lshr) {
+      Value *ExtractResult = createSBitExtractInst(LHS, LHSBitWidth, RHSCIVal, createIntegerType(LHSBitWidth - RHSCIVal), InsertPosition, true);
+      Value *PaddingBits = createIntegerValue(RHSCIVal, 0);
+
+      return createSBitCatInst(PaddingBits, ExtractResult, RetTy, InsertPosition, UsedAsArg);
+    } else if (FuncID == Intrinsic::shang_ashr) {
+      Value *ExtractResult = createSBitExtractInst(LHS, LHSBitWidth, RHSCIVal, createIntegerType(LHSBitWidth - RHSCIVal), InsertPosition, true);
+      Value *PaddingBit = createSBitExtractInst(LHS, LHSBitWidth, LHSBitWidth - 1, createIntegerType(1), InsertPosition, true);
+      Value *PaddingBits = createSBitRepeatInst(PaddingBit, RHSCIVal, createIntegerType(RHSCIVal), InsertPosition, true);
+
+      return createSBitCatInst(PaddingBits, ExtractResult, RetTy, InsertPosition, UsedAsArg);
+    }
+  }
+
   return createShangInstPattern(NewOps, RetTy, InsertPosition, FuncID, UsedAsArg);
 }
 
@@ -2042,18 +2155,18 @@ Value *SIRDatapathBuilder::createSOrInst(ArrayRef<Value *> Ops, Type *RetTy,
     Value *Operand = *I;
     ConstantInt *CI = dyn_cast<ConstantInt>(Operand);
 
-    // If A = 1'b1 | 1'bB | 1'bC, we can simplify it into 1'b1.
-    if (CI && getConstantIntValue(CI) == 1 && getBitWidth(RetTy) == 1) {
-      // If the inst is not used as an argument of other functions,
-      // then it is used to replace the inst in IR
-      if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
-      return Operand;
-    }
-
-    // If A = x'b0 | B | C, we can simplify it into A = B | C.
-    if (CI && getConstantIntValue(CI) == 0)
-      // Ignore the x'b0 operand, since it have no impact on result.
-      continue;
+//     If A = 1'b1 | 1'bB | 1'bC, we can simplify it into 1'b1.
+//           if (CI && getConstantIntValue(CI) == 1 && getBitWidth(RetTy) == 1) {
+//             // If the inst is not used as an argument of other functions,
+//             // then it is used to replace the inst in IR
+//             if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
+//             return Operand;
+//           }
+//       
+//           // If A = x'b0 | B | C, we can simplify it into A = B | C.
+//           if (CI && getConstantIntValue(CI) == 0)
+//             // Ignore the x'b0 operand, since it have no impact on result.
+//             continue;
 
     NewOps.push_back(Operand);
   }
@@ -2275,6 +2388,19 @@ Value *SIRDatapathBuilder::createBitCastInst(Value *V, Type *RetTy,
   return Inst;
 }
 
+Value *SIRDatapathBuilder::createCompressorInst(Value *InsertPosition) {
+  SmallVector<Value *, 2> Ops;
+  Ops.push_back(createIntegerValue(getBitWidth(InsertPosition), 1));
+
+  Value *CompressorInst =  createShangInstPattern(Ops, InsertPosition->getType(),
+                                                        InsertPosition, Intrinsic::shang_compressor,
+                                                        false);
+
+  Instruction *Compressor = dyn_cast<Instruction>(CompressorInst);
+
+  return CompressorInst;
+}
+
 /// Functions to help us create Shang-Inst.
 Value *SIRDatapathBuilder::getSignBit(Value *U, Value *InsertPosition) {
   unsigned BitWidth = getBitWidth(U);
@@ -2292,7 +2418,7 @@ Value *SIRDatapathBuilder::createIntegerValue(unsigned BitWidth, unsigned Val) {
   APInt V = CI->getValue();
 
   // The mask of constant value is itself.
-  SIRBitMask Mask(~V, V);
+  BitMask Mask(~V, V, V.getNullValue(BitWidth));
   SM->IndexVal2BitMask(CI, Mask);
 
   return CI;
@@ -2302,7 +2428,7 @@ Value *SIRDatapathBuilder::createIntegerValue(APInt Val) {
   Value *V = ConstantInt::get(SM->getContext(), Val);
 
   // The mask of constant value is itself.
-  SIRBitMask Mask(~Val, Val);
+  BitMask Mask(~Val, Val, Val.getNullValue(Val.getBitWidth()));
   SM->IndexVal2BitMask(V, Mask);
 
   return V;
