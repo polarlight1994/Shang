@@ -23,9 +23,10 @@ typedef std::vector<DotType> MatrixRowType;
 typedef std::vector<MatrixRowType> MatrixType;
 
 static unsigned Component_NUM = 0;
-static bool sortMatrixByArrivalTime = false;
+static bool sortMatrixByArrivalTime = true;
 static bool enableBitMaskOpt = true;
-static bool useGPCWithCarryChain = false;
+static bool useGPCWithCarryChain = true;
+static bool sumFirstRowsByAdder = false;
 
 namespace {
 struct SIRMOAOpt : public SIRPass {
@@ -297,8 +298,10 @@ float SIRMOAOpt::hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
   printTMatrixForDebug(Matrix);
 
   // Consider use normal adder to sum some rows which have earlier arrival time.
-  //Matrix = sumRowsByAdder(Matrix, ColNum, Output);
-  RowNum = Matrix.size();
+  if (sumFirstRowsByAdder) {
+    Matrix = sumRowsByAdder(Matrix, ColNum, Output);
+    RowNum = Matrix.size();
+  }
 
   // Optimize the dot matrix taking advantage of the known bits.
   MatrixType TMatrix = transportMatrix(Matrix, RowNum, ColNum);
@@ -1166,7 +1169,7 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
     }
 
     MatrixRowType AdderResultRow
-      = createDotMatrixRow(AdderName, ColNum, ColNum, 0.0f, 1, ResultMask);
+      = createDotMatrixRow(AdderName, ColNum, ColNum, 0.0f, 0, ResultMask);
 
     // Insert the adder result back into matrix.
     Matrix.push_back(AdderResultRow);
