@@ -165,7 +165,6 @@ INITIALIZE_PASS_BEGIN(SIRRegisterSynthesisForCodeGen,
                       "SIR-Register-synthesis-for-code-generate",
                       "Implement the MUX for the Sequential Logic in SIR for CodeGen",
                       false, true)
-  INITIALIZE_PASS_DEPENDENCY(SIRBitLevelOpt)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
 INITIALIZE_PASS_END(SIRRegisterSynthesisForCodeGen,
                     "SIR-Register-synthesis-for-code-generate",
@@ -175,7 +174,6 @@ INITIALIZE_PASS_END(SIRRegisterSynthesisForCodeGen,
 void SIRRegisterSynthesisForCodeGen::getAnalysisUsage(AnalysisUsage &AU) const {
   SIRPass::getAnalysisUsage(AU);
   AU.addRequired<DataLayout>();
-  AU.addRequiredID(SIRBitLevelOptID);
   AU.setPreservesAll();
 }
 
