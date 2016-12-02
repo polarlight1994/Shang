@@ -46,7 +46,7 @@ using namespace llvm;
 // To use the LUA in VAST
 using namespace vast;
 
-static bool extractMode = false;
+static bool extractMode = true;
 
 namespace llvm {
   struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
