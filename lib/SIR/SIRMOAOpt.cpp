@@ -1083,21 +1083,32 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
   std::sort(ArrivalTimes.begin(), ArrivalTimes.end(), ArrivalTimeCompare);
 
   // Identify which rows can be summed by adder.
-  // TODO: only identify the first three rows now.
-  std::vector<std::vector<unsigned> > RowsSummedByAdder;  
-  float InputArrivalTime = std::max(ArrivalTimes[0].second,
-                                    std::max(ArrivalTimes[1].second, ArrivalTimes[2].second));
-  float ResultArrivalTime = InputArrivalTime + 1.436f / VFUs::Period;
+  std::vector<std::vector<unsigned> > RowsSummedByAdder;
+  unsigned Idx = 0;
+  bool Continue = true;
+  while (Continue) {
+    Continue = false;
 
-  if (ResultArrivalTime < ArrivalTimes.back().second) {
-    std::vector<unsigned> AdderOps;
-    AdderOps.push_back(ArrivalTimes[0].first);
-    AdderOps.push_back(ArrivalTimes[1].first);
-    AdderOps.push_back(ArrivalTimes[2].first);
+    float InputArrivalTime = std::max(ArrivalTimes[3*Idx].second,
+                                      std::max(ArrivalTimes[3*Idx + 1].second,
+                                               ArrivalTimes[3*Idx + 2].second));
+    float ResultArrivalTime = InputArrivalTime + 1.436f / VFUs::Period;
 
-    RowsSummedByAdder.push_back(AdderOps);
+    if (ResultArrivalTime < ArrivalTimes.back().second) {
+      std::vector<unsigned> AdderOps;
+      AdderOps.push_back(ArrivalTimes[3*Idx].first);
+      AdderOps.push_back(ArrivalTimes[3*Idx + 1].first);
+      AdderOps.push_back(ArrivalTimes[3*Idx + 2].first);
 
-    errs() << "Sum first arrived three rows by adder!\n";
+      RowsSummedByAdder.push_back(AdderOps);
+
+      // Debug code
+      errs() << "Sum first arrived three rows by adder!\n";
+
+      // Continue the identify the following rows.
+      Continue = true;
+      Idx++;
+    }
   }
 
   /// Then according to the result, generate the adder to sum these rows and remember to
