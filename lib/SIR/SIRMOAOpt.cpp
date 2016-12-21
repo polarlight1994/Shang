@@ -144,7 +144,6 @@ struct SIRMOAOpt : public SIRPass {
   MatrixType sumRowsByAdder(MatrixType Matrix, unsigned ColNum, raw_fd_ostream &Output);
 
   float getCritialPathDelay(DFGNode *Node);
-  float getLatency(Instruction *Inst);
   float getOperandArrivalTime(Value *Operand);
 
   bool isConstantInt(MatrixRowType Row);
@@ -170,6 +169,8 @@ struct SIRMOAOpt : public SIRPass {
   void initGPCs();
   void initAddChains();
   void initLibrary();
+
+  std::vector<unsigned> calculateIHs(MatrixType TMatrix, unsigned TargetHeight);
 
   MatrixType compressTMatrixUsingComponent(MatrixType TMatrix, unsigned ComponentIdx,
                                            unsigned RowNo, unsigned Stage,
@@ -225,38 +226,24 @@ static bool LessThan(std::pair<unsigned, float> OpA,
   return OpA.second < OpB.second;
 }
 
-static bool isLeafValue(SIR *SM, Value *V) {
-  // When we visit the Srcs of value, the Leaf Value
-  // means the top nodes of the Expr-Tree. There are
-  // four kinds of Leaf Value:
-  // 1) Argument 2) Register 3) ConstantValue
-  // 4) GlobalValue 5) UndefValue
-  // The path between Leaf Value and other values
-  // will cost no delay (except wire delay).
-  // However, since the ConstantValue will have
-  // no impact on the scheduling process, so
-  // we will just ignore the ConstantInt in
-  // previous step.
-
-  if (isa<ConstantInt>(V)) return true;
-
-  if (isa<ConstantVector>(V)) return true;
-
-  if (isa<ConstantAggregateZero>(V)) return true;
-
-  if (isa<ConstantPointerNull>(V)) return true;
-
-  if (isa<Argument>(V))	return true;
-
-  if (isa<GlobalValue>(V)) return true;
-
-  if (isa<UndefValue>(V)) return true;
-
-  if (Instruction *Inst = dyn_cast<Instruction>(V))
-    if (SIRRegister *Reg = SM->lookupSIRReg(Inst))
+bool sortComponent(std::pair<unsigned, std::pair<float, std::pair<float, unsigned> > > OpA,
+                   std::pair<unsigned, std::pair<float, std::pair<float, unsigned> > > OpB) {
+  if (OpA.second.first < OpB.second.first)
+    return true;
+  else if (OpA.second.first > OpB.second.first)
+    return false;
+  else {
+    if (OpA.second.second.first < OpB.second.second.first)
       return true;
-
-  return false;
+    else if (OpA.second.second.first > OpB.second.second.first)
+      return false;
+    else {
+      if (OpA.second.second.second < OpB.second.second.second)
+        return true;
+      else
+        return false;
+    }
+  }
 }
 
 bool SIRMOAOpt::runOnSIR(SIR &SM) {
@@ -314,8 +301,9 @@ float SIRMOAOpt::hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
   // should be a constant integer.
   assert(isConstantInt(Matrix[0]) && "Should be a constant integer!");
 
-  // Compress the dot matrix.
   TMatrix = transportMatrix(Matrix, Matrix.size(), ColNum);
+
+  // Compress the dot matrix.
   float ResultArrivalTime = compressMatrix(TMatrix, MatrixName, Matrix.size(), ColNum, Output);
 
   return ResultArrivalTime;
@@ -1839,6 +1827,73 @@ void SIRMOAOpt::initLibrary() {
   //initAddChains();
 }
 
+std::vector<unsigned> SIRMOAOpt::calculateIHs(MatrixType TMatrix, unsigned TargetHeight) {
+  // Get the dot numbers in each columns.
+  std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
+  unsigned MaxBitNum = 0;
+  for (unsigned i = 0; i < BitNumList.size(); ++i) {
+    MaxBitNum = std::max(MaxBitNum, BitNumList[i]);
+  }
+
+  // Get the highest priority GPC.
+  typedef std::pair<float, std::pair<float, unsigned> > GPCPriority;
+  std::vector<std::pair<unsigned, GPCPriority> > PriorityList;
+  for (unsigned i = 0; i < Library.size(); ++i) {
+    CompressComponent *Component = Library[i];
+
+    // Get the information of current GPC.
+    std::vector<unsigned> InputDotNums = Component->getInputDotNums();
+    unsigned OutputDotNum = Component->getOutputDotNum();
+    float CriticalDelay = Component->getCriticalDelay();
+    unsigned Area = Component->getArea();
+
+    unsigned InputDotNum = 0;
+    for (unsigned j = 0; j < InputDotNums.size(); ++j)
+      InputDotNum += InputDotNums[j];
+
+    // Evaluate the performance.
+    unsigned CompressedDotNum
+      = InputDotNum > OutputDotNum ? InputDotNum - OutputDotNum : 0;
+
+    float RealDelay = CriticalDelay + VFUs::WireDelay;
+    //float Performance = ((float) (CompressedDotNum * CompressedDotNum)) / (RealDelay * Area);
+    //float Performance = ((float)CompressedDotNum) / RealDelay;
+    float Performance = ((float)CompressedDotNum) / Area;
+
+    GPCPriority Priority = std::make_pair(Performance,
+                                          std::make_pair(0.0f - CriticalDelay,
+                                                         InputDotNums[0]));
+    PriorityList.push_back(std::make_pair(i, Priority));
+  }
+
+  // Sort the PriorityList and get the highest one.
+  std::sort(PriorityList.begin(), PriorityList.end(), sortComponent);
+  unsigned HighestPriorityGPCIdx = PriorityList.back().first;
+
+  // Calculate the compression ratio.
+  CompressComponent *Component = Library[HighestPriorityGPCIdx];
+  std::vector<unsigned> InputDotNums = Component->getInputDotNums();
+  unsigned OutputDotNum = Component->getOutputDotNum();
+  unsigned InputDotNum = 0;
+  for (unsigned j = 0; j < InputDotNums.size(); ++j)
+    InputDotNum += InputDotNums[j];
+  //float CompressionRatio = (float)InputDotNum / OutputDotNum;
+  // Temporary set the ratio as 2.
+  float CompressionRatio = 2.0f;
+
+  // Calculate the IHs.
+  std::vector<unsigned> IHs;
+
+  unsigned IH = TargetHeight;
+  while (IH < MaxBitNum) {
+    IHs.push_back(IH);
+
+    IH = std::floor(IH * CompressionRatio);
+  }
+
+  return IHs;
+}
+
 MatrixType
 SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
                                          unsigned ComponentIdx,
@@ -1938,26 +1993,6 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
   printTMatrixForDebug(TMatrix);
 
   return TMatrix;
-}
-
-bool sortComponent(std::pair<unsigned, std::pair<float, std::pair<float, unsigned> > > OpA,
-                   std::pair<unsigned, std::pair<float, std::pair<float, unsigned> > > OpB) {
-  if (OpA.second.first < OpB.second.first)
-    return true;
-  else if (OpA.second.first > OpB.second.first)
-    return false;
-  else {
-    if (OpA.second.second.first < OpB.second.second.first)
-      return true;
-    else if (OpA.second.second.first > OpB.second.second.first)
-      return false;
-    else {
-      if (OpA.second.second.second < OpB.second.second.second)
-        return true;
-      else
-        return false;
-    }
-  }
 }
 
 unsigned
@@ -2092,6 +2127,9 @@ float SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
 
   // Code for debug.
   printTMatrixForDebug(TMatrix);
+
+  /// Calculate the ideal intermediate height(IH).
+  std::vector<unsigned> IHs = calculateIHs(TMatrix, 3);
 
   /// Start to compress the TMatrix
   unsigned Stage = 0;
