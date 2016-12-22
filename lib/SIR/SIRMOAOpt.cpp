@@ -25,8 +25,8 @@ typedef std::vector<MatrixRowType> MatrixType;
 static unsigned Component_NUM = 0;
 static bool sortMatrixByArrivalTime = true;
 static bool enableBitMaskOpt = true;
-static bool useGPCWithCarryChain = true;
-static bool sumFirstRowsByAdder = true;
+static bool useGPCWithCarryChain = false;
+static bool sumFirstRowsByAdder = false;
 
 namespace {
 struct SIRMOAOpt : public SIRPass {
@@ -176,9 +176,9 @@ struct SIRMOAOpt : public SIRPass {
                                            unsigned RowNo, unsigned Stage,
                                            raw_fd_ostream &Output);
   unsigned getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
-                                       unsigned Stage);
-  MatrixType compressTMatrixInStage(MatrixType TMatrix, unsigned Stage,
-                                    raw_fd_ostream &Output);
+                                       unsigned IH, unsigned Stage);
+  MatrixType compressTMatrixInStage(MatrixType TMatrix, unsigned IH,
+                                    unsigned Stage, raw_fd_ostream &Output);
   float compressMatrix(MatrixType TMatrix, std::string MatrixName,
                        unsigned OperandNum, unsigned OperandWidth,
                        raw_fd_ostream &Output);
@@ -226,19 +226,19 @@ static bool LessThan(std::pair<unsigned, float> OpA,
   return OpA.second < OpB.second;
 }
 
-bool sortComponent(std::pair<unsigned, std::pair<float, std::pair<float, unsigned> > > OpA,
-                   std::pair<unsigned, std::pair<float, std::pair<float, unsigned> > > OpB) {
+bool sortComponent(std::pair<unsigned, std::pair<unsigned, std::pair<float, float> > > OpA,
+                   std::pair<unsigned, std::pair<unsigned, std::pair<float, float> > > OpB) {
   if (OpA.second.first < OpB.second.first)
     return true;
   else if (OpA.second.first > OpB.second.first)
     return false;
   else {
-    if (OpA.second.second.first < OpB.second.second.first)
+    if (OpA.second.first < OpB.second.first)
       return true;
-    else if (OpA.second.second.first > OpB.second.second.first)
+    else if (OpA.second.first > OpB.second.first)
       return false;
     else {
-      if (OpA.second.second.second < OpB.second.second.second)
+      if (OpA.second.second < OpB.second.second)
         return true;
       else
         return false;
@@ -1443,6 +1443,17 @@ void SIRMOAOpt::initGPCs() {
   CompressComponent::Type GPCType = CompressComponent::GPC;
   CompressComponent::Type GPCWithExtraOneType = CompressComponent::GPCWithExtraOne;
 
+  /// GPC_2_2_LUT
+  // Inputs & Outputs
+  unsigned GPC_2_2_LUT_Inputs[1] = { 2 };
+  std::vector<unsigned> GPC_2_2_LUT_InputsVector(GPC_2_2_LUT_Inputs,
+                                                 GPC_2_2_LUT_Inputs + 1);
+
+  CompressComponent *GPC_2_2_LUT
+    = new CompressComponent(GPCType, "GPC_2_2_LUT",
+                            GPC_2_2_LUT_InputsVector, 2, 1, 0.052f);
+  Library.push_back(GPC_2_2_LUT);
+
   /// GPC_3_2_LUT
   // Inputs & Outputs
   unsigned GPC_3_2_LUT_Inputs[1] = { 3 };
@@ -1522,6 +1533,17 @@ void SIRMOAOpt::initGPCs() {
     = new CompressComponent(GPCType, "GPC_13_3_LUT",
                             GPC_13_3_LUT_InputsVector, 3, 2, 0.051f);
   Library.push_back(GPC_13_3_LUT);
+
+  /// GPC_22_3_LUT
+  // Inputs & Outputs
+  unsigned GPC_22_3_LUT_Inputs[2] = { 2, 2 };
+  std::vector<unsigned> GPC_22_3_LUT_InputsVector(GPC_22_3_LUT_Inputs,
+                                                  GPC_22_3_LUT_Inputs + 2);
+
+  CompressComponent *GPC_22_3_LUT
+    = new CompressComponent(GPCType, "GPC_22_3_LUT",
+                            GPC_22_3_LUT_InputsVector, 3, 2, 0.051f);
+  Library.push_back(GPC_22_3_LUT);
 
   /// GPC_23_3_LUT
   // Inputs & Outputs
@@ -1677,6 +1699,16 @@ void SIRMOAOpt::initGPCs() {
                               GPC_1415_5_InputsVector, 5, 4, 0.31f);
     Library.push_back(GPC_1415_5);
   }
+
+  errs() << "Available GPCs: ";
+  for (unsigned i = 0; i < Library.size(); ++i) {
+    CompressComponent *Component = Library[i];
+    errs() << Component->getName();
+
+    if (i != Library.size() - 1)
+      errs() << "; ";
+  }
+  errs() << "\n";
 }
 
 void SIRMOAOpt::initAddChains() {
@@ -1996,16 +2028,25 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
 }
 
 unsigned
-SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
-                                       unsigned RowNo, unsigned Stage) {
-  unsigned HighestPriorityGPCIdx;
-
+SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
+                                       unsigned IH, unsigned Stage) {
   // Get information of TMatrix.
   std::vector<unsigned> ActiveBitNumList
     = getActiveBitNumListInTMatrix(TMatrix, Stage);
+  std::vector<unsigned> BitNumList
+    = getBitNumListInTMatrix(TMatrix);
+
+  // Get the excess bit number.
+  std::vector<unsigned> ExcessBitNumList;
+  for (unsigned i = 0; i < BitNumList.size(); ++i) {
+    
+    unsigned ExcessBitNum = BitNumList[i] > IH ? BitNumList[i] - IH: 0;
+
+    ExcessBitNumList.push_back(ExcessBitNum);
+  }
 
   // Try all library and evaluate its priority.
-  typedef std::pair<float, std::pair<float, unsigned> > GPCPriority;
+  typedef std::pair<unsigned, std::pair<float, float> > GPCPriority;
   std::vector<std::pair<unsigned, GPCPriority> > PriorityList;
   for (unsigned i = 0; i < Library.size(); ++i) {
     CompressComponent *Component = Library[i];
@@ -2017,6 +2058,10 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
     unsigned Area = Component->getArea();
 
     /// Ignore the invalid component.
+    // Do not eliminate dots more than what we need.
+    if (InputDotNums[0] - 1 > ExcessBitNumList[RowNo])
+      continue;
+
     // Check if all inputs of component can be fulfilled.
     unsigned RealInputDotNum = 0;
     bool ComponentValid = true;
@@ -2032,6 +2077,7 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
     }
     if (!ComponentValid)
       continue;
+
     // Check if there exists the needed 1'b1 if the component
     // is the GPCWithExtraOne.
     if (GPC_with_extra_One *SpecialGPC
@@ -2054,32 +2100,34 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix,
     float RealDelay = CriticalDelay + VFUs::WireDelay;
     //float Performance = ((float) (CompressedDotNum * CompressedDotNum)) / (RealDelay * Area);
     //float Performance = ((float)CompressedDotNum) / RealDelay;
-    float Performance = ((float)CompressedDotNum) / Area;
+    float Performance = ((float)RealInputDotNum) / RealOutputDotNum;
 
-    GPCPriority Priority = std::make_pair(Performance,
-                                          std::make_pair(0.0f - CriticalDelay, InputDotNums[0]));
+    GPCPriority Priority = std::make_pair(InputDotNums[0],
+                                          std::make_pair(Performance, 0.0f - CriticalDelay));
     PriorityList.push_back(std::make_pair(i, Priority));
   }
+
+  assert(!PriorityList.empty() && "No feasible GPC!");
 
   // Sort the PriorityList and get the highest one.
   std::sort(PriorityList.begin(), PriorityList.end(), sortComponent);
 
   // Debug
-//   errs() << "Component performance list is as follows:\n";
-//   for (unsigned i = 0; i < PriorityList.size(); ++i) {
-//     unsigned ComponentIdx = PriorityList[i].first;
-// 
-//     CompressComponent *Component = Library[ComponentIdx];
-// 
-//     errs() << Component->getName() << "--" << PriorityList[i].second.first << "\n";
-//   }
+  errs() << "Component performance list is as follows:\n";
+  for (unsigned i = 0; i < PriorityList.size(); ++i) {
+    unsigned ComponentIdx = PriorityList[i].first;
+
+    CompressComponent *Component = Library[ComponentIdx];
+
+    errs() << Component->getName() << "--" << PriorityList[i].second.first << "\n";
+  }
 
 
   return PriorityList.back().first;
 }
 
 MatrixType SIRMOAOpt::compressTMatrixInStage(MatrixType TMatrix,
-                                             unsigned Stage,
+                                             unsigned IH, unsigned Stage,
                                              raw_fd_ostream &Output) {
   // Get the informations of the TMatrix.
   std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
@@ -2088,9 +2136,9 @@ MatrixType SIRMOAOpt::compressTMatrixInStage(MatrixType TMatrix,
 
   // Compress row by row.
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
-    // Compress current row if it has more than target final bit numbers.
-    while (BitNumList[i] > 3 && ActiveBitNumList[i] >= 3) {
-      unsigned ComponentIdx = getHighestPriorityComponent(TMatrix, i, Stage);
+    // Compress current row if it has dots more than target IH.
+    while (BitNumList[i] > IH) {
+      unsigned ComponentIdx = getHighestPriorityComponent(TMatrix, i, IH, Stage);
 
       TMatrix = compressTMatrixUsingComponent(TMatrix, ComponentIdx, i,
                                               Stage, Output);
@@ -2138,7 +2186,7 @@ float SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
 
     bool Continue = true;
     while (Continue) {
-      TMatrix = compressTMatrixInStage(TMatrix, Stage, Output);
+      TMatrix = compressTMatrixInStage(TMatrix, IH, Stage, Output);
     
       // Determine if we need to continue compressing.
       std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
@@ -2147,29 +2195,11 @@ float SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
         if (BitNumList[i] > IH)
           Continue = true;
       }
-    
-      // Increase the stage and start next compress progress.
-      if (Continue)
-        ++Stage;
     }
-  }
 
-//   bool Continue = true;
-//   while (Continue) {
-//     TMatrix = compressTMatrixInStage(TMatrix, Stage, Output);
-// 
-//     // Determine if we need to continue compressing.
-//     std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
-//     Continue = false;
-//     for (unsigned i = 0; i < TMatrix.size(); ++i) {
-//       if (BitNumList[i] > 3)
-//         Continue = true;
-//     }
-// 
-//     // Increase the stage and start next compress progress.
-//     if (Continue)
-//       ++Stage;
-//   }
+    // Increase the stage and start next compress progress.
+    ++Stage;
+  }
 
   /// Finish the compress by sum the left-behind bits using ternary CPA.
   MatrixRowType CPADataA, CPADataB, CPADataC;
@@ -2270,6 +2300,14 @@ void SIRMOAOpt::printTMatrixForDebug(MatrixType TMatrix) {
 }
 
 void SIRMOAOpt::printGPCModule(raw_fd_ostream &Output) {
+  // Generate the 2-2 compressor.
+  Output << "module GPC_2_2_LUT(\n";
+  Output << "\tinput wire[1:0] col0,\n";
+  Output << "\toutput wire[1:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1];\n\n";
+  Output << "endmodule\n\n";
+
   // Generate the 3-2 compressor.
   Output << "module GPC_3_2_LUT(\n";
   Output << "\tinput wire[2:0] col0,\n";
@@ -2368,6 +2406,15 @@ void SIRMOAOpt::printGPCModule(raw_fd_ostream &Output) {
   Output << "\toutput wire[2:0] sum\n";
   Output << ");\n\n";
   Output << "\tassign sum = col0[0] + col0[1] + col0[2] + col0[3] + col0[4] + 1'b1 + 2 * col1;\n\n";
+  Output << "endmodule\n\n";
+
+  // Generate the 22-3 compressor.
+  Output << "module GPC_22_3_LUT(\n";
+  Output << "\tinput wire[1:0] col0,\n";
+  Output << "\tinput wire[1:0] col1,\n";
+  Output << "\toutput wire[2:0] sum\n";
+  Output << ");\n\n";
+  Output << "\tassign sum = col0[0] + col0[1] + 2 * (col1[0] + col1[1]);\n\n";
   Output << "endmodule\n\n";
 
   // Generate the 23-3 compressor.
