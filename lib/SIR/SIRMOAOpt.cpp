@@ -26,6 +26,7 @@ static unsigned Component_NUM = 0;
 static bool sortMatrixByArrivalTime = true;
 static bool enableBitMaskOpt = true;
 static bool useGPCWithCarryChain = false;
+static bool useSepcialGPC = false;
 static bool sumFirstRowsByAdder = false;
 
 namespace {
@@ -148,15 +149,15 @@ struct SIRMOAOpt : public SIRPass {
 
   bool isConstantInt(MatrixRowType Row);
   unsigned getOperandBitWidth(MatrixRowType Row);
-  std::vector<unsigned>
-    getSignBitNumListInMatrix(MatrixType Matrix);
-  std::vector<unsigned>
-    getActiveBitNumListInTMatrix(MatrixType TMatrix, unsigned Stage);
+  std::vector<unsigned> getSignBitNumList(MatrixType Matrix);
+  std::vector<unsigned> getActiveBitNumList(MatrixType TMatrix, unsigned Stage);
+  std::vector<unsigned> getOneBitNumList(MatrixType TMatrix);
+  std::vector<unsigned> getBitNumList(MatrixType TMatrix);
+  std::vector<unsigned> getMaxEBitNumList(std::vector<unsigned> ActiveDotNumList);
+
   MatrixType
     transportMatrix(MatrixType Matrix, unsigned RowNum, unsigned ColumnNum);
 
-  std::vector<unsigned> getOneBitNumListInTMatrix(MatrixType TMatrix);
-  std::vector<unsigned> getBitNumListInTMatrix(MatrixType TMatrix);
   MatrixType simplifyTMatrix(MatrixType TMatrix);
   MatrixType sortTMatrix(MatrixType TMatrix);
   MatrixType sumAllOneBitsInTMatrix(MatrixType TMatrix);
@@ -174,17 +175,28 @@ struct SIRMOAOpt : public SIRPass {
 
   MatrixType compressTMatrixUsingComponent(MatrixType TMatrix, unsigned ComponentIdx,
                                            unsigned RowNo, unsigned Stage,
+                                           unsigned &FinalGPCLevel,
                                            raw_fd_ostream &Output);
-  unsigned getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
-                                       unsigned IH, unsigned Stage);
-  MatrixType compressTMatrixInStage(MatrixType TMatrix, unsigned IH,
-                                    unsigned Stage, raw_fd_ostream &Output);
-  float compressMatrix(MatrixType TMatrix, std::string MatrixName,
-                       unsigned OperandNum, unsigned OperandWidth,
-                       raw_fd_ostream &Output);
 
-  float hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
-                          unsigned RowNum, unsigned ColNum, raw_fd_ostream &Output);
+  unsigned getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
+                                       unsigned ActiveStage, unsigned IH);
+
+  MatrixType preCompressTMatrixUsingComponent(MatrixType TMatrix, unsigned ComponentIdx,
+                                              unsigned RowNo, unsigned Stage,
+                                              unsigned &FinalGPCLevel);
+  MatrixType preCompressTMatrixInStage(MatrixType TMatrix, unsigned IH, unsigned ActiveStage,
+                                       unsigned &FinalGPCLevel, unsigned &Area);
+  unsigned preCompressTMatrix(MatrixType TMatrix, std::vector<unsigned> IHs);
+
+  MatrixType compressTMatrixInStage(MatrixType TMatrix, unsigned IH,
+                                    unsigned ActiveStage,
+                                    unsigned &FinalGPCLevel, unsigned &Area,
+                                    raw_fd_ostream &Output);
+  void compressMatrix(MatrixType TMatrix, std::string MatrixName,
+                      unsigned OperandNum, unsigned OperandWidth, raw_fd_ostream &Output);
+
+  void hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
+                         unsigned RowNum, unsigned ColNum, raw_fd_ostream &Output);
 
   // The function to output verilog and debug files.
   void printTMatrixForDebug(MatrixType TMatrix);
@@ -267,9 +279,9 @@ bool SIRMOAOpt::runOnSIR(SIR &SM) {
   return false;
 }
 
-float SIRMOAOpt::hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
-                                   unsigned RowNum, unsigned ColNum,
-                                   raw_fd_ostream &Output) {
+void SIRMOAOpt::hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
+                                  unsigned RowNum, unsigned ColNum,
+                                  raw_fd_ostream &Output) {
   // Print the declaration of the module.  
   Output << "module " << "compressor_" << MatrixName << "(\n";
   for (unsigned i = 0; i < RowNum; ++i) {
@@ -304,9 +316,7 @@ float SIRMOAOpt::hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
   TMatrix = transportMatrix(Matrix, Matrix.size(), ColNum);
 
   // Compress the dot matrix.
-  float ResultArrivalTime = compressMatrix(TMatrix, MatrixName, Matrix.size(), ColNum, Output);
-
-  return ResultArrivalTime;
+  compressMatrix(TMatrix, MatrixName, Matrix.size(), ColNum, Output);
 }
 
 static unsigned LogCeiling(unsigned x, unsigned n) {
@@ -336,22 +346,30 @@ float SIRMOAOpt::getCritialPathDelay(DFGNode *Node) {
 
   case llvm::DFGNode::Add: {
     unsigned BitWidth = Node->getBitWidth();
-    return LuaI::Get<VFUAddSub>()->lookupLatency(std::min(BitWidth, 64u));
+    BitWidth = BitWidth < 64 ? BitWidth : 64;
+
+    return LuaI::Get<VFUAddSub>()->lookupLatency(BitWidth);
   }
   case llvm::DFGNode::Mul: {
     unsigned BitWidth = Node->getBitWidth();
-    return LuaI::Get<VFUMult>()->lookupLatency(std::min(BitWidth, 64u));
+    BitWidth = BitWidth < 64 ? BitWidth : 64;
+
+    return LuaI::Get<VFUMult>()->lookupLatency(BitWidth);
   }
   case llvm::DFGNode::Div: {
     unsigned BitWidth = Node->getBitWidth();
-    return LuaI::Get<VFUDiv>()->lookupLatency(std::min(BitWidth, 64u));
+    BitWidth = BitWidth < 64 ? BitWidth : 64;
+
+    return LuaI::Get<VFUDiv>()->lookupLatency(BitWidth);
   }
 
   case llvm::DFGNode::LShr:
   case llvm::DFGNode::AShr:
   case llvm::DFGNode::Shl: {
     unsigned BitWidth = Node->getBitWidth();
-    return LuaI::Get<VFUShift>()->lookupLatency(std::min(BitWidth, 64u));
+    BitWidth = BitWidth < 64 ? BitWidth : 64;
+
+    return LuaI::Get<VFUShift>()->lookupLatency(BitWidth);
   }
 
   case llvm::DFGNode::Not:
@@ -376,10 +394,12 @@ float SIRMOAOpt::getCritialPathDelay(DFGNode *Node) {
 
   case llvm::DFGNode::GT:
   case llvm::DFGNode::LT:
-  case llvm::DFGNode::EQ:
+  case llvm::DFGNode::Eq:
   case llvm::DFGNode::NE: {
     unsigned BitWidth = Node->getBitWidth();
-    return LuaI::Get<VFUICmp>()->lookupLatency(std::min(BitWidth, 64u));
+    BitWidth = BitWidth < 64 ? BitWidth : 64;
+
+    return LuaI::Get<VFUICmp>()->lookupLatency(BitWidth);
   }
 
   case llvm::DFGNode::CompressorTree:
@@ -455,7 +475,8 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
       float FinalArrivalTime = ArrivalTime + getCritialPathDelay(ParentNode);
 
       if (ArrivalTimes.count(ParentNode))
-        ArrivalTimes[ParentNode] = std::max(ArrivalTimes[ParentNode], FinalArrivalTime);
+        ArrivalTimes[ParentNode] = ArrivalTimes[ParentNode] > FinalArrivalTime ?
+                                     ArrivalTimes[ParentNode] : FinalArrivalTime;
       else
         ArrivalTimes.insert(std::make_pair(ParentNode, FinalArrivalTime));
 
@@ -470,7 +491,8 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
   typedef std::map<DFGNode *, float>::iterator arrivaltime_iterator;
   for (arrivaltime_iterator AI = ArrivalTimes.begin(), AE = ArrivalTimes.end();
        AI != AE; ++AI) {
-    CritialPathArrivalTime = std::max(CritialPathArrivalTime, AI->second);
+    CritialPathArrivalTime
+      = CritialPathArrivalTime > AI->second ? CritialPathArrivalTime : AI->second;
 
     // Index the arrival time.
     ValArrivalTime.insert(std::make_pair(Operand, CritialPathArrivalTime));
@@ -733,11 +755,7 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
   DebugOutput << "---------- Matrix for " << MatrixName << " ------------\n";
   printTMatrixForDebug(Matrix);
 
-  float ResultArrivalTime = hybridTreeCodegen(Matrix, MatrixName,
-                                              MatrixRowNum, MatrixColNum, Output);
-
-  // Index the arrival time of the hybrid tree result.
-  ValArrivalTime.insert(std::make_pair(PseudoHybridTreeInst, ResultArrivalTime));
+  hybridTreeCodegen(Matrix, MatrixName, MatrixRowNum, MatrixColNum, Output);
 }
 
 void SIRMOAOpt::generateHybridTrees() {
@@ -948,7 +966,7 @@ unsigned SIRMOAOpt::getOperandBitWidth(MatrixRowType Row) {
   return BitWidth;
 }
 
-std::vector<unsigned> SIRMOAOpt::getSignBitNumListInMatrix(MatrixType Matrix) {
+std::vector<unsigned> SIRMOAOpt::getSignBitNumList(MatrixType Matrix) {
   std::vector<unsigned> SignBitNumList;
 
   for (unsigned i = 0; i < Matrix.size(); ++i) {
@@ -988,7 +1006,7 @@ std::vector<unsigned> SIRMOAOpt::getSignBitNumListInMatrix(MatrixType Matrix) {
 MatrixType SIRMOAOpt::sumAllSignBitsInMatrix(MatrixType Matrix, unsigned RowNum,
                                              unsigned ColNum) {
   // Get the number of sign bit in each row in Matrix.
-  std::vector<unsigned> SignBitNumList = getSignBitNumListInMatrix(Matrix);
+  std::vector<unsigned> SignBitNumList = getSignBitNumList(Matrix);
 
   // Sum all sign bit using the equation:
   // ssssssss = 11111111 + 0000000~s,
@@ -1077,10 +1095,15 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
   while (Continue) {
     Continue = false;
 
-    float InputArrivalTime = std::max(ArrivalTimes[3*Idx].second,
-                                      std::max(ArrivalTimes[3*Idx + 1].second,
-                                               ArrivalTimes[3*Idx + 2].second));
-    float ResultArrivalTime = InputArrivalTime + 1.436f / VFUs::Period;
+    float MaxInputArrivalTime = 0.0f;
+    for (unsigned i = 0; i < 3; ++i) {
+      float ArrivalTime = ArrivalTimes[3 * Idx + i].second;
+
+      MaxInputArrivalTime
+        = MaxInputArrivalTime > ArrivalTime ? MaxInputArrivalTime : ArrivalTime;
+    }
+
+    float ResultArrivalTime = MaxInputArrivalTime + 1.436f / VFUs::Period;
 
     if (ResultArrivalTime < ArrivalTimes.back().second) {
       std::vector<unsigned> AdderOps;
@@ -1209,7 +1232,7 @@ MatrixType SIRMOAOpt::transportMatrix(MatrixType Matrix, unsigned RowNum,
   return TMatrix;
 }
 
-std::vector<unsigned> SIRMOAOpt::getOneBitNumListInTMatrix(MatrixType TMatrix) {
+std::vector<unsigned> SIRMOAOpt::getOneBitNumList(MatrixType TMatrix) {
   std::vector<unsigned> OneBitNumList;
 
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
@@ -1227,7 +1250,7 @@ std::vector<unsigned> SIRMOAOpt::getOneBitNumListInTMatrix(MatrixType TMatrix) {
   return OneBitNumList;
 }
 
-std::vector<unsigned> SIRMOAOpt::getBitNumListInTMatrix(MatrixType TMatrix) {
+std::vector<unsigned> SIRMOAOpt::getBitNumList(MatrixType TMatrix) {
   std::vector<unsigned> BitNumList;
 
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
@@ -1252,8 +1275,7 @@ std::vector<unsigned> SIRMOAOpt::getBitNumListInTMatrix(MatrixType TMatrix) {
 }
 
 std::vector<unsigned>
-SIRMOAOpt::getActiveBitNumListInTMatrix(MatrixType TMatrix,
-                                        unsigned Stage) {
+SIRMOAOpt::getActiveBitNumList(MatrixType TMatrix, unsigned Stage) {
   std::vector<unsigned> ActiveBitNumList;
 
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
@@ -1275,6 +1297,27 @@ SIRMOAOpt::getActiveBitNumListInTMatrix(MatrixType TMatrix,
   }
 
   return ActiveBitNumList;
+}
+
+std::vector<unsigned>
+SIRMOAOpt::getMaxEBitNumList(std::vector<unsigned> ActiveDotNumList) {
+  // Calculate the maximal number of dots which can be eliminated now.
+  std::vector<unsigned> MaxEDotNumList;
+  for (unsigned i = 0; i < ActiveDotNumList.size(); ++i) {
+    unsigned ActiveDotNum = ActiveDotNumList[i];
+
+    unsigned MaxEDotNum = 0;
+    if (ActiveDotNum >= 2) {
+      unsigned MaxEDotNum_part1 = std::ceil(ActiveDotNum / 6) * 5;
+      unsigned MaxEDotNum_part2 = ActiveDotNum % 6 == 0 ? 0 : (ActiveDotNum % 6 - 1);
+
+      MaxEDotNum = MaxEDotNum_part1 + MaxEDotNum_part2;
+    }
+
+    MaxEDotNumList.push_back(MaxEDotNum);
+  }
+
+  return MaxEDotNumList;
 }
 
 MatrixType SIRMOAOpt::simplifyTMatrix(MatrixType TMatrix) {
@@ -1342,7 +1385,7 @@ MatrixType SIRMOAOpt::sortTMatrix(MatrixType TMatrix) {
 
 MatrixType SIRMOAOpt::sumAllOneBitsInTMatrix(MatrixType TMatrix) {
   // Get the number of one bit in each row in TMatrix.
-  std::vector<unsigned> OneBitNumList = getOneBitNumListInTMatrix(TMatrix);
+  std::vector<unsigned> OneBitNumList = getOneBitNumList(TMatrix);
 
   // The number of one bit in each row after sum.
   std::vector<unsigned> OneBitNumAfterSumList;
@@ -1395,7 +1438,7 @@ MatrixType SIRMOAOpt::eliminateOneBitInTMatrix(MatrixType TMatrix) {
 
   // Eliminate the 1'b1 in TMatrix using the equation:
   // 1'b1 + 1'bs = 2'bs~s
-  std::vector<unsigned> OneBitNumList = getOneBitNumListInTMatrix(TMatrix);
+  std::vector<unsigned> OneBitNumList = getOneBitNumList(TMatrix);
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
     MatrixRowType Row = TMatrix[i];
 
@@ -1859,12 +1902,13 @@ void SIRMOAOpt::initLibrary() {
   //initAddChains();
 }
 
-std::vector<unsigned> SIRMOAOpt::calculateIHs(MatrixType TMatrix, unsigned TargetHeight) {
+std::vector<unsigned>
+SIRMOAOpt::calculateIHs(MatrixType TMatrix, unsigned TargetHeight) {
   // Get the dot numbers in each columns.
-  std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
+  std::vector<unsigned> BitNumList = getBitNumList(TMatrix);
   unsigned MaxBitNum = 0;
   for (unsigned i = 0; i < BitNumList.size(); ++i) {
-    MaxBitNum = std::max(MaxBitNum, BitNumList[i]);
+    MaxBitNum = MaxBitNum > BitNumList[i] ? MaxBitNum : BitNumList[i];
   }
 
   // Get the highest priority GPC.
@@ -1930,10 +1974,11 @@ MatrixType
 SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
                                          unsigned ComponentIdx,
                                          unsigned RowNo, unsigned Stage,
+                                         unsigned &FinalGPCLevel,
                                          raw_fd_ostream &Output) {
   // Get information of TMatrix.
   std::vector<unsigned> ActiveBitNumList
-    = getActiveBitNumListInTMatrix(TMatrix, Stage);
+    = getActiveBitNumList(TMatrix, Stage);
 
   // Get the Component to be used.
   CompressComponent *Component = Library[ComponentIdx];
@@ -1942,6 +1987,8 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
   bool IsSpecialGPC = isa<GPC_with_extra_One>(Component);
   unsigned RankOfExtraOne = 0;
   if (IsSpecialGPC) {
+    assert(useSepcialGPC && "Unexpected special GPC here!");
+
     GPC_with_extra_One *SpecialGPC = dyn_cast<GPC_with_extra_One>(Component);
     RankOfExtraOne = SpecialGPC->getRankOfExtraOne();
 
@@ -1949,32 +1996,39 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
     errs() << "Use the special GPC: " << SpecialGPC->getName() << "\n";
   }    
 
-  // Collect input dots.
-  float InputArrivalTime = 0.0f;
+  // Collect input dots. It should be noted that, we do not restrict that the
+  // inputs of GPC must be fulfilled by dots in TMatrix here. This is for the
+  // convenience of coding. For example, if we want to relieve the restriction
+  // someday, we just need to change the code in function "getHighestPriority-
+  // Component".
+  float MaxInputArrivalTime = 0.0f;
   std::vector<std::vector<DotType> > InputDots;
   std::vector<unsigned> InputDotNums = Component->getInputDotNums();
   for (unsigned i = 0; i < InputDotNums.size(); ++i) {
     unsigned InputDotNum = InputDotNums[i];
 
-    // The dots to be compressed in current row in TMatrix.
     std::vector<DotType> InputDotRow;
     if (RowNo + i < TMatrix.size()) {
       for (unsigned j = 0; j < InputDotNum; ++j) {
         unsigned DotIdx = j;
 
-        // Reserve the 1'b1 dot so it may be summed by GPC with extra
-        // one in process of next row.
-        if (i != RankOfExtraOne && TMatrix[RowNo + i][0].first == "1'b1" &&
+        if (useSepcialGPC) {
+          // Reserve the 1'b1 dot so it may be summed by GPC with extra
+          // one in process of next row.
+          if (i != RankOfExtraOne && TMatrix[RowNo + i][0].first == "1'b1" &&
             InputDotNum < ActiveBitNumList[RowNo + i]) {
-          ++DotIdx;
-        }
+            ++DotIdx;
+          }
+        }        
 
         if (DotIdx < ActiveBitNumList[RowNo + i]) {
           DotType Dot = TMatrix[RowNo + i][DotIdx];
 
-          // Make sure the input is valid if it is a GPC with extra one.
-          if (IsSpecialGPC && i == RankOfExtraOne && DotIdx == 0)
-            assert(Dot.first == "1'b1" && "Unexpected input dot!");
+          if (useSepcialGPC) {
+            // Make sure the input is valid if it is a GPC with extra one.
+            if (IsSpecialGPC && i == RankOfExtraOne && DotIdx == 0)
+              assert(Dot.first == "1'b1" && "Unexpected input dot!");
+          }          
 
           InputDotRow.push_back(Dot);
 
@@ -1982,28 +2036,46 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
           TMatrix[RowNo + i][DotIdx] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
 
           // Collect the arrival time of each input dot.
-          InputArrivalTime = std::max(InputArrivalTime, Dot.second.first);
+          float InputArrivalTime = Dot.second.first;
+          MaxInputArrivalTime = MaxInputArrivalTime > InputArrivalTime ?
+                                  MaxInputArrivalTime : InputArrivalTime;
 
           // Make sure we compress the dots in right stage.
           assert(Dot.second.second <= Stage && "Unexpected dot stage!");
         }
         else {
-          InputDotRow.push_back(std::make_pair("1'b0", std::make_pair(0.0f, Stage)));
+          InputDotRow.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
         }
       }
     }
     else {
       for (unsigned j = 0; j < InputDotNum; ++j)
-        InputDotRow.push_back(std::make_pair("1'b0", std::make_pair(0.0f, Stage)));
+        InputDotRow.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
     }
 
     InputDots.push_back(InputDotRow);
   }
 
+  // Calculate the level of current GPC.
+  unsigned MaxInputDotLevel = 0;
+  for (unsigned i = 0; i < InputDots.size(); ++i) {
+    for (unsigned j = 0; j < InputDots[i].size(); ++j) {
+      unsigned InputDotLevel = InputDots[i][j].second.second;
+
+      MaxInputDotLevel
+        = MaxInputDotLevel > InputDotLevel ? MaxInputDotLevel : InputDotLevel;
+    }
+  }
+  unsigned GPCLevel = MaxInputDotLevel + 1;
+
+  // Update the final GPC level.
+  FinalGPCLevel = FinalGPCLevel > GPCLevel ? FinalGPCLevel : GPCLevel;
+
   // Get name and delay for output dots.
   std::string OutputName
-    = "gpc_result_" + utostr_32(Component_NUM++) + "_" + utostr_32(Stage);
-  float OutputArrivalTime = InputArrivalTime + Component->getCriticalDelay() + VFUs::WireDelay;
+    = "gpc_result_" + utostr_32(Component_NUM++) + "_" + utostr_32(GPCLevel);
+  float OutputArrivalTime
+    = MaxInputArrivalTime + Component->getCriticalDelay() + VFUs::WireDelay;
 
   // Insert the output dots into TMatrix.
   unsigned OutputDotNum = Component->getOutputDotNum();
@@ -2014,8 +2086,7 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
 
     std::string OutputDotName = OutputName + "[" + utostr_32(i) + "]";
     TMatrix[RowNo + i].push_back(std::make_pair(OutputDotName,
-                                                std::make_pair(0.0f,
-                                                               Stage + 1)));
+                                                std::make_pair(0.0f, GPCLevel)));
   }
 
   // Generate component instance.
@@ -2029,12 +2100,12 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
 
 unsigned
 SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
-                                       unsigned IH, unsigned Stage) {
+                                       unsigned ActiveStage, unsigned IH) {
   // Get information of TMatrix.
+  std::vector<unsigned> BitNumList = getBitNumList(TMatrix);
   std::vector<unsigned> ActiveBitNumList
-    = getActiveBitNumListInTMatrix(TMatrix, Stage);
-  std::vector<unsigned> BitNumList
-    = getBitNumListInTMatrix(TMatrix);
+    = getActiveBitNumList(TMatrix, ActiveStage);
+  std::vector<unsigned> MaxEBitNumList = getMaxEBitNumList(ActiveBitNumList);
 
   // Get the excess bit number.
   std::vector<unsigned> ExcessBitNumList;
@@ -2053,54 +2124,58 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
 
     // Get the information of current GPC.
     std::vector<unsigned> InputDotNums = Component->getInputDotNums();
+    unsigned InputDotNum = 0;
+    for (unsigned j = 0; j < InputDotNums.size(); ++j) {
+      InputDotNum += InputDotNums[j];
+    }
+
     unsigned OutputDotNum = Component->getOutputDotNum();
-    float CriticalDelay = Component->getCriticalDelay();
+    unsigned MaxOutputDotNum = TMatrix.size() - RowNo + 1;
+    OutputDotNum = OutputDotNum < MaxOutputDotNum ? OutputDotNum : MaxOutputDotNum;
+
+    unsigned CompressedDotNum
+      = InputDotNum > OutputDotNum ? InputDotNum - OutputDotNum : 0;
+
+    float CriticalDelay = Component->getCriticalDelay() + VFUs::WireDelay;
     unsigned Area = Component->getArea();
 
-    /// Ignore the invalid component.
-    // Do not eliminate dots more than what we need.
-    if (InputDotNums[0] - 1 > ExcessBitNumList[RowNo])
-      continue;
+    /// Ignore the invalid component which satisfy following conditions:
+    bool ComponentInValid = false;
 
-    // Check if all inputs of component can be fulfilled.
-    unsigned RealInputDotNum = 0;
-    bool ComponentValid = true;
+    // 1) eliminate dots more than what we need.
+    if (InputDotNums[0] - 1 > ExcessBitNumList[RowNo])
+      ComponentInValid = true;
+
+    // 2) Inputs can not be fulfilled.
     if (RowNo + InputDotNums.size() > TMatrix.size())
-      ComponentValid = false;
+      ComponentInValid = true;
     else {
       for (unsigned j = 0; j < InputDotNums.size(); ++j) {
-        if (InputDotNums[j] > ActiveBitNumList[RowNo + j])
-          ComponentValid = false;
-
-        RealInputDotNum += InputDotNums[j];
+        if (InputDotNums[j] > ActiveBitNumList[RowNo + j]) {
+          ComponentInValid = true;
+          break;
+        }
       }
-    }
-    if (!ComponentValid)
-      continue;
+    }      
 
-    // Check if there exists the needed 1'b1 if the component
-    // is the GPCWithExtraOne.
+    // 3) No available 1'b1 if the component is special GPC.
     if (GPC_with_extra_One *SpecialGPC
       = dyn_cast<GPC_with_extra_One>(Component)) {
       unsigned ExtraOneRank = SpecialGPC->getRankOfExtraOne();
 
       MatrixRowType TargetRow = TMatrix[RowNo + ExtraOneRank];
       if (TargetRow[0].first != "1'b1")
-        ComponentValid = false;
+        ComponentInValid = true;
     }
-    if (!ComponentValid)
+
+    if (ComponentInValid)
       continue;
 
-    unsigned RealOutputDotNum = std::min(OutputDotNum, TMatrix.size() - RowNo + 1);
-
     // Evaluate the performance.
-    unsigned CompressedDotNum = RealInputDotNum > RealOutputDotNum ? 
-                                  RealInputDotNum - RealOutputDotNum : 0;
-
-    float RealDelay = CriticalDelay + VFUs::WireDelay;
+    
     //float Performance = ((float) (CompressedDotNum * CompressedDotNum)) / (RealDelay * Area);
     //float Performance = ((float)CompressedDotNum) / RealDelay;
-    float Performance = ((float)RealInputDotNum) / RealOutputDotNum;
+    float Performance = ((float)InputDotNum) / OutputDotNum;
 
     GPCPriority Priority = std::make_pair(InputDotNums[0],
                                           std::make_pair(Performance, 0.0f - CriticalDelay));
@@ -2112,36 +2187,164 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
   // Sort the PriorityList and get the highest one.
   std::sort(PriorityList.begin(), PriorityList.end(), sortComponent);
 
-  // Debug
-  errs() << "Component performance list is as follows:\n";
-  for (unsigned i = 0; i < PriorityList.size(); ++i) {
-    unsigned ComponentIdx = PriorityList[i].first;
-
-    CompressComponent *Component = Library[ComponentIdx];
-
-    errs() << Component->getName() << "--" << PriorityList[i].second.first << "\n";
-  }
+//   // Debug
+//   errs() << "Component performance list is as follows:\n";
+//   for (unsigned i = 0; i < PriorityList.size(); ++i) {
+//     unsigned ComponentIdx = PriorityList[i].first;
+// 
+//     CompressComponent *Component = Library[ComponentIdx];
+// 
+//     errs() << Component->getName() << "--" << PriorityList[i].second.first << "\n";
+//   }
 
 
   return PriorityList.back().first;
 }
 
-MatrixType SIRMOAOpt::compressTMatrixInStage(MatrixType TMatrix,
-                                             unsigned IH, unsigned Stage,
-                                             raw_fd_ostream &Output) {
-  // Get the informations of the TMatrix.
-  std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
+MatrixType
+SIRMOAOpt::preCompressTMatrixUsingComponent(MatrixType TMatrix,
+                                            unsigned ComponentIdx,
+                                            unsigned RowNo, unsigned Stage,
+                                            unsigned &FinalGPCLevel) {
+  // Get information of TMatrix.
   std::vector<unsigned> ActiveBitNumList
-    = getActiveBitNumListInTMatrix(TMatrix, Stage);
+    = getActiveBitNumList(TMatrix, Stage);
+
+  // Get the Component to be used.
+  CompressComponent *Component = Library[ComponentIdx];
+
+  // Identify if the component is GPC with extra one type.
+  bool IsSpecialGPC = isa<GPC_with_extra_One>(Component);
+  unsigned RankOfExtraOne = 0;
+  if (IsSpecialGPC) {
+    assert(useSepcialGPC && "Unexpected special GPC here!");
+
+    GPC_with_extra_One *SpecialGPC = dyn_cast<GPC_with_extra_One>(Component);
+    RankOfExtraOne = SpecialGPC->getRankOfExtraOne();
+
+    // Code for debug
+    errs() << "Use the special GPC: " << SpecialGPC->getName() << "\n";
+  }
+
+  // Collect input dots. It should be noted that, we do not restrict that the
+  // inputs of GPC must be fulfilled by dots in TMatrix here. This is for the
+  // convenience of coding. For example, if we want to relieve the restriction
+  // someday, we just need to change the code in function "getHighestPriority-
+  // Component".
+  float MaxInputArrivalTime = 0.0f;
+  std::vector<std::vector<DotType> > InputDots;
+  std::vector<unsigned> InputDotNums = Component->getInputDotNums();
+  for (unsigned i = 0; i < InputDotNums.size(); ++i) {
+    unsigned InputDotNum = InputDotNums[i];
+
+    std::vector<DotType> InputDotRow;
+    if (RowNo + i < TMatrix.size()) {
+      for (unsigned j = 0; j < InputDotNum; ++j) {
+        unsigned DotIdx = j;
+
+        if (useSepcialGPC) {
+          // Reserve the 1'b1 dot so it may be summed by GPC with extra
+          // one in process of next row.
+          if (i != RankOfExtraOne && TMatrix[RowNo + i][0].first == "1'b1" &&
+            InputDotNum < ActiveBitNumList[RowNo + i]) {
+            ++DotIdx;
+          }
+        }
+
+        if (DotIdx < ActiveBitNumList[RowNo + i]) {
+          DotType Dot = TMatrix[RowNo + i][DotIdx];
+
+          if (useSepcialGPC) {
+            // Make sure the input is valid if it is a GPC with extra one.
+            if (IsSpecialGPC && i == RankOfExtraOne && DotIdx == 0)
+              assert(Dot.first == "1'b1" && "Unexpected input dot!");
+          }
+
+          InputDotRow.push_back(Dot);
+
+          // Clear input dots in TMatrix.
+          TMatrix[RowNo + i][DotIdx] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+
+          // Collect the arrival time of each input dot.
+          float InputArrivalTime = Dot.second.first;
+          MaxInputArrivalTime = MaxInputArrivalTime > InputArrivalTime ?
+                                  MaxInputArrivalTime : InputArrivalTime;
+
+          // Make sure we compress the dots in right stage.
+          assert(Dot.second.second <= Stage && "Unexpected dot stage!");
+        }
+        else {
+          InputDotRow.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
+        }
+      }
+    }
+    else {
+      for (unsigned j = 0; j < InputDotNum; ++j)
+        InputDotRow.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
+    }
+
+    InputDots.push_back(InputDotRow);
+  }
+
+  // Calculate the level of current GPC.
+  unsigned MaxInputDotLevel = 0;
+  for (unsigned i = 0; i < InputDots.size(); ++i) {
+    for (unsigned j = 0; j < InputDots[i].size(); ++j) {
+      unsigned InputDotLevel = InputDots[i][j].second.second;
+
+      MaxInputDotLevel = MaxInputDotLevel > InputDotLevel ?
+                           MaxInputDotLevel : InputDotLevel;
+    }
+  }
+  unsigned GPCLevel = MaxInputDotLevel + 1;
+
+  // Update the final GPC level.
+  FinalGPCLevel = FinalGPCLevel > GPCLevel ? FinalGPCLevel : GPCLevel;
+
+  // Get name and delay for output dots.
+  std::string OutputName
+    = "gpc_result_" + utostr_32(Component_NUM++) + "_" + utostr_32(GPCLevel);
+  float OutputArrivalTime
+    = MaxInputArrivalTime + Component->getCriticalDelay() + VFUs::WireDelay;
+
+  // Insert the output dots into TMatrix.
+  unsigned OutputDotNum = Component->getOutputDotNum();
+  for (unsigned i = 0; i < OutputDotNum; ++i) {
+    // Do not insert if exceed the range of TMatrix.
+    if (RowNo + i >= TMatrix.size())
+      break;
+
+    std::string OutputDotName = OutputName + "[" + utostr_32(i) + "]";
+    TMatrix[RowNo + i].push_back(std::make_pair(OutputDotName,
+                                                std::make_pair(0.0f, GPCLevel)));
+  }
+
+  printTMatrixForDebug(TMatrix);
+
+  return TMatrix;
+}
+
+MatrixType SIRMOAOpt::preCompressTMatrixInStage(MatrixType TMatrix,
+                                                unsigned IH, unsigned ActiveStage,
+                                                unsigned &FinalGPCLevel, unsigned &Area) {
+  // Get the informations of the TMatrix.
+  std::vector<unsigned> BitNumList = getBitNumList(TMatrix);
+  std::vector<unsigned> ActiveBitNumList
+    = getActiveBitNumList(TMatrix, ActiveStage);
 
   // Compress row by row.
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
     // Compress current row if it has dots more than target IH.
     while (BitNumList[i] > IH) {
-      unsigned ComponentIdx = getHighestPriorityComponent(TMatrix, i, IH, Stage);
+      unsigned ComponentIdx
+        = getHighestPriorityComponent(TMatrix, i, ActiveStage, IH);
 
-      TMatrix = compressTMatrixUsingComponent(TMatrix, ComponentIdx, i,
-                                              Stage, Output);
+      TMatrix = preCompressTMatrixUsingComponent(TMatrix, ComponentIdx, i,
+                                                 ActiveStage, FinalGPCLevel);
+
+      // Update the area.
+      CompressComponent *Component = Library[ComponentIdx];
+      Area += Component->getArea();
 
       // Do some clean up and optimize work.
       TMatrix = eliminateOneBitInTMatrix(TMatrix);
@@ -2149,17 +2352,115 @@ MatrixType SIRMOAOpt::compressTMatrixInStage(MatrixType TMatrix,
       TMatrix = sortTMatrix(TMatrix);
 
       // Update the informations of the TMatrix.
-      BitNumList = getBitNumListInTMatrix(TMatrix);
-      ActiveBitNumList = getActiveBitNumListInTMatrix(TMatrix, Stage);
+      BitNumList = getBitNumList(TMatrix);
+      ActiveBitNumList = getActiveBitNumList(TMatrix, ActiveStage);
     }
   }
 
   return TMatrix;
 }
 
-float SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
-                                unsigned OperandNum, unsigned OperandWidth,
-                                raw_fd_ostream &Output) {
+unsigned SIRMOAOpt::preCompressTMatrix(MatrixType TMatrix, std::vector<unsigned> IHs) {
+  // Backup the TMatrix.
+  MatrixType OriginTMatrix = TMatrix;
+
+  errs() << "Start pre-synthesize compressor tree:\n";
+
+  std::vector<std::pair<unsigned, std::pair<unsigned, unsigned> > > Costs;
+  for (unsigned i = 0; i < IHs.size(); ++i) {
+    errs() << "Pre-synthesis solution #" << utostr_32(i) << ":\n";
+
+    // Initialize the temporary IHs.
+    std::vector<unsigned> TempIHs;
+    for (unsigned j = 0; j < (IHs.size() - i); ++j) {
+      TempIHs.push_back(IHs[j]);
+    }
+
+    assert(!TempIHs.empty() && "Unexpected empty temporary IHs!");
+
+    // Pre-compress the TMatrix using the temporary
+    // IHs and record the area-delay cost.
+    unsigned FinalGPCLevel = 0;
+    unsigned Area = 0;
+    for (unsigned j = 0; j < TempIHs.size(); ++j) {
+      unsigned TempIH = TempIHs[TempIHs.size() - j - 1];
+
+      // Only in the fist compress progress, we allow
+      // the stage have a range from 0 to i.
+      unsigned StageRange = 0;
+      if (j == 0)
+        StageRange = i;
+
+      bool Continue = true;
+      while (Continue) {
+        TMatrix = preCompressTMatrixInStage(TMatrix, TempIH, i + j, FinalGPCLevel, Area);
+
+        // Determine if we need to continue compressing.
+        std::vector<unsigned> BitNumList = getBitNumList(TMatrix);
+        Continue = false;
+        for (unsigned i = 0; i < TMatrix.size(); ++i) {
+          if (BitNumList[i] > TempIH)
+            Continue = true;
+        }
+      }
+    }
+
+    // Record the cost of current solution.
+    Costs.push_back(std::make_pair(i, std::make_pair(FinalGPCLevel, Area)));
+
+    // Restore the TMatrix and start evaluate next solution.
+    TMatrix = OriginTMatrix;
+  }
+
+  for (unsigned i = 0; i < Costs.size(); ++i) {
+    errs() << "\tSolution #" << utostr_32(i) << " with stage of ["
+           << utostr_32(Costs[i].second.first) << "] and area of ["
+           << utostr_32(Costs[i].second.second) << "]\n";
+  }
+
+  return 0;
+}
+
+MatrixType SIRMOAOpt::compressTMatrixInStage(MatrixType TMatrix,
+                                             unsigned IH, unsigned ActiveStage,
+                                             unsigned &FinalGPCLevel, unsigned &Area,
+                                             raw_fd_ostream &Output) {
+  // Get the informations of the TMatrix.
+  std::vector<unsigned> BitNumList = getBitNumList(TMatrix);
+  std::vector<unsigned> ActiveBitNumList
+    = getActiveBitNumList(TMatrix, ActiveStage);
+
+  // Compress row by row.
+  for (unsigned i = 0; i < TMatrix.size(); ++i) {
+    // Compress current row if it has dots more than target IH.
+    while (BitNumList[i] > IH) {
+      unsigned ComponentIdx
+        = getHighestPriorityComponent(TMatrix, i, ActiveStage, IH);
+
+      TMatrix = compressTMatrixUsingComponent(TMatrix, ComponentIdx, i,
+                                              ActiveStage, FinalGPCLevel, Output);
+
+      // Update the area.
+      CompressComponent *Component = Library[ComponentIdx];
+      Area += Component->getArea();
+
+      // Do some clean up and optimize work.
+      TMatrix = eliminateOneBitInTMatrix(TMatrix);
+      TMatrix = simplifyTMatrix(TMatrix);
+      TMatrix = sortTMatrix(TMatrix);
+
+      // Update the informations of the TMatrix.
+      BitNumList = getBitNumList(TMatrix);
+      ActiveBitNumList = getActiveBitNumList(TMatrix, ActiveStage);
+    }
+  }
+
+  return TMatrix;
+}
+
+void SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
+                               unsigned OperandNum, unsigned OperandWidth,
+                               raw_fd_ostream &Output) {
   // Code for debug.
   printTMatrixForDebug(TMatrix);
 
@@ -2179,27 +2480,36 @@ float SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
   /// Calculate the ideal intermediate height(IH).
   std::vector<unsigned> IHs = calculateIHs(TMatrix, 3);
 
+  /// Pre-compress the TMatrix with different start IH and
+  /// evaluate the area-delay cost.
+  preCompressTMatrix(TMatrix, IHs);
+
   /// Start to compress the TMatrix
-  unsigned Stage = 0;
+  unsigned FinalGPCLevel = 0;
+  unsigned Area = 0;
   for (unsigned i = 0; i < IHs.size(); ++i) {
     unsigned IH = IHs[IHs.size() - i - 1];
 
     bool Continue = true;
     while (Continue) {
-      TMatrix = compressTMatrixInStage(TMatrix, IH, Stage, Output);
+      // We expect each level of IH can be achieved in one compress
+      // stage (one level of GPCs), that is, the level index of IH
+      // equals to the active stage in compression.
+      TMatrix = compressTMatrixInStage(TMatrix, IH, i, FinalGPCLevel, Area, Output);
     
       // Determine if we need to continue compressing.
-      std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
+      std::vector<unsigned> BitNumList = getBitNumList(TMatrix);
       Continue = false;
       for (unsigned i = 0; i < TMatrix.size(); ++i) {
         if (BitNumList[i] > IH)
           Continue = true;
       }
     }
-
-    // Increase the stage and start next compress progress.
-    ++Stage;
   }
+
+  errs() << "Synthesized compressor tree with GPC level of ["
+         << utostr_32(FinalGPCLevel) << "] and Area of ["
+         << utostr_32(Area) << "]\n";
 
   /// Finish the compress by sum the left-behind bits using ternary CPA.
   MatrixRowType CPADataA, CPADataB, CPADataC;
@@ -2209,7 +2519,10 @@ float SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
   
   for (unsigned i = 0; i < TMatrix.size(); ++i) {
     CPADataA.push_back(TMatrix[i][0]);
-    CPADataA_ArrivalTime = std::max(CPADataA_ArrivalTime, TMatrix[i][0].second.first);
+
+    float CPADataA_DotArrivalTime = TMatrix[i][0].second.first;
+    CPADataA_ArrivalTime = CPADataA_ArrivalTime > CPADataA_DotArrivalTime ?
+                             CPADataA_ArrivalTime : CPADataA_DotArrivalTime;
 
     if (TMatrix[i].size() == 1) {
       CPADataB.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
@@ -2217,16 +2530,25 @@ float SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
     }
     else if (TMatrix[i].size() == 2) {
       CPADataB.push_back(TMatrix[i][1]);
-      CPADataB_ArrivalTime = std::max(CPADataB_ArrivalTime, TMatrix[i][1].second.first);
+
+      float CPADataB_DotArrivalTime = TMatrix[i][1].second.first;
+      CPADataB_ArrivalTime = CPADataB_ArrivalTime > CPADataB_DotArrivalTime ?
+                               CPADataB_ArrivalTime : CPADataB_DotArrivalTime;
 
       CPADataC.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
     }
     else if (TMatrix[i].size() == 3) {
       CPADataB.push_back(TMatrix[i][1]);
-      CPADataB_ArrivalTime = std::max(CPADataB_ArrivalTime, TMatrix[i][1].second.first);
+
+      float CPADataB_DotArrivalTime = TMatrix[i][1].second.first;
+      CPADataB_ArrivalTime = CPADataB_ArrivalTime > CPADataB_DotArrivalTime ?
+                               CPADataB_ArrivalTime : CPADataB_DotArrivalTime;
 
       CPADataC.push_back(TMatrix[i][2]);
-      CPADataC_ArrivalTime = std::max(CPADataC_ArrivalTime, TMatrix[i][2].second.first);
+
+      float CPADataC_DotArrivalTime = TMatrix[i][2].second.first;
+      CPADataC_ArrivalTime = CPADataC_ArrivalTime > CPADataC_DotArrivalTime ?
+                               CPADataC_ArrivalTime : CPADataC_DotArrivalTime;
     }
   }
   assert(CPADataA.size() == CPADataB.size() &&
@@ -2264,20 +2586,13 @@ float SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
 
   // Print the implementation of the CPA.
   Output << "wire[" << utostr_32(CPADataA.size() - 1)
-         << ":0] CPA_Result = CPA_DataA + CPA_DataB + CPA_DataC;\n";
+    << ":0] CPA_Result = CPA_DataA + CPA_DataB + CPA_DataC;\n";
 
   // Print the implementation of the result.
   Output << "assign result = CPA_Result;\n";
 
   // Print the end of module.
   Output << "\nendmodule\n\n";
-
-  // Index the arrival time of the compressor result.
-  float CPADelay = LuaI::Get<VFUAddSub>()->lookupLatency(std::min(CPADataA.size(), 64u));;
-  float ResultArrivalTime = std::max(std::max(CPADataA_ArrivalTime, CPADataB_ArrivalTime),
-                                     CPADataC_ArrivalTime) + CPADelay;
-
-  return ResultArrivalTime;
 }
 
 void SIRMOAOpt::printTMatrixForDebug(MatrixType TMatrix) {
