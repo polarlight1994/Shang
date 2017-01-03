@@ -28,6 +28,8 @@ typedef std::vector<MatrixRowType> MatrixType;
 typedef std::pair<float, unsigned> ATAndWidthType;
 // Row name, index, arrival time and valid width of Row.
 typedef std::pair<std::string, std::pair<unsigned, ATAndWidthType> > MatrixRowInfoType;
+// Eliminated dot number in current row, compress ratio and delay(negative form) of GPC.
+typedef std::pair<std::pair<unsigned, float>, float> GPCPerformanceType;
 
 static unsigned Component_NUM = 0;
 static bool sortMatrixByArrivalTime = true;
@@ -243,20 +245,6 @@ INITIALIZE_PASS_END(SIRMOAOpt, "sir-multi-operand-optimization",
 static bool LessThan(std::pair<unsigned, float> OpA,
                      std::pair<unsigned, float> OpB) {
   return OpA.second < OpB.second;
-}
-
-bool sortComponent(std::pair<unsigned, std::pair<float, float> > OpA,
-                   std::pair<unsigned, std::pair<float, float> > OpB) {
-  if (OpA.second.first < OpB.second.first)
-    return true;
-  else if (OpA.second.first > OpB.second.first)
-    return false;
-  else {
-    if (OpA.second.second < OpB.second.second)
-      return true;
-    else
-      return false;
-  }
 }
 
 std::string float2String(float FV) {
@@ -2166,6 +2154,20 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
   return TMatrix;
 }
 
+bool AscendingOrderInPerformance(std::pair<unsigned, GPCPerformanceType> OpA,
+                                 std::pair<unsigned, GPCPerformanceType> OpB) {
+  if (OpA.second.first < OpB.second.first)
+    return true;
+  else if (OpA.second.first > OpB.second.first)
+    return false;
+  else {
+    if (OpA.second.second < OpB.second.second)
+      return true;
+    else
+      return false;
+  }
+}
+
 unsigned
 SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
                                        unsigned ActiveStage, unsigned IH) {
@@ -2185,8 +2187,7 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
   }
 
   // Try all library and evaluate its priority.
-  typedef std::pair<float, float> GPCPriority;
-  std::vector<std::pair<unsigned, GPCPriority> > PriorityList;
+  std::vector<std::pair<unsigned, GPCPerformanceType> > PerformanceList;
   for (unsigned i = 0; i < Library.size(); ++i) {
     CompressComponent *Component = Library[i];
 
@@ -2243,16 +2244,17 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
     
     //float Performance = ((float) (CompressedDotNum * CompressedDotNum)) / (RealDelay * Area);
     //float Performance = ((float)CompressedDotNum) / RealDelay;
-    float Performance = ((float)InputDotNum) / OutputDotNum;
-
-    GPCPriority Priority = std::make_pair(Performance, 0.0f - CriticalDelay);
-    PriorityList.push_back(std::make_pair(i, Priority));
+    float CompressRatio = ((float)InputDotNum) / OutputDotNum;
+    float NegativeDelay = 0.0f - CriticalDelay;
+    GPCPerformanceType Perf
+      = std::make_pair(std::make_pair(InputDotNums[0], CompressRatio), NegativeDelay);
+    PerformanceList.push_back(std::make_pair(i, Perf));
   }
 
-  assert(!PriorityList.empty() && "No feasible GPC!");
+  assert(!PerformanceList.empty() && "No feasible GPC!");
 
   // Sort the PriorityList and get the highest one.
-  std::sort(PriorityList.begin(), PriorityList.end(), sortComponent);
+  std::sort(PerformanceList.begin(), PerformanceList.end(), AscendingOrderInPerformance);
 
 //   // Debug
 //   errs() << "Component performance list is as follows:\n";
@@ -2265,7 +2267,7 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
 //   }
 
 
-  return PriorityList.back().first;
+  return PerformanceList.back().first;
 }
 
 MatrixType
