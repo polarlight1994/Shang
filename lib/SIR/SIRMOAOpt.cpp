@@ -1124,145 +1124,131 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
   // Identify which rows can be summed by adder.
   float TimeLimit = RowInfos.back().second.second.first + VFUs::WireDelay * VFUs::Period;
   std::vector<std::pair<std::vector<unsigned>, float> > TernaryAdders;
-  unsigned Idx = 0;
+  unsigned AdderIdx = 0;
   bool Continue = true;
   while (Continue) {
     Continue = false;
 
+    // Get the max arrival time and valid width of first triple row after sorting.
     float MaxInputArrivalTime = 0.0f;
     unsigned MaxInputWidth = 0;
     for (unsigned i = 0; i < 3; ++i) {
-      float ArrivalTime = RowInfos[3 * Idx + i].second.second.first;
-      unsigned Width = RowInfos[3 * Idx + i].second.second.second;
+      float ArrivalTime = RowInfos[i].second.second.first;
+      unsigned Width = RowInfos[i].second.second.second;
 
       MaxInputArrivalTime = std::max(MaxInputArrivalTime, ArrivalTime);
       MaxInputWidth = std::max(MaxInputWidth, Width);
     }
 
+    // Predict the arrival time of result if a adder is used.
     float TernaryAddDelay
       = LuaI::Get<VFUTernaryAdd>()->lookupLatency(MaxInputWidth) * VFUs::Period;
-    float ResultArrivalTime = MaxInputArrivalTime + TernaryAddDelay;
+    float ResultAT = MaxInputArrivalTime + TernaryAddDelay;
 
-    if (ResultArrivalTime < TimeLimit) {
-      std::vector<unsigned> AdderOps;
-      AdderOps.push_back(RowInfos[3*Idx].second.first);
-      AdderOps.push_back(RowInfos[3*Idx + 1].second.first);
-      AdderOps.push_back(RowInfos[3*Idx + 2].second.first);
+    if (ResultAT < TimeLimit) {
+      // The name of adder.
+      std::string AdderName = "Adder_" + utostr_32(AdderIdx);
 
-      TernaryAdders.push_back(std::make_pair(AdderOps, ResultArrivalTime));
+      // The implementation of operands.
+      for (unsigned i = 0; i < 3; ++i) {
+        Output << "wire[" << utostr_32(ColNum - 1) << ":0] " + AdderName
+               << "_Op_" + utostr_32(i) << " = {";
+
+        unsigned RowIdx = RowInfos[i].second.first;
+        for (unsigned j = 0; j < ColNum; ++j) {
+          Output << Matrix[RowIdx][ColNum - 1 - j].first;
+
+          if (j != ColNum - 1)
+            Output << ", ";
+          else
+            Output << "};\n";
+        }
+      }
+
+      // The implementation of current adder.
+      Output << "wire[" << utostr_32(ColNum - 1) << ":0] " + AdderName + " = ";
+      for (unsigned i = 0; i < 3; ++i) {
+        Output << "Adder_" + utostr_32(AdderIdx) + "_Op_" + utostr_32(i);
+
+        if (i != 2)
+          Output << " + ";
+        else
+          Output << ";\n\n";
+      }
 
       // Debug code
       errs() << utostr_32(MaxInputWidth) << "-bit ternary adder sum: ";
-      for (unsigned j = 0; j < 3; ++j) {
-        errs() << "operand_" << RowInfos[3 * Idx + j].second.first;
+      for (unsigned i = 0; i < 3; ++i) {
+        errs() << RowInfos[i].first;
 
-        if (j != 2)
+        if (i != 2)
           errs() << ", ";
         else
           errs() << ";\n";
       }
+     
+      // Get the mask for each operand row of current adder.
+      std::vector<BitMask> AdderOpMasks;
+      for (unsigned i = 0; i < 3; ++i) {
+        unsigned RowIdx = RowInfos[i].second.first;
+        MatrixRowType Row = Matrix[RowIdx];
 
-      // Continue the identify the following rows.
+        // Initialize a empty mask.
+        BitMask Mask = BitMask(ColNum);
+
+        // Set each bit of mask according to the dot in row.
+        for (unsigned j = 0; j < ColNum; ++j) {
+          if (Row[j].first == "1'b0")
+            Mask.setKnownZeroAt(j);
+          else if (Row[j].first == "1'b1")
+            Mask.setKnownOneAt(j);
+        }
+
+        AdderOpMasks.push_back(Mask);
+      }
+
+      // Calculate the mask of adder result.
+      BitMask ResultMask
+        = BitMaskAnalysis::computeAdd(AdderOpMasks[0], AdderOpMasks[1], ColNum);
+      for (unsigned i = 2; i < AdderOpMasks.size(); ++i) {
+        ResultMask = BitMaskAnalysis::computeAdd(AdderOpMasks[i], ResultMask, ColNum);
+      }
+
+      unsigned ResultValidWidth
+        = ResultMask.getMaskWidth() - ResultMask.countLeadingZeros();
+
+      MatrixRowType AdderResultRow
+        = createDotMatrixRow(AdderName, ColNum, ColNum, ResultAT, 0, ResultMask);
+
+      // Insert the adder result back into matrix.
+      Matrix.push_back(AdderResultRow);
+
+      // Also insert the information of created row into RowInfos.
+      ATAndWidthType RowATAndWidth = std::make_pair(ResultAT, ResultValidWidth);
+      MatrixRowInfoType RowInfo
+        = std::make_pair(AdderName, std::make_pair(Matrix.size() - 1, RowATAndWidth));
+      RowInfos.push_back(RowInfo);
+
+      // Clear the rows summed by adder in Matrix.
+      for (unsigned i = 0; i < 3; ++i) {
+        unsigned RowIdx = RowInfos[i].second.first;
+
+        for (unsigned j = 0; j < ColNum; ++j) {
+          Matrix[RowIdx][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+        }
+      }
+
+      // Also clear the row information in RowInfos.
+      std::vector<MatrixRowInfoType> NewRowInfos;
+      for (unsigned i = 3; i < RowInfos.size(); ++i) {
+        NewRowInfos.push_back(RowInfos[i]);
+      }
+      RowInfos = NewRowInfos;
+
+      // Sort the new rows in matrix and continue the identifying.
+      std::sort(RowInfos.begin(), RowInfos.end(), AscendingOrderInAT);
       Continue = true;
-      Idx++;
-    }
-  }
-
-  /// Then according to the result, generate the adder to sum these rows and remember to
-  /// insert the add result back into matrix as new rows.
-
-  // Generate the adders to sum the chosen rows.
-  for (unsigned i = 0; i < TernaryAdders.size(); ++i) {
-    std::vector<unsigned> AdderOpIdxs = TernaryAdders[i].first;
-
-    // The operands of current adder.
-    for (unsigned j = 0; j < AdderOpIdxs.size(); ++j) {
-      unsigned AdderOpIdx = AdderOpIdxs[j];
-
-      Output << "wire[" << utostr_32(ColNum - 1)
-             << ":0] Adder_" + utostr_32(i) + "_Op_" + utostr_32(j) << " = {";
-
-      for (unsigned k = 0; k < ColNum; ++k) {
-        Output << Matrix[AdderOpIdx][ColNum - 1 - k].first;
-
-        if (k != ColNum - 1)
-          Output << ", ";
-        else
-          Output << "};\n";
-      }
-    }
-
-    // The implement of current adder.
-    Output << "wire[" << utostr_32(ColNum - 1) << ":0] Adder_" << utostr_32(i) << " = ";
-    for (unsigned j = 0; j < AdderOpIdxs.size(); ++j) {
-      Output << "Adder_" + utostr_32(i) + "_Op_" + utostr_32(j);
-
-      if (j != AdderOpIdxs.size() - 1)
-        Output << " + ";
-      else
-        Output << ";\n\n";
-    }
-  }
-
-  // Insert the adder result back into matrix.
-  for (unsigned i = 0; i < TernaryAdders.size(); ++i) {
-    std::string AdderName = "Adder_" + utostr_32(i);
-
-    // Get the mask for each operand row of current adder.
-    std::vector<BitMask> AdderOpMasks;
-    std::vector<unsigned> AdderOpIdxs = TernaryAdders[i].first;
-    for (unsigned j = 0; j < AdderOpIdxs.size(); ++j) {
-      unsigned AdderOpIdx = AdderOpIdxs[j];
-      MatrixRowType AdderOp = Matrix[AdderOpIdx];
-
-      // Initialize a empty mask.
-      BitMask Mask = BitMask(ColNum);
-
-      // Set each bit of mask according to the dot in row.
-      for (unsigned k = 0; k < ColNum; ++k) {
-        if (AdderOp[k].first == "1'b0")
-          Mask.setKnownZeroAt(k);
-        else if (AdderOp[k].first == "1'b1")
-          Mask.setKnownOneAt(k);
-      }
-
-      AdderOpMasks.push_back(Mask);
-    }
-
-    // Calculate the mask of adder result.
-    BitMask ResultMask
-      = BitMaskAnalysis::computeAdd(AdderOpMasks[0], AdderOpMasks[1], ColNum);
-    for (unsigned i = 2; i < AdderOpMasks.size(); ++i) {
-      ResultMask = BitMaskAnalysis::computeAdd(AdderOpMasks[i], ResultMask, ColNum);
-    }
-    float ResultAT = TernaryAdders[i].second;
-    unsigned ResultValidWidth
-      = ResultMask.getMaskWidth() - ResultMask.countLeadingZeros();
-
-    MatrixRowType AdderResultRow = createDotMatrixRow(AdderName, ColNum, ColNum,
-                                                      ResultAT, 0, ResultMask);
-
-    // Insert the adder result back into matrix.
-    Matrix.push_back(AdderResultRow);
-
-    // Also insert the information of created row into RowInfos.
-    std::string RowName = "Adder_" + utostr_32(i);
-    ATAndWidthType RowATAndWidth = std::make_pair(ResultAT, ResultValidWidth);
-    MatrixRowInfoType RowInfo
-      = std::make_pair(RowName, std::make_pair(Matrix.size(), RowATAndWidth));
-    RowInfos.push_back(RowInfo);
-  }
-
-  // Clear the rows summed by adder in matrix.
-  for (unsigned i = 0; i < TernaryAdders.size(); ++i) {
-    std::vector<unsigned> AdderOpIdxs = TernaryAdders[i].first;
-
-    for (unsigned j = 0; j < AdderOpIdxs.size(); ++j) {
-      unsigned AdderOpIdx = AdderOpIdxs[j];  
-
-      for (unsigned k = 0; k < ColNum; ++k) {
-        Matrix[AdderOpIdx][k] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
-      }
+      AdderIdx++;
     }
   }
 
