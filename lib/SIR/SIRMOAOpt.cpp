@@ -245,23 +245,17 @@ static bool LessThan(std::pair<unsigned, float> OpA,
   return OpA.second < OpB.second;
 }
 
-bool sortComponent(std::pair<unsigned, std::pair<float, std::pair<float, unsigned> > > OpA,
-                   std::pair<unsigned, std::pair<float, std::pair<float, unsigned> > > OpB) {
+bool sortComponent(std::pair<unsigned, std::pair<float, float> > OpA,
+                   std::pair<unsigned, std::pair<float, float> > OpB) {
   if (OpA.second.first < OpB.second.first)
     return true;
   else if (OpA.second.first > OpB.second.first)
     return false;
   else {
-    if (OpA.second.second.first < OpB.second.second.first)
+    if (OpA.second.second < OpB.second.second)
       return true;
-    else if (OpA.second.second.first > OpB.second.second.first)
+    else
       return false;
-    else {
-      if (OpA.second.second.second < OpB.second.second.second)
-        return true;
-      else
-        return false;
-    }
   }
 }
 
@@ -339,8 +333,6 @@ void SIRMOAOpt::hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
   assert(isConstantInt(Matrix[0]) && "Should be a constant integer!");
 
   TMatrix = transportMatrix(Matrix, Matrix.size(), ColNum);
-  // Compress the dot matrix.
-  float ResultArrivalTime = compressMatrix(TMatrix, MatrixName, Matrix.size(), ColNum, Output);
 
   // Compress the dot matrix.
   compressMatrix(TMatrix, MatrixName, Matrix.size(), ColNum, Output);
@@ -1978,56 +1970,57 @@ void SIRMOAOpt::initLibrary() {
   //initAddChains();
 }
 
-std::vector<unsigned> SIRMOAOpt::calculateIHs(MatrixType TMatrix, unsigned TargetHeight) {
+std::vector<unsigned>
+SIRMOAOpt::calculateIHs(MatrixType TMatrix, unsigned TargetHeight) {
   // Get the dot numbers in each columns.
-  std::vector<unsigned> BitNumList = getBitNumListInTMatrix(TMatrix);
+  std::vector<unsigned> BitNumList = getBitNumList(TMatrix);
   unsigned MaxBitNum = 0;
   for (unsigned i = 0; i < BitNumList.size(); ++i) {
     MaxBitNum = std::max(MaxBitNum, BitNumList[i]);
   }
 
-  // Get the highest priority GPC.
-  typedef std::pair<float, std::pair<float, unsigned> > GPCPriority;
-  std::vector<std::pair<unsigned, GPCPriority> > PriorityList;
-  for (unsigned i = 0; i < Library.size(); ++i) {
-    CompressComponent *Component = Library[i];
-
-    // Get the information of current GPC.
-    std::vector<unsigned> InputDotNums = Component->getInputDotNums();
-    unsigned OutputDotNum = Component->getOutputDotNum();
-    float CriticalDelay = Component->getCriticalDelay();
-    unsigned Area = Component->getArea();
-
-    unsigned InputDotNum = 0;
-    for (unsigned j = 0; j < InputDotNums.size(); ++j)
-      InputDotNum += InputDotNums[j];
-
-    // Evaluate the performance.
-    unsigned CompressedDotNum
-      = InputDotNum > OutputDotNum ? InputDotNum - OutputDotNum : 0;
-
-    float RealDelay = CriticalDelay + VFUs::WireDelay;
-    //float Performance = ((float) (CompressedDotNum * CompressedDotNum)) / (RealDelay * Area);
-    //float Performance = ((float)CompressedDotNum) / RealDelay;
-    float Performance = ((float)CompressedDotNum) / Area;
-
-    GPCPriority Priority = std::make_pair(Performance,
-                                          std::make_pair(0.0f - CriticalDelay,
-                                                         InputDotNums[0]));
-    PriorityList.push_back(std::make_pair(i, Priority));
-  }
-
-  // Sort the PriorityList and get the highest one.
-  std::sort(PriorityList.begin(), PriorityList.end(), sortComponent);
-  unsigned HighestPriorityGPCIdx = PriorityList.back().first;
-
-  // Calculate the compression ratio.
-  CompressComponent *Component = Library[HighestPriorityGPCIdx];
-  std::vector<unsigned> InputDotNums = Component->getInputDotNums();
-  unsigned OutputDotNum = Component->getOutputDotNum();
-  unsigned InputDotNum = 0;
-  for (unsigned j = 0; j < InputDotNums.size(); ++j)
-    InputDotNum += InputDotNums[j];
+//   // Get the highest priority GPC.
+//   typedef std::pair<float, std::pair<float, unsigned> > GPCPriority;
+//   std::vector<std::pair<unsigned, GPCPriority> > PriorityList;
+//   for (unsigned i = 0; i < Library.size(); ++i) {
+//     CompressComponent *Component = Library[i];
+// 
+//     // Get the information of current GPC.
+//     std::vector<unsigned> InputDotNums = Component->getInputDotNums();
+//     unsigned OutputDotNum = Component->getOutputDotNum();
+//     float CriticalDelay = Component->getCriticalDelay();
+//     unsigned Area = Component->getArea();
+// 
+//     unsigned InputDotNum = 0;
+//     for (unsigned j = 0; j < InputDotNums.size(); ++j)
+//       InputDotNum += InputDotNums[j];
+// 
+//     // Evaluate the performance.
+//     unsigned CompressedDotNum
+//       = InputDotNum > OutputDotNum ? InputDotNum - OutputDotNum : 0;
+// 
+//     float RealDelay = CriticalDelay + VFUs::WireDelay;
+//     //float Performance = ((float) (CompressedDotNum * CompressedDotNum)) / (RealDelay * Area);
+//     //float Performance = ((float)CompressedDotNum) / RealDelay;
+//     float Performance = ((float)CompressedDotNum) / Area;
+// 
+//     GPCPriority Priority = std::make_pair(Performance,
+//                                           std::make_pair(0.0f - CriticalDelay,
+//                                                          InputDotNums[0]));
+//     PriorityList.push_back(std::make_pair(i, Priority));
+//   }
+// 
+//   // Sort the PriorityList and get the highest one.
+//   std::sort(PriorityList.begin(), PriorityList.end(), sortComponent);
+//   unsigned HighestPriorityGPCIdx = PriorityList.back().first;
+// 
+//   // Calculate the compression ratio.
+//   CompressComponent *Component = Library[HighestPriorityGPCIdx];
+//   std::vector<unsigned> InputDotNums = Component->getInputDotNums();
+//   unsigned OutputDotNum = Component->getOutputDotNum();
+//   unsigned InputDotNum = 0;
+//   for (unsigned j = 0; j < InputDotNums.size(); ++j)
+//     InputDotNum += InputDotNums[j];
   //float CompressionRatio = (float)InputDotNum / OutputDotNum;
   // Temporary set the ratio as 2.
   float CompressionRatio = 2.0f;
@@ -2192,7 +2185,7 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
   }
 
   // Try all library and evaluate its priority.
-  typedef std::pair<unsigned, std::pair<float, float> > GPCPriority;
+  typedef std::pair<float, float> GPCPriority;
   std::vector<std::pair<unsigned, GPCPriority> > PriorityList;
   for (unsigned i = 0; i < Library.size(); ++i) {
     CompressComponent *Component = Library[i];
@@ -2252,8 +2245,7 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
     //float Performance = ((float)CompressedDotNum) / RealDelay;
     float Performance = ((float)InputDotNum) / OutputDotNum;
 
-    GPCPriority Priority = std::make_pair(InputDotNums[0],
-                                          std::make_pair(Performance, 0.0f - CriticalDelay));
+    GPCPriority Priority = std::make_pair(Performance, 0.0f - CriticalDelay);
     PriorityList.push_back(std::make_pair(i, Priority));
   }
 
@@ -2554,12 +2546,6 @@ void SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
 
   /// Calculate the ideal intermediate height(IH).
   std::vector<unsigned> IHs = calculateIHs(TMatrix, 3);
-
-  /// Start to compress the TMatrix
-  unsigned Stage = 0;
-  bool Continue = true;
-  while (Continue) {
-    TMatrix = compressTMatrixInStage(TMatrix, Stage, Output);
 
   /// Pre-compress the TMatrix with different start IH and
   /// evaluate the area-delay cost.
