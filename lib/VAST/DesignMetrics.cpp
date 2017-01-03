@@ -267,7 +267,7 @@ uint64_t DesignMetricsImpl::getFUCost(const VASTExpr *Expr) const {
     return LuaI::Get<VFUMult>()->lookupCost(ValueSize);
   case VASTExpr::dpSGT:
   case VASTExpr::dpUGT:
-    return LuaI::Get<VFUICmp>()->lookupCost(Expr->getOperand(0)->getBitWidth());
+    return LuaI::Get<VFUGT_LT>()->lookupCost(Expr->getOperand(0)->getBitWidth());
   case VASTExpr::dpShl:
   case VASTExpr::dpAshr:
   case VASTExpr::dpLshr:

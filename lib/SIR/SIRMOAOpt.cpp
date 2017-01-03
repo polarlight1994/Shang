@@ -18,16 +18,23 @@
 using namespace llvm;
 using namespace vast;
 
+// Dot name, arrival time and GPC level
 typedef std::pair<std::string, std::pair<float, unsigned> > DotType;
+// Row of Dots
 typedef std::vector<DotType> MatrixRowType;
+// Matrix of multi-Rows
 typedef std::vector<MatrixRowType> MatrixType;
+// Arrival time and valid width of Row.
+typedef std::pair<float, unsigned> ATAndWidthType;
+// Row name, index, arrival time and valid width of Row.
+typedef std::pair<std::string, std::pair<unsigned, ATAndWidthType> > MatrixRowInfoType;
 
 static unsigned Component_NUM = 0;
 static bool sortMatrixByArrivalTime = true;
 static bool enableBitMaskOpt = true;
 static bool useGPCWithCarryChain = false;
 static bool useSepcialGPC = false;
-static bool sumFirstRowsByAdder = false;
+static bool sumFirstRowsByAdder = true;
 
 namespace {
 struct SIRMOAOpt : public SIRPass {
@@ -258,6 +265,24 @@ bool sortComponent(std::pair<unsigned, std::pair<unsigned, std::pair<float, floa
   }
 }
 
+std::string float2String(float FV) {
+  assert(FV >= 0.0f && "Unexpected negative float value!");
+
+  // Get the integer part.
+  unsigned IntPart = std::floor(FV);
+  std::string IntPartStr = utostr_32(IntPart);
+
+  // Get the decimal part. To be noted that, we only reserve
+  // two bit here.
+  unsigned BitOne = std::floor(FV * 10 - IntPart * 10);
+  std::string BitOneStr = utostr_32(BitOne);
+  unsigned BitTwo = std::floor(FV * 100 - IntPart * 100 - BitOne * 10);
+  std::string BitTwoStr = utostr_32(BitTwo);
+
+  std::string Result = IntPartStr + "." + BitOneStr + BitTwoStr;
+  return Result;
+}
+
 bool SIRMOAOpt::runOnSIR(SIR &SM) {
   this->TD = &getAnalysis<DataLayout>();
   this->SM = &SM;
@@ -339,6 +364,7 @@ float SIRMOAOpt::getCritialPathDelay(DFGNode *Node) {
   case llvm::DFGNode::TypeConversion:
   case llvm::DFGNode::Ret:
   case llvm::DFGNode::InValid:
+  case llvm::DFGNode::Not:
     return 0.0f;
 
   case llvm::DFGNode::GlobalVal:
@@ -372,7 +398,6 @@ float SIRMOAOpt::getCritialPathDelay(DFGNode *Node) {
     return LuaI::Get<VFUShift>()->lookupLatency(BitWidth);
   }
 
-  case llvm::DFGNode::Not:
   case llvm::DFGNode::And:
   case llvm::DFGNode::Or:
   case llvm::DFGNode::Xor:
@@ -393,13 +418,18 @@ float SIRMOAOpt::getCritialPathDelay(DFGNode *Node) {
   }
 
   case llvm::DFGNode::GT:
-  case llvm::DFGNode::LT:
+  case llvm::DFGNode::LT: {
+    unsigned BitWidth = Node->getBitWidth();
+    BitWidth = BitWidth < 64 ? BitWidth : 64;
+
+    return LuaI::Get<VFUGT_LT>()->lookupLatency(BitWidth);
+  }
   case llvm::DFGNode::Eq:
   case llvm::DFGNode::NE: {
     unsigned BitWidth = Node->getBitWidth();
     BitWidth = BitWidth < 64 ? BitWidth : 64;
 
-    return LuaI::Get<VFUICmp>()->lookupLatency(BitWidth);
+    return LuaI::Get<VFUEQ_NE>()->lookupLatency(BitWidth);
   }
 
   case llvm::DFGNode::CompressorTree:
@@ -658,13 +688,13 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
     // Or the dots will be the form like operand[0], operand[1]...
     else {
       // Get the arrival time of the dots.
-      float ArrivalTime = getOperandArrivalTime(Operand);
+      float ArrivalTime = getOperandArrivalTime(Operand) * VFUs::Period;
       // Get the bit mask of the dots.
       DFGNode *OpNode = SM->getDFGNodeOfVal(Operand);
       assert(OpNode && "DFG node not created?");
       BitMask Mask = SM->getBitMask(OpNode);
 
-      errs() << "Operand_" + utostr_32(i) << ": ArrivalTime[ " << ArrivalTime << "], ";
+      errs() << "Operand_" + utostr_32(i) << ": ArrivalTime[ " << float2String(ArrivalTime) << "], ";
       errs() << "BitMask[";
       Mask.print(errs());
       errs() << "];\n";
@@ -1048,12 +1078,15 @@ MatrixType SIRMOAOpt::sumAllSignBitsInMatrix(MatrixType Matrix, unsigned RowNum,
   return Matrix;
 }
 
-bool ArrivalTimeCompare(const std::pair<int, float> AT1,
-                        const std::pair<int, float> AT2) {
-  if (AT1.second < AT2.second)
+bool AscendingOrderInAT(MatrixRowInfoType AT1, MatrixRowInfoType AT2) {
+  if (AT1.second.second.first < AT2.second.second.first)
     return true;
-  else
-    return false;
+  else if (AT1.second.second.first == AT2.second.second.first) {
+    if (AT1.second.first < AT2.second.first)
+      return true;
+  }
+
+  return false;
 }
 
 MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
@@ -1061,8 +1094,8 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
   /// First we should check each row by its arrival time to identify which rows can be
   /// summed by adder without increasing critical path delay of compressor tree.
 
-  // Collect the arrival time of each row and sort it in ascending order.
-  std::vector<std::pair<int, float> > ArrivalTimes;
+  // Collect information of each row, including name, index, arrival time & valid width.
+  std::vector<MatrixRowInfoType> RowInfos;
   for (unsigned i = 0; i < Matrix.size(); ++i) {
     MatrixRowType Row = Matrix[i];
 
@@ -1071,7 +1104,6 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
       continue;
 
     float ArrivalTime = 0.0f;
-
     for (unsigned j = 0; j < Row.size(); ++j) {
       DotType Dot = Row[j];
 
@@ -1079,42 +1111,74 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
         if (ArrivalTime == 0.0f)
           ArrivalTime = Dot.second.first;
         else
-          assert(ArrivalTime == Dot.second.first && "Unexpected arrival time of dot!");
-      }      
+          assert(ArrivalTime == Dot.second.first && "Unexpected arrival time!");
+      }
     }
 
-    assert(ArrivalTime != 0.0f || isConstantInt(Row) && "Unexpected arrival time of row!");
-    ArrivalTimes.push_back(std::make_pair(i, ArrivalTime));
+    bool ValidWidth = false;
+    unsigned Width = 0;
+    for (unsigned j = 0; j < Row.size(); ++j) {
+      DotType Dot = Row[Row.size() - 1 - j];
+
+      if (Dot.first == "1'b0")
+        continue;
+      else
+        ValidWidth = true;
+
+      if (ValidWidth)
+        ++Width;
+    }
+
+    assert(ArrivalTime != 0.0f || isConstantInt(Row) && "Unexpected arrival time!");
+
+    // The name of origin row in matrix is the operands of multi-input addition.
+    std::string Name = "operand_" + utostr_32(i);
+
+    ATAndWidthType ATW = std::make_pair(ArrivalTime, Width);
+    RowInfos.push_back(std::make_pair(Name, std::make_pair(i, ATW)));
   }
-  std::sort(ArrivalTimes.begin(), ArrivalTimes.end(), ArrivalTimeCompare);
+  std::sort(RowInfos.begin(), RowInfos.end(), AscendingOrderInAT);
 
   // Identify which rows can be summed by adder.
-  std::vector<std::vector<unsigned> > RowsSummedByAdder;
+  float TimeLimit = RowInfos.back().second.second.first + VFUs::WireDelay * VFUs::Period;
+  std::vector<std::pair<std::vector<unsigned>, float> > TernaryAdders;
   unsigned Idx = 0;
   bool Continue = true;
   while (Continue) {
     Continue = false;
 
     float MaxInputArrivalTime = 0.0f;
+    unsigned MaxInputWidth = 0;
     for (unsigned i = 0; i < 3; ++i) {
-      float ArrivalTime = ArrivalTimes[3 * Idx + i].second;
+      float ArrivalTime = RowInfos[3 * Idx + i].second.second.first;
+      unsigned Width = RowInfos[3 * Idx + i].second.second.second;
 
-      MaxInputArrivalTime
-        = MaxInputArrivalTime > ArrivalTime ? MaxInputArrivalTime : ArrivalTime;
+      MaxInputArrivalTime = std::max(MaxInputArrivalTime, ArrivalTime);
+      MaxInputWidth = std::max(MaxInputWidth, Width);
     }
 
-    float ResultArrivalTime = MaxInputArrivalTime + 1.436f / VFUs::Period;
+    float TernaryAddDelay
+      = LuaI::Get<VFUTernaryAdd>()->lookupLatency(MaxInputWidth) * VFUs::Period;
+    float ResultArrivalTime = MaxInputArrivalTime + TernaryAddDelay;
 
-    if (ResultArrivalTime < ArrivalTimes.back().second) {
+    if (ResultArrivalTime < TimeLimit) {
       std::vector<unsigned> AdderOps;
-      AdderOps.push_back(ArrivalTimes[3*Idx].first);
-      AdderOps.push_back(ArrivalTimes[3*Idx + 1].first);
-      AdderOps.push_back(ArrivalTimes[3*Idx + 2].first);
+      AdderOps.push_back(RowInfos[3*Idx].second.first);
+      AdderOps.push_back(RowInfos[3*Idx + 1].second.first);
+      AdderOps.push_back(RowInfos[3*Idx + 2].second.first);
 
-      RowsSummedByAdder.push_back(AdderOps);
+      TernaryAdders.push_back(std::make_pair(AdderOps, ResultArrivalTime));
 
       // Debug code
-      errs() << "Sum first arrived three rows by adder!\n";
+      errs() << utostr_32(MaxInputWidth) << "-bit ternary adder sum: ";
+      for (unsigned j = 0; j < 3; ++j) {
+        errs() << "operand_" << RowInfos[3 * Idx + j].second.first;
+
+        if (j != 2)
+          errs() << ", ";
+        else
+          errs() << ";\n";
+      }
 
       // Continue the identify the following rows.
       Continue = true;
@@ -1126,8 +1190,8 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
   /// insert the add result back into matrix as new rows.
 
   // Generate the adders to sum the chosen rows.
-  for (unsigned i = 0; i < RowsSummedByAdder.size(); ++i) {
-    std::vector<unsigned> AdderOpIdxs = RowsSummedByAdder[i];
+  for (unsigned i = 0; i < TernaryAdders.size(); ++i) {
+    std::vector<unsigned> AdderOpIdxs = TernaryAdders[i].first;
 
     // The operands of current adder.
     for (unsigned j = 0; j < AdderOpIdxs.size(); ++j) {
@@ -1147,7 +1211,7 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
     }
 
     // The implement of current adder.
-    Output << "wire[" << utostr_32(ColNum - 1) << ":0] Adder_0 = ";
+    Output << "wire[" << utostr_32(ColNum - 1) << ":0] Adder_" << utostr_32(i) << " = ";
     for (unsigned j = 0; j < AdderOpIdxs.size(); ++j) {
       Output << "Adder_" + utostr_32(i) + "_Op_" + utostr_32(j);
 
@@ -1159,12 +1223,12 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
   }
 
   // Insert the adder result back into matrix.
-  for (unsigned i = 0; i < RowsSummedByAdder.size(); ++i) {
+  for (unsigned i = 0; i < TernaryAdders.size(); ++i) {
     std::string AdderName = "Adder_" + utostr_32(i);
 
     // Get the mask for each operand row of current adder.
     std::vector<BitMask> AdderOpMasks;
-    std::vector<unsigned> AdderOpIdxs = RowsSummedByAdder[i];
+    std::vector<unsigned> AdderOpIdxs = TernaryAdders[i].first;
     for (unsigned j = 0; j < AdderOpIdxs.size(); ++j) {
       unsigned AdderOpIdx = AdderOpIdxs[j];
       MatrixRowType AdderOp = Matrix[AdderOpIdx];
@@ -1189,17 +1253,27 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
     for (unsigned i = 2; i < AdderOpMasks.size(); ++i) {
       ResultMask = BitMaskAnalysis::computeAdd(AdderOpMasks[i], ResultMask, ColNum);
     }
+    float ResultAT = TernaryAdders[i].second;
+    unsigned ResultValidWidth
+      = ResultMask.getMaskWidth() - ResultMask.countLeadingZeros();
 
-    MatrixRowType AdderResultRow
-      = createDotMatrixRow(AdderName, ColNum, ColNum, 0.0f, 0, ResultMask);
+    MatrixRowType AdderResultRow = createDotMatrixRow(AdderName, ColNum, ColNum,
+                                                      ResultAT, 0, ResultMask);
 
     // Insert the adder result back into matrix.
     Matrix.push_back(AdderResultRow);
+
+    // Also insert the information of created row into RowInfos.
+    std::string RowName = "Adder_" + utostr_32(i);
+    ATAndWidthType RowATAndWidth = std::make_pair(ResultAT, ResultValidWidth);
+    MatrixRowInfoType RowInfo
+      = std::make_pair(RowName, std::make_pair(Matrix.size(), RowATAndWidth));
+    RowInfos.push_back(RowInfo);
   }
 
   // Clear the rows summed by adder in matrix.
-  for (unsigned i = 0; i < RowsSummedByAdder.size(); ++i) {
-    std::vector<unsigned> AdderOpIdxs = RowsSummedByAdder[i];
+  for (unsigned i = 0; i < TernaryAdders.size(); ++i) {
+    std::vector<unsigned> AdderOpIdxs = TernaryAdders[i].first;
 
     for (unsigned j = 0; j < AdderOpIdxs.size(); ++j) {
       unsigned AdderOpIdx = AdderOpIdxs[j];  
@@ -1634,16 +1708,16 @@ void SIRMOAOpt::initGPCs() {
   }
   else
   {
-    /// GPC_15_3_LUT
-    // Inputs & Outputs
-    unsigned GPC_15_3_LUT_Inputs[2] = { 5, 1 };
-    std::vector<unsigned> GPC_15_3_LUT_InputsVector(GPC_15_3_LUT_Inputs,
-                                                    GPC_15_3_LUT_Inputs + 2);
-
-    CompressComponent *GPC_15_3_LUT
-      = new CompressComponent(GPCType, "GPC_15_3_LUT",
-                              GPC_15_3_LUT_InputsVector, 3, 3, 0.049f);
-    Library.push_back(GPC_15_3_LUT);
+//     /// GPC_15_3_LUT
+//     // Inputs & Outputs
+//     unsigned GPC_15_3_LUT_Inputs[2] = { 5, 1 };
+//     std::vector<unsigned> GPC_15_3_LUT_InputsVector(GPC_15_3_LUT_Inputs,
+//                                                     GPC_15_3_LUT_Inputs + 2);
+// 
+//     CompressComponent *GPC_15_3_LUT
+//       = new CompressComponent(GPCType, "GPC_15_3_LUT",
+//                               GPC_15_3_LUT_InputsVector, 3, 3, 0.049f);
+//     Library.push_back(GPC_15_3_LUT);
   }
   
   if (useGPCWithCarryChain) {
@@ -2482,7 +2556,7 @@ void SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
 
   /// Pre-compress the TMatrix with different start IH and
   /// evaluate the area-delay cost.
-  preCompressTMatrix(TMatrix, IHs);
+  //preCompressTMatrix(TMatrix, IHs);
 
   /// Start to compress the TMatrix
   unsigned FinalGPCLevel = 0;

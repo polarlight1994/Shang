@@ -300,7 +300,7 @@ VFUs::FUTypes VASTSeqInst::getFUType() const {
     break;
   case Instruction::ICmp:
     if (getNumDefs() == 2)
-      return VFUs::ICmp;
+      return VFUs::GT_LT;
     break;
   case Instruction::Load:
   case Instruction::Store:
@@ -315,8 +315,8 @@ unsigned VASTSeqInst::getFUCost() const {
   switch (getFUType()) {
   case VFUs::AddSub:
     return LuaI::Get<VFUAddSub>()->lookupCost(std::min(64u, BitWidth));
-  case VFUs::ICmp:
-    return LuaI::Get<VFUICmp>()->lookupCost(BitWidth);
+  case VFUs::GT_LT:
+    return LuaI::Get<VFUGT_LT>()->lookupCost(BitWidth);
   case VFUs::Mult:
     return LuaI::Get<VFUMult>()->lookupCost(BitWidth);
   case VFUs::Shift:

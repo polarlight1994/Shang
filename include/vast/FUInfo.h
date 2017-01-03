@@ -39,16 +39,18 @@ namespace VFUs {
   enum FUTypes {
     Trivial = 0,
     AddSub = 1,
-    Shift = 2,
-    Mult = 3,
-    ICmp = 4,
-    Div = 5,
-    RAnd = 6,
-    MemoryBus = 7,
-    Mux = 8,
+    TernaryAdd = 2,
+    Shift = 3,
+    Mult = 4,
+    EQ_NE = 5,
+    GT_LT = 6,
+    Div = 7,
+    RAnd = 8,
+    MemoryBus = 9,
+    Mux = 10,
     FirstFUType = Trivial,
     FirstNonTrivialFUType = AddSub,
-    LastPostBindFUType = ICmp,
+    LastPostBindFUType = GT_LT,
     NumPostBindFUs = LastPostBindFUType - FirstNonTrivialFUType + 1,
     LastCommonFUType = Mux,
     NumCommonFUs = LastCommonFUType - FirstFUType + 1,
@@ -279,9 +281,11 @@ public:
 };
 
 typedef VSimpleFUDesc<VFUs::AddSub>  VFUAddSub;
+typedef VSimpleFUDesc<VFUs::TernaryAdd>  VFUTernaryAdd;
 typedef VSimpleFUDesc<VFUs::Shift>   VFUShift;
 typedef VSimpleFUDesc<VFUs::Mult>    VFUMult;
-typedef VSimpleFUDesc<VFUs::ICmp>    VFUICmp;
+typedef VSimpleFUDesc<VFUs::EQ_NE>    VFUEQ_NE;
+typedef VSimpleFUDesc<VFUs::GT_LT>    VFUGT_LT;
 typedef VSimpleFUDesc<VFUs::Div>     VFUDiv;
 typedef VSimpleFUDesc<VFUs::RAnd>    VFURAnd;
 
