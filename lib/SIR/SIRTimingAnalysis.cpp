@@ -499,11 +499,11 @@ void SIRDelayModel::updateROMLookUpArrival() {
   // Hack: unfinished function.
 }
 
-void SIRDelayModel::updateCmpArrivial() {
+void SIRDelayModel::updateGTLTArrival() {
   // Hack: we do not have BitMask now,so all bits are unknown bits.
   // and we should calculate the number of logic levels in the future.
   unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
-  float Delay = LuaI::Get<VFUICmp>()->lookupLatency(std::min(BitWidth, 64u));
+  float Delay = LuaI::Get<VFUGT_LT>()->lookupLatency(std::min(BitWidth, 64u));
 
   // Also note that the real numbers of operands should be minus 1.
   for (unsigned I = 0, E = Node->getNumOperands() - 1; I < E; ++I) {
@@ -513,6 +513,38 @@ void SIRDelayModel::updateCmpArrivial() {
     // then ignore it because it will have no impact on the scheduling process.
     if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
         isa<Argument>(V) || isa<UndefValue>(V)) continue;
+
+    // Simply add the zero delay if the Src itself is a Leaf Value.
+    if (isLeafValue(SM, V)) {
+      addArrival(V, Delay + 0.0f, 1, 0);
+      continue;
+    }
+
+    SIRDelayModel *M = Fanins[I];
+    if (M == NULL)
+      continue;
+
+    for (arrival_iterator I = M->arrival_begin(); I != M->arrival_end(); ++I) {
+      ArrivalTime *AT = I;
+      addArrival(AT->Src, AT->Arrival + Delay, 1, 0);
+    }
+  }
+}
+
+void SIRDelayModel::updateEQNEArrival() {
+  // Hack: we do not have BitMask now,so all bits are unknown bits.
+  // and we should calculate the number of logic levels in the future.
+  unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
+  float Delay = LuaI::Get<VFUEQ_NE>()->lookupLatency(std::min(BitWidth, 64u));
+
+  // Also note that the real numbers of operands should be minus 1.
+  for (unsigned I = 0, E = Node->getNumOperands() - 1; I < E; ++I) {
+    Value *V = Node->getOperand(I);
+
+    // If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
+    // then ignore it because it will have no impact on the scheduling process.
+    if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
+      isa<Argument>(V) || isa<UndefValue>(V)) continue;
 
     // Simply add the zero delay if the Src itself is a Leaf Value.
     if (isLeafValue(SM, V)) {
@@ -690,9 +722,10 @@ void SIRDelayModel::updateArrival() {
     return updateShrArrival();
   case Intrinsic::shang_sgt:
   case Intrinsic::shang_ugt:
+    return updateGTLTArrival();
   case Intrinsic::shang_eq:
   case Intrinsic::shang_ne:
-    return updateCmpArrivial();
+    return updateEQNEArrival();
 
   case  Intrinsic::shang_reg_assign:
     // To be noted that, reg_assign instruction is created
@@ -755,9 +788,16 @@ void SIRDelayModel::calcMulArrival() {
   calcArrivalLinear(Base, PerBit);
 }
 
-void SIRDelayModel::calcCmpArrival() {
+void SIRDelayModel::calcGTLTArrival() {
   unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
-  float Delay = LuaI::Get<VFUICmp>()->lookupLatency(std::min(BitWidth, 64u));
+  float Delay = LuaI::Get<VFUGT_LT>()->lookupLatency(std::min(BitWidth, 64u));
+
+  calcArrivalParallel(Delay);
+}
+
+void SIRDelayModel::calcEQNEArrival() {
+  unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
+  float Delay = LuaI::Get<VFUEQ_NE>()->lookupLatency(std::min(BitWidth, 64u));
 
   calcArrivalParallel(Delay);
 }
@@ -831,9 +871,11 @@ void SIRDelayModel::calcArrival() {
 
   case Intrinsic::shang_sgt:
   case Intrinsic::shang_ugt:
+    return calcGTLTArrival();
+
   case Intrinsic::shang_eq:
   case Intrinsic::shang_ne:
-    return calcCmpArrival();
+    return calcEQNEArrival();
 
   case  Intrinsic::shang_reg_assign:
     // To be noted that, reg_assign instruction is created

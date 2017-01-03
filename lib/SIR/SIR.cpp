@@ -165,7 +165,7 @@ DFGNode *DataFlowGraph::createDFGNode(std::string Name, Value *Val, BasicBlock *
   DFGNode *Node;
   if (Ty == DFGNode::Add || Ty == DFGNode::Mul || Ty == DFGNode::And ||
       Ty == DFGNode::Not || Ty == DFGNode::Or || Ty == DFGNode::Xor ||
-      Ty == DFGNode::RAnd || Ty == DFGNode::EQ || Ty == DFGNode::NE ||
+      Ty == DFGNode::RAnd || Ty == DFGNode::Eq || Ty == DFGNode::NE ||
       Ty == DFGNode::TypeConversion || Ty == DFGNode::CompressorTree) {
     assert(BB && "Unexpected parent basic block!");
 
@@ -227,7 +227,7 @@ DFGNode *DataFlowGraph::createDataPathNode(Instruction *Inst, unsigned BitWidth)
       Ty = DFGNode::CompressorTree;
       break;
     case llvm::Intrinsic::shang_eq:
-      Ty = DFGNode::EQ;
+      Ty = DFGNode::Eq;
       break;
     case llvm::Intrinsic::shang_logic_operations:
       Ty = DFGNode::LogicOperationChain;

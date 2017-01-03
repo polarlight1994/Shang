@@ -725,7 +725,7 @@ public:
     RAnd,
     GT,
     LT,
-    EQ,
+    Eq,
     NE,
     BitExtract,
     BitCat,
@@ -861,7 +861,7 @@ public:
 
     assert(Ty == DFGNode::Add || Ty == DFGNode::Mul || Ty == DFGNode::And ||
            Ty == DFGNode::Not || Ty == DFGNode::Or || Ty == DFGNode::Xor ||
-           Ty == DFGNode::RAnd || Ty == DFGNode::EQ || Ty == DFGNode::NE ||
+           Ty == DFGNode::RAnd || Ty == DFGNode::Eq || Ty == DFGNode::NE ||
            Ty == DFGNode::TypeConversion || Ty == DFGNode::CompressorTree &&
            "Unexpected node type!");
   }
@@ -923,7 +923,7 @@ public:
 
     return Ty == DFGNode::Add || Ty == DFGNode::Mul || Ty == DFGNode::And ||
            Ty == DFGNode::Not || Ty == DFGNode::Or || Ty == DFGNode::Xor ||
-           Ty == DFGNode::RAnd || Ty == DFGNode::EQ || Ty == DFGNode::NE ||
+           Ty == DFGNode::RAnd || Ty == DFGNode::Eq || Ty == DFGNode::NE ||
            Ty == DFGNode::TypeConversion || Ty == DFGNode::CompressorTree;
   }
 };

@@ -157,9 +157,11 @@ void LuaI::updateFUs() {
     = new VFUMemBus(FUs[VFUDesc::getTypeName(VFUs::MemoryBus)]);
 
   initSimpleFU<VFUs::AddSub>(FUs);
+  initSimpleFU<VFUs::TernaryAdd>(FUs);
   initSimpleFU<VFUs::Shift>(FUs);
   initSimpleFU<VFUs::Mult>(FUs);
-  initSimpleFU<VFUs::ICmp>(FUs);
+  initSimpleFU<VFUs::GT_LT>(FUs);
+  initSimpleFU<VFUs::EQ_NE>(FUs);
   initSimpleFU<VFUs::Div>(FUs);
   initSimpleFU<VFUs::RAnd>(FUs);
 

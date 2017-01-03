@@ -109,7 +109,8 @@ class SIRDelayModel : public ilist_node<SIRDelayModel> {
       updateArrivalCarryChain(I, Base, PreBit);
   }
 
-  void updateCmpArrivial();
+  void updateGTLTArrival();
+  void updateEQNEArrival();
   void updateShiftAmt();
   void updateShlArrival();
   void updateShrArrival();
@@ -117,7 +118,8 @@ class SIRDelayModel : public ilist_node<SIRDelayModel> {
   void calcArrivalParallel(float delay);
   void calcArrivalLinear(float Base, float PerBit);
   void calcShiftArrival();
-  void calcCmpArrival();
+  void calcEQNEArrival();
+  void calcGTLTArrival();
   void calcMulArrival();
   void calcAddArrival();
 

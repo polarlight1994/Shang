@@ -780,7 +780,7 @@ void DelayModel::updateCmpArrivial() {
   // Get the unknown bits.
   unsigned BitWidth = KnownBits.getBitWidth() - KnownBits.countPopulation();
   // Get the delay of comparison between the unknown bits.
-  float Delay = LuaI::Get<VFUICmp>()->lookupLatency(std::min(BitWidth, 64u));
+  float Delay = LuaI::Get<VFUGT_LT>()->lookupLatency(std::min(BitWidth, 64u));
   // TODO: Caculate the number of logic levels.
 
   for (unsigned i = 0, e = Node->size(); i < e; ++i) {

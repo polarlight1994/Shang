@@ -757,7 +757,7 @@ BitMask BitMaskAnalysis::computeMask(DFGNode *Node) {
 
       return Mask;
     }
-    case llvm::DFGNode::EQ: {
+    case llvm::DFGNode::Eq: {
       bool UnEqual = false;
       bool UnKnown = false;
 
