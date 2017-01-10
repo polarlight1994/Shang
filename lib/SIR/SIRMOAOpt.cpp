@@ -334,6 +334,7 @@ static unsigned LogCeiling(unsigned x, unsigned n) {
 float SIRMOAOpt::getCritialPathDelay(DFGNode *Node) {
   /// Get the delay of this node according to its type.
   DFGNode::NodeType Ty = Node->getType();
+
   switch (Ty) {
   case llvm::DFGNode::Entry:
   case llvm::DFGNode::Exit:
@@ -431,20 +432,6 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
 
   // Get the corresponding DFG node.
   DFGNode *Node = SM->getDFGNodeOfVal(Operand);
-
-  DFGNode::NodeType Ty = Node->getType();
-  if (Ty == DFGNode::Not || Ty == DFGNode::And ||
-      Ty == DFGNode::Or || Ty == DFGNode::Xor) {
-    if (DFG->hasReplaceNode(Node)) {
-      DFGNode *ReplaceNode = DFG->getReplaceNode(Node);
-
-      Node = ReplaceNode;
-    }
-    else if (DFG->hasLOCNode(Node)) {
-      DFGNode *LOCNode = DFG->getLOCNode(Node);
-      Node = LOCNode;
-    }
-  }
 
   /// Arrival time will be 0.0f if it is a register.
   if (Node->isSequentialNode())
@@ -1126,7 +1113,7 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
   std::vector<std::pair<std::vector<unsigned>, float> > TernaryAdders;
   unsigned AdderIdx = 0;
   bool Continue = true;
-  while (Continue) {
+  while (Continue && RowInfos.size() > 3) {
     Continue = false;
 
     // Get the max arrival time and valid width of first triple row after sorting.

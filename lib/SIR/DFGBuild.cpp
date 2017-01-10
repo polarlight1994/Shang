@@ -51,7 +51,6 @@ bool DFGBuild::runOnSIR(SIR &SM) {
       DFGNode *Node = getOrCreateDFGNode(Inst, InstBitWidth);
 
       // Also create node for its operands if it has not been created.
-      unsigned OpIdx = 0;
       typedef Instruction::op_iterator op_iterator;
       for (op_iterator OI = Inst->op_begin(), OE = Inst->op_end(); OI != OE; ++OI) {
         Value *Op = *OI;
@@ -63,7 +62,7 @@ bool DFGBuild::runOnSIR(SIR &SM) {
         unsigned OpBitWidth = getBitWidth(Op);
         DFGNode *OpNode = getOrCreateDFGNode(Op, OpBitWidth);
 
-        G->createDependency(OpNode, Node, OpIdx++);
+        G->createDependency(OpNode, Node);
       }
     }
   }
@@ -81,11 +80,11 @@ bool DFGBuild::runOnSIR(SIR &SM) {
 
     // The root nodes
     if (Node->parent_empty())
-      G->createDependency(Entry, Node, NULL);
+      G->createDependency(Entry, Node);
 
     // The leaf nodes
     if (Node->child_empty())
-      G->createDependency(Node, Exit, NULL);
+      G->createDependency(Node, Exit);
   }
 
   // Sort the nodes in topological order.

@@ -157,34 +157,16 @@ void DataFlowGraph::topologicalSortNodes() {
   DFGNodeList.splice(DFGNodeList.end(), DFGNodeList, Exit);
 }
 
-DFGNode *DataFlowGraph::createDFGNode(std::string Name, Value *Val, BasicBlock *BB,
-                                      DFGNode::NodeType Ty, unsigned BitWidth) {
+DFGNode *DataFlowGraph::createDFGNode(std::string Name, Value *Val, uint64_t ConstantVal,
+                                      BasicBlock *BB, DFGNode::NodeType Ty,
+                                      unsigned BitWidth) {
   assert(DFGNodeIdx < UINT_MAX && "Out of range!");
 
-  // Create the DFG node.
-  DFGNode *Node;
-  if (Ty == DFGNode::Add || Ty == DFGNode::Mul || Ty == DFGNode::And ||
-      Ty == DFGNode::Not || Ty == DFGNode::Or || Ty == DFGNode::Xor ||
-      Ty == DFGNode::RAnd || Ty == DFGNode::Eq || Ty == DFGNode::NE ||
-      Ty == DFGNode::TypeConversion || Ty == DFGNode::CompressorTree) {
-    assert(BB && "Unexpected parent basic block!");
-
-    Node = new CommutativeDFGNode(DFGNodeIdx++, Name, Val, BB, Ty, BitWidth);
-  }
-  else if (Ty == DFGNode::Div || Ty == DFGNode::LShr || Ty == DFGNode::AShr ||
-           Ty == DFGNode::Shl || Ty == DFGNode::GT || Ty == DFGNode::LT ||
-           Ty == DFGNode::BitExtract || Ty == DFGNode::BitCat ||
-           Ty == DFGNode::BitRepeat || Ty == DFGNode::Register) {
-    assert(BB && "Unexpected parent basic block!");
-
-    Node = new NonCommutativeDFGNode(DFGNodeIdx++, Name, Val, BB, Ty, BitWidth);
-  }
-  else
-    Node = new DFGNode(DFGNodeIdx++, Name, Val, BB, Ty, BitWidth);
+  DFGNode *Node = new DFGNode(DFGNodeIdx++, Name, Val, ConstantVal, BB, Ty, BitWidth);
 
   // Index the node.
   DFGNodeList.insert(DFGNodeList.back(), Node);
-  if (Val)
+  if (Val && !isa<UndefValue>(Val))
     SM->indexDFGNodeOfVal(Val, Node);
 
   return Node;
@@ -276,13 +258,13 @@ DFGNode *DataFlowGraph::createDataPathNode(Instruction *Inst, unsigned BitWidth)
       break;
     }
 
-    Node = createDFGNode(Name, Inst, Inst->getParent(), Ty, BitWidth);
+    Node = createDFGNode(Name, Inst, NULL, Inst->getParent(), Ty, BitWidth);
   }
   else if (isa<IntToPtrInst>(Inst) || isa<PtrToIntInst>(Inst) || isa<BitCastInst>(Inst)) {
-    Node = createDFGNode(Name, Inst, Inst->getParent(), DFGNode::TypeConversion, BitWidth);
+    Node = createDFGNode(Name, Inst, NULL, Inst->getParent(), DFGNode::TypeConversion, BitWidth);
   }
   else if (isa<ReturnInst>(Inst)) {
-    Node = createDFGNode(Name, Inst, Inst->getParent(), DFGNode::Ret, BitWidth);
+    Node = createDFGNode(Name, Inst, NULL, Inst->getParent(), DFGNode::Ret, BitWidth);
   }
   else {
     llvm_unreachable("Unexpected instruction type!");
@@ -295,10 +277,7 @@ DFGNode *DataFlowGraph::createConstantIntNode(uint64_t Val, unsigned BitWidth) {
   assert(BitWidth <= 64 && "Out of range!");
 
   std::string Name = utostr(Val);
-  DFGNode *Node = new ConstantIntDFGNode(DFGNodeIdx++, Name, Val, BitWidth);
-
-  // Index the node.
-  DFGNodeList.insert(DFGNodeList.back(), Node);
+  DFGNode *Node = createDFGNode(Name, NULL, Val, NULL, DFGNode::ConstantInt, BitWidth);
 
   return Node;
 }
@@ -314,7 +293,7 @@ DFGNode *DataFlowGraph::createGlobalValueNode(GlobalValue *GV, unsigned BitWidth
   // Basic information of current value.
   std::string Name = GV->getName();
 
-  DFGNode *Node = createDFGNode(Name, GV, NULL, DFGNode::GlobalVal, BitWidth);
+  DFGNode *Node = createDFGNode(Name, GV, NULL, NULL, DFGNode::GlobalVal, BitWidth);
 
   return Node;
 }
@@ -323,10 +302,7 @@ DFGNode *DataFlowGraph::createUndefValueNode(UndefValue *UV, unsigned BitWidth) 
   // Basic information of current value.
   std::string Name = UV->getName();
 
-  DFGNode *Node = new DFGNode(DFGNodeIdx++, Name, UV, NULL, DFGNode::UndefVal, BitWidth);
-
-  // Index the node.
-  DFGNodeList.insert(DFGNodeList.back(), Node);
+  DFGNode *Node = createDFGNode(Name, UV, NULL, NULL, DFGNode::UndefVal, BitWidth);
 
   return Node;
 }
@@ -335,30 +311,38 @@ DFGNode *DataFlowGraph::createArgumentNode(Argument *Arg, unsigned BitWidth) {
   // Basic information of current value.
   std::string Name = Arg->getName();
 
-  DFGNode *Node = createDFGNode(Name, Arg, NULL, DFGNode::Argument, BitWidth);
+  DFGNode *Node = createDFGNode(Name, Arg, NULL, NULL, DFGNode::Argument, BitWidth);
 
   return Node;
 }
 
-void DataFlowGraph::createDependency(DFGNode *From, DFGNode *To, unsigned Idx) {
-  // Handle the non-commutative node specially since it need to mark the index
-  // of each parent node.
-  if (NonCommutativeDFGNode *NCNode = dyn_cast<NonCommutativeDFGNode>(To)) {
-    NCNode->addParentNode(From, Idx);
-  }
-  else if (CommutativeDFGNode *CTo = dyn_cast<CommutativeDFGNode>(To)){
-    CTo->addParentNode(From, 1);
-  }
-  else {
-    assert(From->isEntryOrExit() || To->isEntryOrExit() ||
-           To->getType() == DFGNode::LogicOperationChain ||
-           To->getType() == DFGNode::Ret &&
-           "Unexpected type!");
-    To->addParentNode(From);
-  }
+void DataFlowGraph::createDependency(DFGNode *Src, DFGNode *Dst) {
+  Src->addChildNode(Dst);
+  Dst->addParentNode(Src);
 
-  assert(From->hasChildNode(To) && "Fail to create dependency!");
-  assert(To->hasParentNode(From) && "Fail to create dependency!");
+  assert(Src->hasChildNode(Dst) && "Fail to create dependency!");
+  assert(Dst->hasParentNode(Src) && "Fail to create dependency!");
+}
+
+void DataFlowGraph::removeDependency(DFGNode *Src, DFGNode *Dst) {
+  Src->removeChildNode(Dst);
+  Dst->removeParentNode(Src);
+
+  assert(!Src->hasChildNode(Dst) && "Fail to remove dependency!");
+  assert(!Dst->hasParentNode(Src) && "Fail to remove dependency!");
+}
+
+void DataFlowGraph::replaceDepSrc(DFGNode *Dst, DFGNode *OldSrc, DFGNode *NewSrc) {
+  OldSrc->removeChildNode(Dst);
+
+  Dst->replaceParentNode(OldSrc, NewSrc);
+  NewSrc->addChildNode(Dst);
+
+  assert(!OldSrc->hasChildNode(Dst) && "Fail to remove dependency!");
+  assert(!Dst->hasParentNode(OldSrc) && "Fail to remove dependency!");
+
+  assert(NewSrc->hasChildNode(Dst) && "Fail to create dependency!");
+  assert(Dst->hasParentNode(NewSrc) && "Fail to create dependency!");
 }
 
 void SIRSubModuleBase::addFanin(SIRRegister *Fanin) {

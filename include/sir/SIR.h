@@ -749,6 +749,8 @@ private:
   std::string Name;
   // Corresponding llvm value in IR.
   Value *Val;
+  // Integer value if it is a ConstantInt DFGNode.
+  uint64_t IntVal;
   // Corresponding basic block in IR.
   BasicBlock *ParentBB;
   // Node type.
@@ -757,23 +759,30 @@ private:
   unsigned BitWidth;
 
   // Child nodes & Parent nodes.
-  std::set<DFGNode *> Childs;
-  std::set<DFGNode *> Parents;
+  std::vector<DFGNode *> Childs;
+  std::vector<DFGNode *> Parents;
 
 public:
   // Construction for ilist node.
-  DFGNode() : Idx(NULL), Name(""), Val(NULL), Ty(InValid), BitWidth(0) {}
+  DFGNode() : Idx(NULL), Name(""), Val(NULL), IntVal(NULL), Ty(InValid), BitWidth(0) {}
   // Construction for normal node.
-  DFGNode(unsigned Idx, std::string Name, Value *V, BasicBlock *BB,
-          NodeType Ty, unsigned BitWidth)
-    : Idx(Idx), Name(Name), Val(V), ParentBB(BB), Ty(Ty), BitWidth(BitWidth) {
-    if (V)
+  DFGNode(unsigned Idx, std::string Name, Value *V, uint64_t IntV,
+          BasicBlock *BB, NodeType Ty, unsigned BitWidth)
+    : Idx(Idx), Name(Name), Val(V), IntVal(IntV),
+      ParentBB(BB), Ty(Ty), BitWidth(BitWidth) {
+    if (V) {
       assert(!isa<Function>(V) && "Unexpected value type!");
+      assert(IntV == NULL && "Unexpected integer value!");
+    }
   }
 
   unsigned getIdx() const { return Idx; }
   std::string getName() const { return Name; }
   Value *getValue() const { return Val; }
+  uint64_t getIntValue() const {
+    assert(Ty == DFGNode::ConstantInt && "Unexpected DFGNode type!");
+    return IntVal;
+  }
   BasicBlock *getParentBB() const { return ParentBB; }
   NodeType getType() const { return Ty; }
   unsigned getBitWidth() const { return BitWidth; }
@@ -785,8 +794,8 @@ public:
     return Ty == Register || Ty == GlobalVal;
   }
 
-  typedef std::set<DFGNode *>::iterator iterator;
-  typedef std::set<DFGNode *>::const_iterator const_iterator;
+  typedef std::vector<DFGNode *>::iterator iterator;
+  typedef std::vector<DFGNode *>::const_iterator const_iterator;
 
   // Childs.  
   iterator child_begin() { return Childs.begin(); }
@@ -802,225 +811,101 @@ public:
   iterator parent_end() { return Parents.end(); }
   const_iterator parent_end() const { return Parents.end(); }
   bool parent_empty() const { return Parents.empty(); }
-  virtual unsigned parent_size() const {
-    llvm_unreachable("Should be implemented in derived class!");
-  };
-
-  bool hasChildNode(DFGNode *ChildNode) const {
-    return Childs.count(ChildNode);
-  }
-  bool hasParentNode(DFGNode *ParentNode) const {
-    return Parents.count(ParentNode);
-  }
-
-  virtual void addParentNode(DFGNode *ParentNode) {
-    assert(!Parents.count(ParentNode) && "Already exists!");
-    assert(!ParentNode->Childs.count(this) && "Already exists!");
-
-    ParentNode->Childs.insert(this);
-    Parents.insert(ParentNode);
-  }
-  virtual void removeParentNode(DFGNode *ParentNode) {
-    assert(Parents.count(ParentNode) && "Do not exists!");
-    assert(ParentNode->Childs.count(this) && "Do not exists!");
-
-    ParentNode->Childs.erase(this);
-    Parents.erase(ParentNode);
-  }
-};
-
-class ConstantIntDFGNode : public DFGNode {
-private:
-  uint64_t Val;
-
-public:
-  ConstantIntDFGNode(unsigned Idx, std::string Name, uint64_t Val, unsigned BitWidth)
-    : DFGNode(Idx, Name, NULL, NULL, DFGNode::ConstantInt, BitWidth), Val(Val) {}
-
-  uint64_t getIntValue() { return Val; }
-
-  /// Methods for support type inquiry through isa, cast, and dyn_cast;
-  static inline bool classof(const ConstantIntDFGNode *CINode) { return true; }
-  static inline bool classof(const DFGNode *Node) {
-    DFGNode::NodeType Ty = Node->getType();
-
-    return Ty == DFGNode::ConstantInt;
-  }
-};
-
-class CommutativeDFGNode : public DFGNode {
-private:
-  // Repeat times of parent node.
-  std::map<DFGNode *, unsigned> NumOfParentNode;
-
-public:
-  CommutativeDFGNode(unsigned Idx, std::string Name, Value *V,
-                     BasicBlock *BB, NodeType Ty, unsigned BitWidth)
-    : DFGNode(Idx, Name, V, BB, Ty, BitWidth) {
-    if (V) assert(!isa<Function>(V) && "Unexpected value type!");
-
-    assert(Ty == DFGNode::Add || Ty == DFGNode::Mul || Ty == DFGNode::And ||
-           Ty == DFGNode::Not || Ty == DFGNode::Or || Ty == DFGNode::Xor ||
-           Ty == DFGNode::RAnd || Ty == DFGNode::Eq || Ty == DFGNode::NE ||
-           Ty == DFGNode::TypeConversion || Ty == DFGNode::CompressorTree &&
-           "Unexpected node type!");
-  }
-
-  unsigned getNumOfParentNode(DFGNode *ParentNode) {
-    assert(NumOfParentNode.count(ParentNode) && "Not parent node at all!");
-
-    return NumOfParentNode[ParentNode];
-  }
-
-  unsigned parent_size() const {
-    unsigned Size = 0;
-    for (const_pnnum_iterator PI = pn_begin(), PE = pn_end(); PI != PE; ++PI) {
-      Size += PI->second;
-    }
-
-    return Size;
-  }
-
-  void addParentNode(DFGNode *ParentNode, unsigned Num) {
-    // If the parent node already exists, then update the number.
-    if (hasParentNode(ParentNode)) {
-      assert(NumOfParentNode.count(ParentNode) && "Index not created yet?");
-
-      NumOfParentNode[ParentNode] += Num;
-    }
-    else {
-      DFGNode::addParentNode(ParentNode);
-
-      bool Insert = NumOfParentNode.insert(std::make_pair(ParentNode, Num)).second;
-      assert(Insert && "Insert failure!");
-    }
-  }
-  void removeParentNode(DFGNode *ParentNode, unsigned Num) {
-    // Update the number.
-    assert(NumOfParentNode.count(ParentNode) && "Index not created yet?");
-    if (NumOfParentNode[ParentNode] > Num) {
-      NumOfParentNode[ParentNode] -= Num;
-    }
-    else if (NumOfParentNode[ParentNode] == Num) {
-      DFGNode::removeParentNode(ParentNode);
-
-      NumOfParentNode.erase(ParentNode);
-    }
-  }
-
-  typedef std::map<DFGNode *, unsigned>::iterator pnnum_iterator;
-  typedef std::map<DFGNode *, unsigned>::const_iterator const_pnnum_iterator;
-
-  pnnum_iterator pn_begin() { return NumOfParentNode.begin(); }
-  const_pnnum_iterator pn_begin() const { return NumOfParentNode.begin(); }
-  pnnum_iterator pn_end() { return NumOfParentNode.end(); }
-  const_pnnum_iterator pn_end() const { return NumOfParentNode.end(); }
-
-  /// Methods for support type inquiry through isa, cast, and dyn_cast;
-  static inline bool classof(const CommutativeDFGNode *CNode) { return true; }
-  static inline bool classof(const DFGNode *Node) {
-    DFGNode::NodeType Ty = Node->getType();
-
-    return Ty == DFGNode::Add || Ty == DFGNode::Mul || Ty == DFGNode::And ||
-           Ty == DFGNode::Not || Ty == DFGNode::Or || Ty == DFGNode::Xor ||
-           Ty == DFGNode::RAnd || Ty == DFGNode::Eq || Ty == DFGNode::NE ||
-           Ty == DFGNode::TypeConversion || Ty == DFGNode::CompressorTree;
-  }
-};
-
-class NonCommutativeDFGNode : public DFGNode {
-private:
-  // Repeat times of parent node.
-  std::map<DFGNode *, unsigned> NumOfParentNode;
-  // Map of parent nodes order.
-  std::map<unsigned, DFGNode *> ParentsIdx;
-  std::map<DFGNode *, std::set<unsigned> > MirrorParentsIdx;
-
-public:
-  NonCommutativeDFGNode(unsigned Idx, std::string Name, Value *V,
-                        BasicBlock *BB, NodeType Ty, unsigned BitWidth)
-    : DFGNode(Idx, Name, V, BB, Ty, BitWidth) {
-    if (V) assert(!isa<Function>(V) && "Unexpected value type!");
-
-    assert(Ty == DFGNode::Div || Ty == DFGNode::LShr || Ty == DFGNode::AShr ||
-           Ty == DFGNode::Shl || Ty == DFGNode::GT || Ty == DFGNode::LT ||
-           Ty == DFGNode::BitExtract || Ty == DFGNode::BitCat ||
-           Ty == DFGNode::BitRepeat || Ty == DFGNode::Register &&
-           "Unexpected node type!");
-  }
-
-  unsigned parent_size() const {
-    return ParentsIdx.size();
-  }
+  unsigned parent_size() const { return Parents.size(); }
 
   DFGNode *getParentNode(unsigned Idx) {
-    assert(ParentsIdx.count(Idx) && "Not exist!");
+    assert(Idx < Parents.size() && "Unexpected index!");
 
-    return ParentsIdx[Idx];
+    return Parents[Idx];
   }
-  std::set<unsigned> getParentIdx(DFGNode *ParentNode) {
-    assert(MirrorParentsIdx.count(ParentNode) && "Not exist");
+  std::vector<unsigned> getParentNodeIdxs(DFGNode *ParentNode) {
+    std::vector<unsigned> Idxs;
+    unsigned Idx = 0;
+    for (const_iterator I = parent_begin(), E = parent_end(); I != E; ++I) {
+      DFGNode *Node = *I;
 
-    return MirrorParentsIdx[ParentNode];
-  }
+      if (Node == ParentNode)
+        Idxs.push_back(Idx);
 
-  void addParentNode(DFGNode *ParentNode, unsigned ParentIdx) {
-    // If the parent node already exists, then update the number.
-    if (hasParentNode(ParentNode)) {
-      assert(NumOfParentNode.count(ParentNode) && "Index not created yet?");
-      NumOfParentNode[ParentNode] += 1;
-
-      assert(MirrorParentsIdx.count(ParentNode) && "Index not created yet?");
-      bool LocalInsert = MirrorParentsIdx[ParentNode].insert(ParentIdx).second;
-      assert(LocalInsert && "Insert failure!");
-    }
-    else {
-      DFGNode::addParentNode(ParentNode);
-
-      bool LocalInsert0 = NumOfParentNode.insert(std::make_pair(ParentNode, 1)).second;
-      assert(LocalInsert0 && "Insert failure!");
-
-      std::set<unsigned> IdxList;
-      IdxList.insert(ParentIdx);
-      bool LocalInsert1 = MirrorParentsIdx.insert(std::make_pair(ParentNode, IdxList)).second;
-      assert(LocalInsert1 && "Insert failure!");
+      ++Idx;
     }
 
-    bool Insert = ParentsIdx.insert(std::make_pair(ParentIdx, ParentNode)).second;
-    assert(Insert && "Insert failure!");
-  }
-  void removeParentNode(DFGNode *ParentNode, unsigned Idx) {
-    // Update the number.
-    assert(NumOfParentNode.count(ParentNode) && "Index not created yet?");
-    if (NumOfParentNode[ParentNode] > 1) {
-      NumOfParentNode[ParentNode] -= 1;
-
-      assert(MirrorParentsIdx.count(ParentNode) && "Not exists!");
-      MirrorParentsIdx[ParentNode].erase(Idx);
-    }
-    else if (NumOfParentNode[ParentNode] == 1) {
-      DFGNode::removeParentNode(ParentNode);
-
-      NumOfParentNode.erase(ParentNode);
-
-      assert(MirrorParentsIdx.count(ParentNode) && "Not exists!");
-      assert(MirrorParentsIdx[ParentNode].size() == 1 && "Unexpected size!");
-      MirrorParentsIdx.erase(ParentNode);
-    }
-
-    assert(ParentsIdx.count(Idx) && "Not exists!");
-    ParentsIdx.erase(Idx);
+    return Idxs;
   }
 
-  /// Methods for support type inquiry through isa, cast, and dyn_cast;
-  static inline bool classof(const NonCommutativeDFGNode *CNode) { return true; }
-  static inline bool classof(const DFGNode *Node) {
-    DFGNode::NodeType Ty = Node->getType();
+  bool hasChildNode(DFGNode *ChildNode) const {
+    bool Has = false;
+    for (const_iterator I = child_begin(), E = child_end(); I != E; ++I) {
+      DFGNode *CNode = *I;
 
-    return Ty == DFGNode::Div || Ty == DFGNode::LShr || Ty == DFGNode::AShr ||
-           Ty == DFGNode::Shl || Ty == DFGNode::GT || Ty == DFGNode::LT ||
-           Ty == DFGNode::BitExtract || Ty == DFGNode::BitCat ||
-           Ty == DFGNode::BitRepeat || Ty == DFGNode::Register;
+      if (CNode == ChildNode) {
+        Has = true;
+        break;
+      }
+    }
+
+    return Has;
+  }
+  bool hasParentNode(DFGNode *ParentNode) const {
+    bool Has = false;
+    for (const_iterator I = parent_begin(), E = parent_end(); I != E; ++I) {
+      DFGNode *PNode = *I;
+
+      if (PNode == ParentNode) {
+        Has = true;
+        break;
+      }
+    }
+
+    return Has;
+  }
+
+  void addParentNode(DFGNode *ParentNode) {
+    Parents.push_back(ParentNode);
+  }
+
+  void removeParentNode(DFGNode *ParentNode) {
+    std::vector<DFGNode *> NewParents;
+
+    for (iterator I = parent_begin(), E = parent_end(); I != E; ++I) {
+      DFGNode *PNode = *I;
+
+      if (PNode != ParentNode)
+        NewParents.push_back(PNode);
+    }
+
+    Parents = NewParents;
+  }
+
+  void addChildNode(DFGNode *ChildNode) {
+    Childs.push_back(ChildNode);
+  }
+
+  void removeChildNode(DFGNode *ChildNode) {
+    std::vector<DFGNode *> NewChilds;
+
+    for (iterator I = child_begin(), E = child_end(); I != E; ++I) {
+      DFGNode *CNode = *I;
+
+      if (CNode != ChildNode)
+        NewChilds.push_back(CNode);
+    }
+
+    Childs = NewChilds;
+  }
+
+  void replaceParentNode(DFGNode *OldParent, DFGNode *NewParent) {
+    // Get the index of the old parent node.
+    std::vector<unsigned> Idxs = getParentNodeIdxs(OldParent);
+
+    // Replace the parent node.
+    for (unsigned i = 0; i < Idxs.size(); ++i) {
+      unsigned Idx = Idxs[i];
+      Parents[Idx] = NewParent;
+    }
+
+    assert(!hasParentNode(OldParent) && "Failed to replace!");
+    assert(hasParentNode(NewParent) && "Failed to replace!");
   }
 };
 
@@ -1074,10 +959,10 @@ private:
 public:
   DataFlowGraph(SIR *SM) : SM(SM) {
     // Create the entry SU.
-    this->Entry = new DFGNode(0, "Entry", NULL, NULL, DFGNode::Entry, 0);
+    this->Entry = new DFGNode(0, "Entry", NULL, NULL, NULL, DFGNode::Entry, 0);
     DFGNodeList.push_back(Entry);
     // Create the exit SU.
-    this->Exit = new DFGNode(UINT_MAX, "Exit", NULL, NULL, DFGNode::Exit, 0);
+    this->Exit = new DFGNode(UINT_MAX, "Exit", NULL, NULL, NULL, DFGNode::Exit, 0);
     DFGNodeList.push_back(Exit);
   }
 
@@ -1092,8 +977,8 @@ public:
   void toposortCone(DFGNode *Root, std::set<DFGNode *> &Visited);
   void topologicalSortNodes();
 
-  DFGNode *createDFGNode(std::string Name, Value *Val, BasicBlock *BB,
-                         DFGNode::NodeType Ty, unsigned BitWidth);
+  DFGNode *createDFGNode(std::string Name, Value *Val, uint64_t ConstantVal,
+                         BasicBlock *BB, DFGNode::NodeType Ty, unsigned BitWidth);
 
   DFGNode *createDataPathNode(Instruction *Inst, unsigned BitWidth);
   DFGNode *createConstantIntNode(uint64_t Val, unsigned BitWidth);
@@ -1101,9 +986,11 @@ public:
   DFGNode *createGlobalValueNode(GlobalValue *GV, unsigned BitWidth);
   DFGNode *createUndefValueNode(UndefValue *UV, unsigned BitWidth);
   DFGNode *createArgumentNode(Argument *Arg, unsigned BitWidth);
-  DFGNode *createSequentialNode(Value *Val, unsigned BitWidth);
 
-  void createDependency(DFGNode *From, DFGNode *To, unsigned Idx);
+  void createDependency(DFGNode *Src, DFGNode *Dst);
+  void removeDependency(DFGNode *Src, DFGNode *Dst);
+
+  void replaceDepSrc(DFGNode *Dst, DFGNode *OldSrc, DFGNode *NewSrc);
 
   std::vector<DFGNode *> getOperationsOfLOC(DFGNode *RootNode) {
     assert(LOC.count(RootNode) && "LOC not existed!");
@@ -1134,20 +1021,6 @@ public:
     assert(!RootOfLOC.count(RootNode) && "Already existed!");
 
     RootOfLOC.insert(std::make_pair(RootNode, LOCNode));
-  }
-
-  bool hasReplaceNode(DFGNode *OriginNode) {
-    return ReplacedNodes.count(OriginNode);
-  }
-  DFGNode *getReplaceNode(DFGNode *OriginNode) {
-    assert(ReplacedNodes.count(OriginNode) && "Not existed!");
-
-    return ReplacedNodes[OriginNode];
-  }
-  void indexReplaceNode(DFGNode *OriginNode, DFGNode *ReplaceNode) {
-    assert(!ReplacedNodes.count(OriginNode) && "Already existed!");
-
-    ReplacedNodes.insert(std::make_pair(OriginNode, ReplaceNode));
   }
 
   typedef DFGNodeListTy::iterator node_iterator;
