@@ -36,7 +36,7 @@ static bool sortMatrixByArrivalTime = true;
 static bool enableBitMaskOpt = true;
 static bool useGPCWithCarryChain = false;
 static bool useSepcialGPC = false;
-static bool sumFirstRowsByAdder = true;
+static bool sumFirstRowsByAdder = false;
 
 namespace {
 struct SIRMOAOpt : public SIRPass {
@@ -1109,7 +1109,7 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
   std::sort(RowInfos.begin(), RowInfos.end(), AscendingOrderInAT);
 
   // Identify which rows can be summed by adder.
-  float TimeLimit = RowInfos.back().second.second.first + VFUs::WireDelay * VFUs::Period;
+  float TimeLimit = RowInfos.back().second.second.first/* + VFUs::WireDelay * VFUs::Period*/;
   std::vector<std::pair<std::vector<unsigned>, float> > TernaryAdders;
   unsigned AdderIdx = 0;
   bool Continue = true;

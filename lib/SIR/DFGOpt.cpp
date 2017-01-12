@@ -323,11 +323,16 @@ DFGNode *DFGOpt::LOCBuild(DFGNode *RootNode) {
     }
   }
   // The children of LOC DFG node
+  std::vector<DFGNode *> Childs;
   typedef DFGNode::iterator child_iterator;
   for (child_iterator CI = RootNode->child_begin(), CE = RootNode->child_end();
-       CI != CE;) {
-    DFGNode *ChildNode = *CI++;
+       CI != CE; ++CI) {
+    DFGNode *ChildNode = *CI;
+    Childs.push_back(ChildNode);
+  }
 
+  for (unsigned i = 0; i < Childs.size(); ++i) {
+    DFGNode *ChildNode = Childs[i];
     DFG->replaceDepSrc(ChildNode, RootNode, LOCNode);
   }
 
