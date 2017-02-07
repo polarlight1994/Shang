@@ -159,15 +159,20 @@ void DataFlowGraph::topologicalSortNodes() {
 
 DFGNode *DataFlowGraph::createDFGNode(std::string Name, Value *Val, uint64_t ConstantVal,
                                       BasicBlock *BB, DFGNode::NodeType Ty,
-                                      unsigned BitWidth) {
+                                      unsigned BitWidth, bool ToReplace) {
   assert(DFGNodeIdx < UINT_MAX && "Out of range!");
 
   DFGNode *Node = new DFGNode(DFGNodeIdx++, Name, Val, ConstantVal, BB, Ty, BitWidth);
 
   // Index the node.
   DFGNodeList.insert(DFGNodeList.back(), Node);
-  if (Val && !isa<UndefValue>(Val))
-    SM->indexDFGNodeOfVal(Val, Node);
+
+  if (Val && !isa<UndefValue>(Val)) {
+    if (!ToReplace)
+      SM->indexDFGNodeOfVal(Val, Node);
+    else
+      SM->replaceDFGNodeOfVal(Val, Node);
+  }
 
   return Node;
 }
@@ -258,13 +263,16 @@ DFGNode *DataFlowGraph::createDataPathNode(Instruction *Inst, unsigned BitWidth)
       break;
     }
 
-    Node = createDFGNode(Name, Inst, NULL, Inst->getParent(), Ty, BitWidth);
+    Node = createDFGNode(Name, Inst, NULL, Inst->getParent(), Ty, BitWidth, false);
   }
-  else if (isa<IntToPtrInst>(Inst) || isa<PtrToIntInst>(Inst) || isa<BitCastInst>(Inst)) {
-    Node = createDFGNode(Name, Inst, NULL, Inst->getParent(), DFGNode::TypeConversion, BitWidth);
+  else if (isa<IntToPtrInst>(Inst) || isa<PtrToIntInst>(Inst) ||
+           isa<BitCastInst>(Inst)) {
+    Node = createDFGNode(Name, Inst, NULL, Inst->getParent(),
+                         DFGNode::TypeConversion, BitWidth, false);
   }
   else if (isa<ReturnInst>(Inst)) {
-    Node = createDFGNode(Name, Inst, NULL, Inst->getParent(), DFGNode::Ret, BitWidth);
+    Node = createDFGNode(Name, Inst, NULL, Inst->getParent(),
+                         DFGNode::Ret, BitWidth, false);
   }
   else {
     llvm_unreachable("Unexpected instruction type!");
@@ -277,7 +285,8 @@ DFGNode *DataFlowGraph::createConstantIntNode(uint64_t Val, unsigned BitWidth) {
   assert(BitWidth <= 64 && "Out of range!");
 
   std::string Name = utostr(Val);
-  DFGNode *Node = createDFGNode(Name, NULL, Val, NULL, DFGNode::ConstantInt, BitWidth);
+  DFGNode *Node = createDFGNode(Name, NULL, Val, NULL,
+                                DFGNode::ConstantInt, BitWidth, false);
 
   return Node;
 }
@@ -293,7 +302,8 @@ DFGNode *DataFlowGraph::createGlobalValueNode(GlobalValue *GV, unsigned BitWidth
   // Basic information of current value.
   std::string Name = GV->getName();
 
-  DFGNode *Node = createDFGNode(Name, GV, NULL, NULL, DFGNode::GlobalVal, BitWidth);
+  DFGNode *Node = createDFGNode(Name, GV, NULL, NULL,
+                                DFGNode::GlobalVal, BitWidth, false);
 
   return Node;
 }
@@ -302,7 +312,8 @@ DFGNode *DataFlowGraph::createUndefValueNode(UndefValue *UV, unsigned BitWidth) 
   // Basic information of current value.
   std::string Name = UV->getName();
 
-  DFGNode *Node = createDFGNode(Name, UV, NULL, NULL, DFGNode::UndefVal, BitWidth);
+  DFGNode *Node = createDFGNode(Name, UV, NULL, NULL,
+                                DFGNode::UndefVal, BitWidth, false);
 
   return Node;
 }
@@ -311,7 +322,8 @@ DFGNode *DataFlowGraph::createArgumentNode(Argument *Arg, unsigned BitWidth) {
   // Basic information of current value.
   std::string Name = Arg->getName();
 
-  DFGNode *Node = createDFGNode(Name, Arg, NULL, NULL, DFGNode::Argument, BitWidth);
+  DFGNode *Node = createDFGNode(Name, Arg, NULL, NULL,
+                                DFGNode::Argument, BitWidth, false);
 
   return Node;
 }

@@ -32,7 +32,7 @@ typedef std::pair<std::string, std::pair<unsigned, ATAndWidthType> > MatrixRowIn
 typedef std::pair<std::pair<unsigned, float>, float> GPCPerformanceType;
 
 static unsigned Component_NUM = 0;
-static bool sortMatrixByArrivalTime = true;
+static bool sortMatrixByArrivalTime = false;
 static bool enableBitMaskOpt = true;
 static bool useGPCWithCarryChain = false;
 static bool useSepcialGPC = false;
@@ -136,7 +136,8 @@ struct SIRMOAOpt : public SIRPass {
   std::vector<Value *> OptimizeOperands(std::vector<Value *> Operands,
                                         Value *MOA, unsigned BitWidth);
 
-  void generateHybridTreeForMOA(IntrinsicInst *MOA, raw_fd_ostream &Output);
+  void generateHybridTreeForMOA(IntrinsicInst *MOA, raw_fd_ostream &Output,
+                                raw_fd_ostream &CTOutput);
   void generateHybridTrees();
 
   void collectMOAOps(IntrinsicInst *MOA);
@@ -147,7 +148,7 @@ struct SIRMOAOpt : public SIRPass {
                                    unsigned ColNum, float ArrivalTime,
                                    unsigned Stage, BitMask Mask);
   MatrixType createDotMatrix(std::vector<Value *> Operands,
-                             unsigned RowNum, unsigned ColNum);
+                             unsigned RowNum, unsigned ColNum, raw_fd_ostream &CTOutput);
   MatrixType sumAllSignBitsInMatrix(MatrixType Matrix,
                                     unsigned RowNum, unsigned ColNum);
 
@@ -394,6 +395,7 @@ float SIRMOAOpt::getCritialPathDelay(DFGNode *Node) {
   }
 
   case llvm::DFGNode::LogicOperationChain: {
+    errs() << "LOC occured!\n";
     unsigned OperandNum = Node->parent_size();
 
     unsigned LogicLevels = LogCeiling(OperandNum, VFUs::MaxLutSize);
@@ -441,16 +443,28 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
   // Arrival times from different source
   std::map<DFGNode *, float> ArrivalTimes;
 
-  typedef DFGNode::iterator iterator;
-  std::vector<std::pair<DFGNode *, iterator> > VisitStack;
+  typedef DFGNode::iterator node_iterator;
+  std::vector<std::pair<DFGNode *, node_iterator> > VisitStack;
   VisitStack.push_back(std::make_pair(Node, Node->parent_begin()));
 
   // Initialize a arrival time.
   float ArrivalTime = getCritialPathDelay(Node);
 
+  SM->indexKeepVal(Node->getValue());
+  if (Node->getType() == DFGNode::LogicOperationChain) {
+
+    std::vector<DFGNode *> Operations = DFG->getOperations(Node);
+
+    for (unsigned i = 0; i < Operations.size(); ++i) {
+      DFGNode *Operation = Operations[i];
+
+      SM->indexKeepVal(Operation->getValue());
+    }
+  }
+
   while (!VisitStack.empty()) {
     DFGNode *CurNode = VisitStack.back().first;
-    iterator &It = VisitStack.back().second;
+    node_iterator &It = VisitStack.back().second;
 
     // We have visited all children of current node.
     if (It == CurNode->parent_end()) {
@@ -467,6 +481,15 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
     ++It;
 
     SM->indexKeepVal(ParentNode->getValue());
+    if (ParentNode->getType() == DFGNode::LogicOperationChain) {
+      std::vector<DFGNode *> Operations = DFG->getOperations(ParentNode);
+
+      for (unsigned i = 0; i < Operations.size(); ++i) {
+        DFGNode *Operation = Operations[i];
+
+        SM->indexKeepVal(Operation->getValue());
+      }
+    }
 
     // If we reach the sequential node, then record the arrival time.
     if (ParentNode->isSequentialNode()) {
@@ -618,7 +641,8 @@ MatrixRowType SIRMOAOpt::createDotMatrixRow(std::string OpName, unsigned OpWidth
 }
 
 MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
-                                      unsigned RowNum, unsigned ColNum) {
+                                      unsigned RowNum, unsigned ColNum,
+                                      raw_fd_ostream &CTOutput) {
   MatrixType Matrix;
 
   // Initial a empty matrix first.
@@ -712,6 +736,58 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
     }
   }
 
+  for (unsigned i = 0; i < Operands.size(); ++i) {
+    Value *Operand = Operands[i];
+    unsigned Width = TD->getTypeSizeInBits(Operand->getType());
+    std::string OperandName = "operand_" + utostr_32(i);
+
+    if (ConstantInt *CI = dyn_cast<ConstantInt>(Operand)) {
+      CTOutput << ";\n";
+      continue;
+    }
+    else {
+      DFGNode *OpNode = SM->getDFGNodeOfVal(Operand);
+      assert(OpNode && "DFG node not created?");
+      BitMask Mask = SM->getBitMask(OpNode);
+
+      unsigned LeadingSigns = Mask.countLeadingSigns();
+      if (LeadingSigns == Width) {
+        CTOutput << "{" << LeadingSigns << "{" << OperandName << "[" + utostr_32(Width - 1) + "]" << "}}";
+      }
+      else if (LeadingSigns != 0 && LeadingSigns != Width) {
+        CTOutput << "{" << LeadingSigns << "{" << OperandName << "[" + utostr_32(Width - 1) + "]" << "}";
+        CTOutput << ", " << OperandName << "[" + utostr_32(Width - 1 - LeadingSigns) + ":0]}";
+      }
+      else
+        CTOutput << OperandName;
+
+      CTOutput << " & ";
+
+      CTOutput << utostr_32(Width) << "\'b";
+      for (unsigned j = 0; j < Width; ++j) {
+        if (Mask.isZeroKnownAt(Width - 1 - j)) {
+          CTOutput << "0";
+        }
+        else
+          CTOutput << "1";
+      }
+
+      CTOutput << " | ";
+
+      CTOutput << utostr_32(Width) << "\'b";
+      for (unsigned j = 0; j < Width; ++j) {
+        if (Mask.isOneKnownAt(Width - 1 - j)) {
+          CTOutput << "1";
+        }
+        else
+          CTOutput << "0";
+      }
+    }
+
+    CTOutput << ";\n";
+  }
+  CTOutput << "\n\n";
+
   return Matrix;
 }
 
@@ -726,7 +802,8 @@ SIRMOAOpt::OptimizeOperands(std::vector<Value *> Operands,
 }
 
 void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
-                                         raw_fd_ostream &Output) {
+                                         raw_fd_ostream &Output,
+                                         raw_fd_ostream &CTOutput) {
   // Get all the operands of MOA.
   std::vector<Value *> Operands = MOA2Ops[MOA];
 
@@ -749,7 +826,7 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
   errs() << "Synthesize compressor tree for " << MatrixName << "......\n";
 
   MatrixType
-    Matrix = createDotMatrix(OptOperands, MatrixRowNum, MatrixColNum);
+    Matrix = createDotMatrix(OptOperands, MatrixRowNum, MatrixColNum, CTOutput);
 
   DebugOutput << "---------- Matrix for " << MatrixName << " ------------\n";
   printTMatrixForDebug(Matrix);
@@ -784,9 +861,14 @@ void SIRMOAOpt::generateHybridTrees() {
   std::string Error;
   raw_fd_ostream Output(CompressorOutputPath.c_str(), Error);
 
+  // Generate bitmask top module for compressor tree module.
+  std::string CompressorBitMaskPath = LuaI::GetString("CompressorBitMask");
+  std::string CTError;
+  raw_fd_ostream CTOutput(CompressorBitMaskPath.c_str(), CTError);
+
   // Generate hybrid tree for each multi-operand adder.
   for (iterator I = MOAs.begin(), E = MOAs.end(); I != E; ++I) {
-    generateHybridTreeForMOA(*I, Output);
+    generateHybridTreeForMOA(*I, Output, CTOutput);
   }
 
   // Print the compress component modules.

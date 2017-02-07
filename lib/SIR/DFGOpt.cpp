@@ -32,7 +32,7 @@ struct DFGOpt : public SIRPass {
 
   bool runOnSIR(SIR &SM);
 
-  //void shrinkOperatorStrength();
+  void shrinkOperatorStrength();
 
   void mergeLogicOperations();
   std::vector<DFGNode *> collectMergeRootNodes();
@@ -69,88 +69,95 @@ bool DFGOpt::runOnSIR(SIR &SM) {
   DFGBuild &DB = getAnalysis<DFGBuild>();
   this->DFG = DB.getDFG();
 
-  //shrinkOperatorStrength();
+  shrinkOperatorStrength();
   mergeLogicOperations();
 
   return false;
 }
 
-// void DFGOpt::shrinkOperatorStrength() {
-//   /// Eliminate the unnecessary nodes according to BitMask.
-//   typedef DataFlowGraph::node_iterator node_iterator;
-//   for (node_iterator NI = DFG->begin(), NE = DFG->end(); NI != NE; ++NI) {
-//     DFGNode *Node = NI;
-// 
-//     // Ignore the virtual Entry/Exit node.
-//     if (Node->isEntryOrExit() || Node->getType() == DFGNode::Ret)
-//       continue;
-// 
-//     DFGNode::NodeType Ty = Node->getType();
-//     unsigned BitWidth = Node->getBitWidth();
-//     Value *Val = Node->getValue();
-//     BitMask Mask;
-// 
-//     if (SM->hasBitMask(Node))
-//       Mask = SM->getBitMask(Node);
-//     else if (Node->getType() == DFGNode::Argument ||
-//              Node->getType() == DFGNode::UndefVal)
-//       Mask = BitMask(BitWidth);
-//     else
-//       Mask = SM->getBitMask(Val);
-// 
-//     // Get the mask of its parent nodes.
-//     std::vector<BitMask> ParentMasks;
-//     typedef DFGNode::iterator parent_iterator;
-//     for (parent_iterator PI = Node->parent_begin(), PE = Node->parent_end();
-//          PI != PE; ++PI) {
-//       DFGNode *ParentNode = *PI;
-// 
-//       if (ParentNode->isEntryOrExit())
-//         continue;
-// 
-//       BitMask ParentMask = SM->getBitMask(ParentNode);
-//       ParentMasks.push_back(ParentMask);
-//     }
-// 
-//     // If the value of current node is already known as a constant, then
-//     // we can create a ConstantInt DFG node to replace it.
-//     if (Mask.isAllBitKnown() && Node->getType() != DFGNode::ConstantInt) {
-//       APInt CI = Mask.getKnownOnes();
-// 
-//       DFGNode *CINode = DFG->createConstantIntNode(CI.getZExtValue(), BitWidth);
-//       Node->replaceAllUseWith(CINode);
-//     }    
-// 
-//     // If the node type is And or Or, then this node can be eliminated
-//     // when each bit can be computed without any logic levels.
-//     if (Ty == DFGNode::And || Ty == DFGNode::Or) {
-//       bool CanBeEliminated = true;
-// 
-//       for (unsigned i = 0; i < BitWidth; ++i) {
-//         unsigned UnKnown = 0;
-//         for (unsigned j = 0; j < ParentMasks.size(); ++j) {
-//           BitMask ParentMask = ParentMasks[j];
-// 
-//           if (!ParentMask.isBitKnownAt(i))
-//             ++UnKnown;
-//         }
-// 
-//         if (UnKnown > 1)
-//           CanBeEliminated = false;
-//       }
-// 
-//       if (CanBeEliminated) {
-//         std::string BMNodeName = "BM_" + Node->getName();
-//         DFGNode *BMNode = DFG->createDFGNode(BMNodeName, NULL, Node->getParentBB(),
-//                                              DFGNode::BitManipulate, BitWidth);
-//         SM->IndexNode2BitMask(BMNode, Mask);
-// 
-//         Node->replaceAllWith(BMNode);
-//         DFG->indexReplaceNode(Node, BMNode);
-//       }
-//     }
-//   }
-// }
+void DFGOpt::shrinkOperatorStrength() {
+  /// Eliminate the unnecessary nodes.
+  typedef DataFlowGraph::node_iterator node_iterator;
+  for (node_iterator NI = DFG->begin(), NE = DFG->end(); NI != NE; ++NI) {
+    DFGNode *Node = NI;
+
+    // Ignore the virtual Entry/Exit node.
+    if (Node->isEntryOrExit() || Node->getType() == DFGNode::Ret)
+      continue;
+
+    DFGNode::NodeType Ty = Node->getType();
+    unsigned BitWidth = Node->getBitWidth();
+    Value *Val = Node->getValue();
+    BitMask Mask = SM->getBitMask(Node);
+
+    if (Ty == DFGNode::And || Ty == DFGNode::Or) {
+      assert(Node->parent_size() == 2 && "Unexpected node type!");
+
+      std::vector<DFGNode *> Parents;
+      std::vector<BitMask> ParentMasks;
+      typedef DFGNode::iterator parent_iterator;
+      for (parent_iterator PI = Node->parent_begin(), PE = Node->parent_end();
+           PI != PE; ++PI) {
+        DFGNode *ParentNode = *PI;
+
+        Parents.push_back(ParentNode);
+
+        BitMask ParentMask = SM->getBitMask(ParentNode);
+        ParentMasks.push_back(ParentMask);
+      }
+
+      assert(ParentMasks.size() == 2 && "Unexpected mask number!");
+
+      BitMask LHSMask = ParentMasks[0];
+      BitMask RHSMask = ParentMasks[1];
+
+      assert(BitWidth == LHSMask.getMaskWidth() && BitWidth == RHSMask.getMaskWidth()
+             && "BitWidth not matches!");
+
+      bool CanBeEliminated = true;
+      for (unsigned i = 0; i < BitWidth; ++i) {
+        if (!LHSMask.isBitKnownAt(i) && !RHSMask.isBitKnownAt(i)) {
+          CanBeEliminated = false;
+          break;
+        }
+      }
+
+      // If can be eliminated, then create a bit manipulate DFG node to replace the
+      // origin node.
+      if (CanBeEliminated) {
+        std::string BMName = "BM_" + Node->getName();
+        DFGNode *BMNode
+          = DFG->createDFGNode(BMName, Node->getValue(), NULL, Node->getParentBB(),
+                               DFGNode::BitManipulate, BitWidth, true);
+
+        // Index the bitmask to the new created LOC node.
+        SM->IndexNode2BitMask(BMNode, Mask);
+
+        /// Create dependencies for BM DFG node.
+        // The parents of BM DFG node
+        for (unsigned i = 0; i < Parents.size(); ++i) {
+          DFGNode *ParentNode = Parents[i];
+
+          DFG->createDependency(ParentNode, BMNode);
+          DFG->removeDependency(ParentNode, Node);
+        }
+        // The children of LOC DFG node
+        std::vector<DFGNode *> Childs;
+        typedef DFGNode::iterator child_iterator;
+        for (child_iterator CI = Node->child_begin(), CE = Node->child_end();
+             CI != CE; ++CI) {
+          DFGNode *ChildNode = *CI;
+          Childs.push_back(ChildNode);
+        }
+
+        for (unsigned i = 0; i < Childs.size(); ++i) {
+          DFGNode *ChildNode = Childs[i];
+          DFG->replaceDepSrc(ChildNode, Node, BMNode);
+        }
+      }
+    }
+  }
+}
 
 void DFGOpt::mergeLogicOperations() {
   // Collect the potential root of logic operations to be merged.
@@ -294,18 +301,25 @@ void DFGOpt::traverseFromRootNode(DFGNode *RootNode) {
 
 DFGNode *DFGOpt::LOCBuild(DFGNode *RootNode) {
   // Get the operations and operands of LOC.
-  std::vector<DFGNode *> Operations = DFG->getOperationsOfLOC(RootNode);
-  std::vector<DFGNode *> Operands = DFG->getOperandsOfLOC(RootNode);
+  std::vector<DFGNode *> Operations = DFG->getOperationsOfLOCRoot(RootNode);
+  std::vector<DFGNode *> Operands = DFG->getOperandsOfLOCRoot(RootNode);
 
   // Create a DFG node represent the LOC.
   std::string LOCName = "LOC_" + RootNode->getName();
   unsigned LOCBitWidth = RootNode->getBitWidth();
   DFGNode *LOCNode
-    = DFG->createDFGNode(LOCName, NULL, NULL, RootNode->getParentBB(),
-                         DFGNode::LogicOperationChain, LOCBitWidth);
+    = DFG->createDFGNode(LOCName, RootNode->getValue(), NULL, RootNode->getParentBB(),
+                         DFGNode::LogicOperationChain, LOCBitWidth, true);
 
   // Index the root and the LOC node.
   DFG->indexRootOfLOC(RootNode, LOCNode);
+
+  // Index the operations and the LOC node.
+  DFG->indexOperationsOfLOC(LOCNode, Operations);
+
+  // Index the bitmask to the new created LOC node.
+  BitMask Mask = SM->getBitMask(RootNode);
+  SM->IndexNode2BitMask(LOCNode, Mask);
 
   /// Create dependencies for LOC DFG node.
   // The parents of LOC DFG node

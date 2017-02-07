@@ -951,8 +951,10 @@ private:
   DFGNodeListTy DFGNodeList;
   // The logic operation chains
   LOCType LOC;
-  // The map between Root and the LOC DFG node we creat
+  // The map between Root and the LOC node we creat
   std::map<DFGNode *, DFGNode *> RootOfLOC;
+  // The map between Operation nodes and the LOC node we creat
+  std::map<DFGNode *, std::vector<DFGNode *> > OperationsOfLOC;
 
   std::map<DFGNode *, DFGNode *> ReplacedNodes;
 
@@ -978,7 +980,8 @@ public:
   void topologicalSortNodes();
 
   DFGNode *createDFGNode(std::string Name, Value *Val, uint64_t ConstantVal,
-                         BasicBlock *BB, DFGNode::NodeType Ty, unsigned BitWidth);
+                         BasicBlock *BB, DFGNode::NodeType Ty, unsigned BitWidth,
+                         bool ToReplace);
 
   DFGNode *createDataPathNode(Instruction *Inst, unsigned BitWidth);
   DFGNode *createConstantIntNode(uint64_t Val, unsigned BitWidth);
@@ -992,12 +995,12 @@ public:
 
   void replaceDepSrc(DFGNode *Dst, DFGNode *OldSrc, DFGNode *NewSrc);
 
-  std::vector<DFGNode *> getOperationsOfLOC(DFGNode *RootNode) {
+  std::vector<DFGNode *> getOperationsOfLOCRoot(DFGNode *RootNode) {
     assert(LOC.count(RootNode) && "LOC not existed!");
 
     return LOC[RootNode].first;
   }
-  std::vector<DFGNode *> getOperandsOfLOC(DFGNode *RootNode) {
+  std::vector<DFGNode *> getOperandsOfLOCRoot(DFGNode *RootNode) {
     assert(LOC.count(RootNode) && "LOC not existed!");
 
     return LOC[RootNode].second;
@@ -1022,6 +1025,18 @@ public:
 
     RootOfLOC.insert(std::make_pair(RootNode, LOCNode));
   }
+
+  std::vector<DFGNode *> getOperations(DFGNode *LOCNode) {
+    assert(OperationsOfLOC.count(LOCNode) && "Not existed!");
+
+    return OperationsOfLOC[LOCNode];
+  }
+  void indexOperationsOfLOC(DFGNode *LOCNode, std::vector<DFGNode *> Operations) {
+    assert(!OperationsOfLOC.count(LOCNode) && "Already existed!");
+
+    OperationsOfLOC.insert(std::make_pair(LOCNode, Operations));
+  }
+
 
   typedef DFGNodeListTy::iterator node_iterator;
   typedef DFGNodeListTy::const_iterator const_node_iterator;
@@ -1587,6 +1602,11 @@ public:
     assert(!DFGNodeOfVal.count(Val) && "Already existed!");
 
     DFGNodeOfVal.insert(std::make_pair(Val, Node));
+  }
+  void replaceDFGNodeOfVal(Value *Val, DFGNode *Node) {
+    assert(DFGNodeOfVal.count(Val) && "Not existed!");
+
+    DFGNodeOfVal[Val] = Node;
   }
   DFGNode *getDFGNodeOfVal(Value *Val) {
     assert(DFGNodeOfVal.count(Val) && "Not existed!");
