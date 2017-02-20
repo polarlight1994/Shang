@@ -32,7 +32,7 @@ typedef std::pair<std::string, std::pair<unsigned, ATAndWidthType> > MatrixRowIn
 typedef std::pair<std::pair<unsigned, float>, float> GPCPerformanceType;
 
 static unsigned Component_NUM = 0;
-static bool sortMatrixByArrivalTime = false;
+static bool sortMatrixByArrivalTime = true;
 static bool enableBitMaskOpt = true;
 static bool useGPCWithCarryChain = false;
 static bool useSepcialGPC = false;
@@ -640,6 +640,51 @@ MatrixRowType SIRMOAOpt::createDotMatrixRow(std::string OpName, unsigned OpWidth
   return Row;
 }
 
+// This function is used to create matrix which can be synthesized into compressor tree
+// for experiment purpose. The synthesized compressor tree has nothing to do with the
+// HLS target C-program.
+MatrixType createExperimentDotMatrix() {
+  const unsigned RowNum = 12;
+  const unsigned ColNum = 16;
+
+  int Masks[RowNum][ColNum] =
+  { { 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2 }
+   };
+
+  MatrixType Matrix;
+  for (unsigned i = 0; i < RowNum; ++i) {
+    MatrixRowType Row;
+
+    for (unsigned j = 0; j < ColNum; ++j) {
+      std::string Name;
+      if (Masks[i][j] == 0)
+        Name = "1'b0";
+      else if (Masks[i][j] == 1)
+        Name = "1'b1";
+      else
+        Name = "operand_" + utostr_32(i) + "[" + utostr_32(j) + "]";
+
+      Row.push_back(std::make_pair(Name, std::make_pair(0.0f, 0)));
+    }
+
+    Matrix.push_back(Row);
+  }
+
+  return Matrix;
+}
+
+
 MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
                                       unsigned RowNum, unsigned ColNum,
                                       raw_fd_ostream &CTOutput) {
@@ -825,6 +870,8 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
 
   errs() << "Synthesize compressor tree for " << MatrixName << "......\n";
 
+//   MatrixType
+//     Matrix = createExperimentDotMatrix();
   MatrixType
     Matrix = createDotMatrix(OptOperands, MatrixRowNum, MatrixColNum, CTOutput);
 
@@ -832,6 +879,7 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
   printTMatrixForDebug(Matrix);
 
   hybridTreeCodegen(Matrix, MatrixName, MatrixRowNum, MatrixColNum, Output);
+  //hybridTreeCodegen(Matrix, MatrixName, 12, 16, Output);
 }
 
 void SIRMOAOpt::generateHybridTrees() {

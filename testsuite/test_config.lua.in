@@ -22,6 +22,7 @@ Chain = [[@DEBUG_Chain@]]
 DotMatrix = [[@DEBUG_DotMatrix@]]
 DSDotMatrix = [[@DEBUG_DSDotMatrix@]]
 ValValidTime = [[@DEBUG_ValidTime@]]
+CompressorBitMask = [[@DEBUG_CTMask@]]
 
 CounterFile = [[@CycleCounter@]]
 

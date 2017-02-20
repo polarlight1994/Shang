@@ -78,6 +78,7 @@ macro(add_synthesis_test test_name)
 	set(DEBUG_Chain			"${TEST_BINARY_ROOT}/${TEST}.chain")
 	set(DEBUG_DotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.dotmatrix")
 	set(DEBUG_ValidTime		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.validtime")
+  set(DEBUG_CTMask		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.ctmask")
 	
 	set(enableCoSimulation false)
 
@@ -176,6 +177,7 @@ macro(add_cosimulation_test test_name)
 	set(DEBUG_DotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.dotmatrixs")
 	set(DEBUG_DSDotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}_delay_stage.dotmatrixs")
 	set(DEBUG_ValidTime		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.validtime")
+  set(DEBUG_CTMask		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.ctmask")
 	
 	set(enableCoSimulation true)
 
@@ -322,6 +324,7 @@ macro(add_high_level_synthesis test_name)
 	set(DEBUG_DotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.dotmatrixs")
 	set(DEBUG_DSDotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}_delay_stage.dotmatrixs")
 	set(DEBUG_ValidTime		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.validtime")
+  set(DEBUG_CTMask		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.ctmask")
 
 	set(enableCoSimulation false)
 
