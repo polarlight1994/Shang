@@ -36,9 +36,44 @@ static bool sortMatrixByArrivalTime = true;
 static bool enableBitMaskOpt = true;
 static bool useGPCWithCarryChain = false;
 static bool useSepcialGPC = false;
-static bool sumFirstRowsByAdder = false;
+static bool sumFirstRowsByAdder = true;
 
 namespace {
+// The dot in dot matrix which represents the multi-operand adder
+struct MatrixDot {
+  // The name of dot
+  std::string Name;
+  // The arrival time of the value represented by the dot
+  float ArrivalTime;
+  // The GPC level of the dot
+  unsigned Level;
+
+  // If the dot is coming from the booth radix-4 coding of multiplication.
+  bool IsMulDot;
+  // The bits which involved in the booth radix-4 coding of current dot.
+  std::vector<std::string> BoothCodingElements;
+
+  MatrixDot(std::string Name, float ArrivalTime, unsigned Level,
+            bool IsMulDot, std::vector<std::string> BoothCodingElements)
+    : Name(Name), ArrivalTime(ArrivalTime), Level(Level), IsMulDot(IsMulDot),
+      BoothCodingElements(BoothCodingElements) {
+    if (!IsMulDot)
+      assert(BoothCodingElements.empty() && "Unexpected booth coding elements!");
+    else
+      assert(BoothCodingElements.size() == 5
+             && "Unexpected size of booth coding elements!");
+  }
+
+  std::string getName() { return Name; }
+  float getArrivalTime() { return ArrivalTime; }
+  unsigned getLevel() { return Level; }
+
+  bool isMulDot() { return IsMulDot; }
+  std::vector<std::string> getCodingElements() {
+    return BoothCodingElements;
+  }
+};
+
 struct SIRMOAOpt : public SIRPass {
   static char ID;
   DataLayout *TD;
@@ -143,7 +178,9 @@ struct SIRMOAOpt : public SIRPass {
   void collectMOAOps(IntrinsicInst *MOA);
   void collectMOAs();
 
-  
+  MatrixDot *createNormalMatrixDot(std::string Name, float ArrivalTime, unsigned Level);
+  MatrixDot *createMulMatrixDot(std::string Name, float ArrivalTime, unsigned Level,
+                                std::vector<std::string> BoothCodingElements);
   MatrixRowType createDotMatrixRow(std::string OpName, unsigned OpWidth,
                                    unsigned ColNum, float ArrivalTime,
                                    unsigned Stage, BitMask Mask);
@@ -395,7 +432,6 @@ float SIRMOAOpt::getCritialPathDelay(DFGNode *Node) {
   }
 
   case llvm::DFGNode::LogicOperationChain: {
-    errs() << "LOC occured!\n";
     unsigned OperandNum = Node->parent_size();
 
     unsigned LogicLevels = LogCeiling(OperandNum, VFUs::MaxLutSize);
@@ -644,22 +680,22 @@ MatrixRowType SIRMOAOpt::createDotMatrixRow(std::string OpName, unsigned OpWidth
 // for experiment purpose. The synthesized compressor tree has nothing to do with the
 // HLS target C-program.
 MatrixType createExperimentDotMatrix() {
-  const unsigned RowNum = 12;
+  const unsigned RowNum = 8;
   const unsigned ColNum = 16;
 
   int Masks[RowNum][ColNum] =
-  { { 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2 }
+  { { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 1, 0 },
+    { 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0 },
+    { 0, 0, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0 },
+    { 0, 0, 0, 0, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
+    { 0, 0, 0, 0, 0, 0, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2 },
+    { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
+    { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
+    { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 }
+//     { 2, 0, 2, 0, 2, 0, 2, 0, 0, 2, 0, 0, 0, 0, 0, 0 }
+//     { 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0 },
+//     { 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0 },
+//     { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2 }
    };
 
   MatrixType Matrix;
@@ -684,6 +720,21 @@ MatrixType createExperimentDotMatrix() {
   return Matrix;
 }
 
+MatrixDot *SIRMOAOpt::createNormalMatrixDot(std::string Name, float ArrivalTime,
+                                           unsigned Level) {
+  MatrixDot *Dot = new MatrixDot(Name, ArrivalTime, Level, false, std::vector<std::string>());
+
+  return Dot;
+}
+
+MatrixDot *SIRMOAOpt::createMulMatrixDot(std::string Name, float ArrivalTime,
+                                         unsigned Level,
+                                         std::vector<std::string> BoothCodingElements) {
+  MatrixDot *MulDot
+    = new MatrixDot(Name, ArrivalTime, Level, true, BoothCodingElements);
+
+  return MulDot;
+}
 
 MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
                                       unsigned RowNum, unsigned ColNum,
@@ -879,7 +930,7 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
   printTMatrixForDebug(Matrix);
 
   hybridTreeCodegen(Matrix, MatrixName, MatrixRowNum, MatrixColNum, Output);
-  //hybridTreeCodegen(Matrix, MatrixName, 12, 16, Output);
+  //hybridTreeCodegen(Matrix, MatrixName, 8, 16, Output);
 }
 
 void SIRMOAOpt::generateHybridTrees() {
@@ -1050,10 +1101,14 @@ void SIRMOAOpt::collectMOAOps(IntrinsicInst *MOA) {
       for (unsigned i = 0; i < Adder->getNumOperands() - 1; ++i) {
         Value *Operand = Adder->getOperand(i);
 
-        // Ignore the adder instruction itself.
         if (IntrinsicInst *OperandInst = dyn_cast<IntrinsicInst>(Operand)) {
+          // Ignore the adder instruction itself.
           if (AdderSet.count(OperandInst))
             continue;
+
+          // Identify the MAC.
+          if (OperandInst->getIntrinsicID() == Intrinsic::shang_mul)
+            errs() << "MAC found!\n";
         }
 
         Operands.push_back(Operand);
