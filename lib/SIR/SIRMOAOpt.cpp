@@ -20,26 +20,18 @@ using namespace vast;
 
 // Dot name, arrival time and GPC level
 typedef std::pair<std::string, std::pair<float, unsigned> > DotType;
-// Row of Dots
-typedef std::vector<DotType> MatrixRowType;
-// Matrix of multi-Rows
-typedef std::vector<MatrixRowType> MatrixType;
-// Arrival time and valid width of Row.
-typedef std::pair<float, unsigned> ATAndWidthType;
-// Row name, index, arrival time and valid width of Row.
-typedef std::pair<std::string, std::pair<unsigned, ATAndWidthType> > MatrixRowInfoType;
-// Eliminated dot number in current row, compress ratio and delay(negative form) of GPC.
-typedef std::pair<std::pair<unsigned, float>, float> GPCPerformanceType;
 
-static unsigned Component_NUM = 0;
-static bool sortMatrixByArrivalTime = true;
+
+static unsigned GPCNum = 0;
+static bool sortMatrixByArrivalTime = false;
 static bool enableBitMaskOpt = true;
 static bool useGPCWithCarryChain = false;
 static bool useSepcialGPC = false;
-static bool sumFirstRowsByAdder = true;
+static bool sumFirstRowsByAdder = false;
+static unsigned TargetHeight = 3;
 
 namespace {
-// The dot in dot matrix which represents the multi-operand adder
+// The dot in DotMatrix which represents the multi-operand adder
 struct MatrixDot {
   // The name of dot
   std::string Name;
@@ -47,12 +39,12 @@ struct MatrixDot {
   float ArrivalTime;
   // The GPC level of the dot
   unsigned Level;
-
   // If the dot is coming from the booth radix-4 coding of multiplication.
   bool IsMulDot;
   // The bits which involved in the booth radix-4 coding of current dot.
   std::vector<std::string> BoothCodingElements;
 
+  // Default constructor
   MatrixDot(std::string Name, float ArrivalTime, unsigned Level,
             bool IsMulDot, std::vector<std::string> BoothCodingElements)
     : Name(Name), ArrivalTime(ArrivalTime), Level(Level), IsMulDot(IsMulDot),
@@ -63,14 +55,419 @@ struct MatrixDot {
       assert(BoothCodingElements.size() == 5
              && "Unexpected size of booth coding elements!");
   }
+  // Replicate the MatrixDot
+  MatrixDot(MatrixDot *Dot) {
+    this->Name = Dot->getName();
+    this->ArrivalTime = Dot->getArrivalTime();
+    this->Level = Dot->getLevel();
+    this->IsMulDot = Dot->isMulDot();
+    this->BoothCodingElements = Dot->getCodingElements();
+  }
+
+  std::string getName() const { return Name; }
+  float getArrivalTime() const { return ArrivalTime; }
+  unsigned getLevel() const { return Level; }
+
+  bool isZero() const { return Name == "1'b0" || Name == "~1'b0"; }
+  bool isOne() const { return Name == "1'b1"; }
+  bool isMulDot() const { return IsMulDot; }
+  std::vector<std::string> getCodingElements() const {
+    return BoothCodingElements;
+  }
+  bool isSameAs(MatrixDot *Dot) const {
+    return Name == Dot->getName() &&
+           ArrivalTime == Dot->getArrivalTime() &&
+           Level == Dot->getLevel();
+  }
+
+  void setName(std::string NewName) { this->Name = NewName; }
+  void setArrivalTime(float NewArrivalTime) { this->ArrivalTime = NewArrivalTime; }
+  void setLevel(unsigned NewLevel) { this->Level = NewLevel; }
+  void setToZero() {
+    this->Name = "1'b0";
+    this->ArrivalTime = 0.0f;
+    this->Level = 0;
+  }
+  void setToOne() {
+    this->Name = "1'b1";
+    this->ArrivalTime = 0.0f;
+    this->Level = 0;
+  }
+};
+
+// The dot row in DotMatrix
+struct MatrixRow {
+  // The name of row
+  std::string Name;
+  // The dots in row
+  std::vector<MatrixDot *> Dots;
+
+  MatrixRow() : Name(""), Dots(std::vector<MatrixDot *>()) {}
+  MatrixRow(std::string Name) : Name(Name), Dots(std::vector<MatrixDot *>()) {}
+  // Replicate the MatrixRow
+  MatrixRow(MatrixRow *Row) {
+    this->Name = Row->getName();
+
+    for (unsigned i = 0; i < Row->getWidth(); ++i) {
+      MatrixDot *ReplicateDot = new MatrixDot(Row->getDot(i));
+      this->addDot(ReplicateDot);
+    }
+  }
+
+  std::string getName() const { return Name; }
+  unsigned getWidth() const { return Dots.size(); }
+
+  void addDot(MatrixDot *Dot) {
+    Dots.push_back(Dot);
+  }
+  void addZeroDot() {
+    MatrixDot *Zero = new MatrixDot("1'b0", 0.0f, 0, false, std::vector<std::string>());
+
+    Dots.push_back(Zero);
+  }
+  void addOneDot() {
+    MatrixDot *One = new MatrixDot("1'b1", 0.0f, 0, false, std::vector<std::string>());
+
+    Dots.push_back(One);
+  }
+
+  MatrixDot *getDot(unsigned DotIdx) {
+    assert(DotIdx < getWidth() && "Out of range!");
+
+    return Dots[DotIdx];
+  }
+
+  /// Analysis the information about the row.
+
+  bool isConstantInt() {
+    bool IsConstantInt = true;
+
+    for (unsigned i = 0; i < Dots.size(); ++i) {
+      MatrixDot *Dot = getDot(i);
+
+      if (!Dot->isZero() && !Dot->isOne()) {
+        IsConstantInt = false;
+        break;
+      }
+    }
+
+    return IsConstantInt;
+  }
+
+  unsigned countingLeadingZeros() {
+    unsigned Width = getWidth();
+    unsigned LeadingZeros = 0;
+
+    for (unsigned i = 0; i < Width; ++i) {
+      MatrixDot *Dot = Dots[Width - 1 - i];
+
+      if (Dot->isZero())
+        ++LeadingZeros;
+      else
+        break;
+    }
+
+    return LeadingZeros;
+  }
+  unsigned countingLeadingOnes() {
+    unsigned Width = getWidth();
+    unsigned LeadingOnes = 0;
+
+    for (unsigned i = 0; i < Width; ++i) {
+      MatrixDot *Dot = Dots[Width - 1 - i];
+
+      if (Dot->isOne())
+        ++LeadingOnes;
+      else
+        break;
+    }
+
+    return LeadingOnes;
+  }
+  unsigned countingTrailingZeros() {
+    unsigned Width = getWidth();
+    unsigned TrailingZeros = 0;
+
+    for (unsigned i = 0; i < Width; ++i) {
+      MatrixDot *Dot = Dots[i];
+
+      if (Dot->isZero())
+        ++TrailingZeros;
+      else
+        break;
+    }
+
+    return TrailingZeros;
+  }
+  unsigned countingTrailingOnes() {
+    unsigned Width = getWidth();
+    unsigned TrailingOnes = 0;
+
+    for (unsigned i = 0; i < Width; ++i) {
+      MatrixDot *Dot = Dots[i];
+
+      if (Dot->isOne())
+        ++TrailingOnes;
+      else
+        break;
+    }
+
+    return TrailingOnes;
+  }
+
+  unsigned countingLeadingDots() {
+    // If this row is a constant integer.
+    if (isConstantInt())
+      return 1;
+
+    // Extract the most significant dot(MSD).
+    MatrixDot *MSD = getDot(getWidth() - 1);
+
+    // If the MSD is zero or one, then set the result as 1.
+    if (MSD->isZero() || MSD->isOne())
+      return 1;
+
+    // Then traverse the row from MSD to least significant dot(LSD)
+    // and these bits that same as the LeadingDot will be counted in.
+    unsigned LeadingDots = 0;
+    for (unsigned i = 0; i < getWidth(); ++i) {
+      if (getDot(getWidth() - 1 - i)->isSameAs(MSD))
+        ++LeadingDots;
+      else
+        break;
+    }
+
+    return LeadingDots;
+  }
+
+  unsigned getValidWidth() {
+    unsigned Width = getWidth();
+    unsigned LeadingZeros = countingLeadingZeros();
+
+    return Width - LeadingZeros;
+  }
+
+  float getMaxArrivalTime() {
+    float MaxArrivalTime = 0.0f;
+
+    for (unsigned i = 0; i < getWidth(); ++i) {
+      MatrixDot *Dot = getDot(i);
+      MaxArrivalTime = std::max(MaxArrivalTime, Dot->getArrivalTime());
+    }
+
+    return MaxArrivalTime;
+  }
+
+  bool hasSameArrivalTime() {
+    float MaxArrivalTime = getMaxArrivalTime();
+
+    for (unsigned i = 0; i < getWidth(); ++i) {
+      MatrixDot *Dot = getDot(i);
+      float ArrivalTime = Dot->getArrivalTime();
+
+      if (ArrivalTime != MaxArrivalTime && ArrivalTime != 0.0f)
+        return false;
+    }
+
+    return true;
+  }
+
+  // Sort the dots in row according to the algorithm settings.
+  static bool dotCompare(const MatrixDot *DotA, const MatrixDot *DotB) {
+    unsigned DotAStage = DotA->getLevel();
+    unsigned DotBStage = DotB->getLevel();
+    float DotADelay = DotA->getArrivalTime();
+    float DotBDelay = DotB->getArrivalTime();
+
+    if (sortMatrixByArrivalTime) {
+      if (DotAStage < DotBStage)
+        return true;
+      else if (DotAStage > DotBStage)
+        return false;
+      else {
+        if (DotADelay < DotBDelay)
+          return true;
+        else
+          return false;
+      }
+    }
+    else {
+      if (DotAStage < DotBStage)
+        return true;
+      else
+        return false;
+    }
+  }
+};
+
+// The DotMatrix
+struct DotMatrix {
+  // The name of DotMatrix
+  std::string Name;
+  // The rows of DotMatrix
+  std::vector<MatrixRow *> Rows;
+
+  DotMatrix()
+    : Name(""), Rows(std::vector<MatrixRow *>()) {}
+  DotMatrix(std::string Name)
+    : Name(Name), Rows(std::vector<MatrixRow *>()) {}
+  // Replicate constructor
+  DotMatrix(DotMatrix *DM) {
+    this->Name = DM->getName();
+    
+    for (unsigned i = 0; i < DM->getRowNum(); ++i) {
+      MatrixRow *ReplicateRow = new MatrixRow(DM->getRow(i));
+      this->addRow(ReplicateRow);
+    }
+  }
+
+  std::string getName() const { return Name; }
+  unsigned getRowNum() const { return Rows.size(); }
+  bool isInerratic() const {
+    unsigned RowNum = getRowNum();
+    
+    // If this is an empty DotMatrix, it is inerratic of course.
+    if (RowNum == 0)
+      return true;
+
+    unsigned ExpectedColNum = Rows[0]->getWidth();
+    for (unsigned i = 1; i < RowNum; ++i) {
+      if (Rows[i]->getWidth() != ExpectedColNum)
+        return false;
+    }
+
+    return true;
+  }
+  // To be noted that, only inerratic DotMatrix can call this method.
+  unsigned getColNum() const {
+    assert(isInerratic() && "Only inerratic DotMatrix has a fixed column number!");
+    assert(Rows.size() && "Unexpected empty DotMatrix!");
+
+    return Rows[0]->getWidth();
+  }
+
+  void addRow(MatrixRow *Row) {
+    Rows.push_back(Row);
+  }
+
+  MatrixRow *getRow(unsigned RowIdx) {
+    assert(RowIdx < getRowNum() && "Out of range!");
+
+    return Rows[RowIdx];
+  }
+
+  std::vector<unsigned> getNonZeroDotNumList() {
+    std::vector<unsigned> NZDotNumList;
+
+    for (unsigned i = 0; i < getRowNum(); ++i) {
+      MatrixRow *Row = getRow(i);
+
+      // If there are no dot in current row.
+      if (Row->getWidth() == 0) {
+        NZDotNumList.push_back(0);
+        continue;
+      }
+
+      unsigned NZDotNum = 0;
+      for (unsigned j = 0; j < Row->getWidth(); ++j) {
+        if (!Row->getDot(j)->isZero())
+          ++NZDotNum;
+      }
+
+      NZDotNumList.push_back(NZDotNum);
+    }
+
+    return NZDotNumList;
+  }
+  std::vector<unsigned> getActiveNZDotNumList(unsigned Level) {
+    std::vector<unsigned> ActiveNZDotNumList;
+
+    for (unsigned i = 0; i < getRowNum(); ++i) {
+      MatrixRow *Row = getRow(i);
+
+      // If there are no dot in current row.
+      if (Row->getWidth() == 0) {
+        ActiveNZDotNumList.push_back(0);
+        continue;
+      }
+
+      unsigned ActiveNZDotNum = 0;
+      for (unsigned j = 0; j < Row->getWidth(); ++j) {
+        MatrixDot *Dot = Row->getDot(j);
+        if (!Dot->isZero() && Dot->getLevel() <= Level)
+          ++ActiveNZDotNum;
+      }
+
+      ActiveNZDotNumList.push_back(ActiveNZDotNum);
+    }
+
+    return ActiveNZDotNumList;
+  }
+};
+
+// Idx, arrival time, dot start point and valid width of row in MulDM.
+typedef std::pair<unsigned,
+  std::pair<float, std::pair<unsigned, unsigned> > > MulDMInfoTy;
+
+// Eliminated dot number in current row, compress ratio and delay(negative form) of GPC.
+typedef std::pair<std::pair<unsigned, float>, float> PerfType;
+
+// The compress component
+class CompressComponent {
+public:
+  enum Type {
+    GPC,
+    GPCWithExtraOne,
+    AddChain
+  };
+
+private:
+  Type T;
+  std::string Name;
+
+  // Input dots & Output dots.
+  std::vector<unsigned> InputDotNums;
+  unsigned OutputDotNum;
+
+  // Area cost in FPGA
+  unsigned Area;
+  // Delay cost in FPGA
+  float CriticalDelay;
+
+public:
+  // Default constructor
+  CompressComponent(Type T, std::string Name, std::vector<unsigned> InputDotNums,
+                    unsigned OutputDotNum, unsigned Area, float CriticalDelay)
+    : T(T), Name(Name), InputDotNums(InputDotNums), OutputDotNum(OutputDotNum),
+      Area(Area), CriticalDelay(CriticalDelay) {}
 
   std::string getName() { return Name; }
-  float getArrivalTime() { return ArrivalTime; }
-  unsigned getLevel() { return Level; }
+  std::vector<unsigned> getInputDotNums() { return InputDotNums; }
+  unsigned getOutputDotNum() { return OutputDotNum; }
+  float getCriticalDelay() { return CriticalDelay; }
+  unsigned getArea() { return Area; }
+  Type getType() const { return T; }
+};
 
-  bool isMulDot() { return IsMulDot; }
-  std::vector<std::string> getCodingElements() {
-    return BoothCodingElements;
+// Special GPCs built to sum extra 1'b1 without extra area cost.
+class SpecialGPC : public CompressComponent {
+private:
+  unsigned ExtraOneRank;
+
+public:
+  // Default constructor
+  SpecialGPC(std::string Name, std::vector<unsigned> InputDotNums,
+             unsigned OutputDotNum, unsigned Area, float CriticalDelay,
+             unsigned ExtraOneRank)
+    : CompressComponent(GPCWithExtraOne, Name, InputDotNums,
+      OutputDotNum, Area, CriticalDelay), ExtraOneRank(ExtraOneRank) {}
+
+  unsigned getRankOfExtraOne() { return ExtraOneRank; }
+
+  // Methods for support type inquiry through isa, cast and dyn_cast.
+  static inline bool classof(const SpecialGPC *Component) { return true; }
+  static inline bool classof(const CompressComponent *Component) {
+    return Component->getType() == GPCWithExtraOne;
   }
 };
 
@@ -92,69 +489,7 @@ struct SIRMOAOpt : public SIRPass {
   std::map<IntrinsicInst *, IntrinsicInst *> MOA2PseudoHybridTreeInst;
   std::map<IntrinsicInst *, std::vector<Value *> > MOA2Ops;
 
-  std::map<Value *, float> ValArrivalTime;
-
-  // The component to be used to compress the dot matrix.
-  // 1) GPCs
-  // 2) AddChains
-  class CompressComponent {
-  public:
-    enum Type {
-      GPC,
-      GPCWithExtraOne,
-      AddChain
-    };
-
-  private:
-    Type T;
-    std::string Name;
-
-    // Input dots & Output dots.
-    std::vector<unsigned> InputDotNums;
-    unsigned OutputDotNum;
-
-    // Area cost in FPGA
-    unsigned Area;
-    // Delay cost in FPGA
-    float CriticalDelay;
-
-  public:
-    // Default constructor
-    CompressComponent(Type T, std::string Name, std::vector<unsigned> InputDotNums,
-                      unsigned OutputDotNum, unsigned Area, float CriticalDelay)
-      : T(T), Name(Name), InputDotNums(InputDotNums), OutputDotNum(OutputDotNum),
-        Area(Area), CriticalDelay(CriticalDelay) {}
-
-    std::string getName() { return Name; }
-    std::vector<unsigned> getInputDotNums() { return InputDotNums; }
-    unsigned getOutputDotNum() { return OutputDotNum; }
-    float getCriticalDelay() { return CriticalDelay;  }
-    unsigned getArea() { return Area; }
-    Type getType() const { return T; }
-  };
-
-  // Special GPCs built to sum extra 1'b1 without extra area cost.
-  class GPC_with_extra_One : public CompressComponent {
-  private:
-    unsigned ExtraOneRank;
-
-  public:
-    // Default constructor
-    GPC_with_extra_One(std::string Name, std::vector<unsigned> InputDotNums,
-                       unsigned OutputDotNum, unsigned Area, float CriticalDelay,
-                       unsigned ExtraOneRank)
-      : CompressComponent(GPCWithExtraOne, Name, InputDotNums,
-                          OutputDotNum, Area, CriticalDelay),
-      ExtraOneRank(ExtraOneRank) {}
-
-    unsigned getRankOfExtraOne() { return ExtraOneRank; }
-
-    // Methods for support type inquiry through isa, cast and dyn_cast.
-    static inline bool classof(const GPC_with_extra_One *Component) { return true;  }
-    static inline bool classof(const CompressComponent *Component) {
-      return Component->getType() == GPCWithExtraOne;
-    }
-  };
+  std::map<Value *, float> ValArrivalTime;  
 
   // The library of compress components.
   std::vector<CompressComponent *> Library;
@@ -179,36 +514,37 @@ struct SIRMOAOpt : public SIRPass {
   void collectMOAs();
 
   MatrixDot *createNormalMatrixDot(std::string Name, float ArrivalTime, unsigned Level);
+
   MatrixDot *createMulMatrixDot(std::string Name, float ArrivalTime, unsigned Level,
                                 std::vector<std::string> BoothCodingElements);
-  MatrixRowType createDotMatrixRow(std::string OpName, unsigned OpWidth,
-                                   unsigned ColNum, float ArrivalTime,
-                                   unsigned Stage, BitMask Mask);
-  MatrixType createDotMatrix(std::vector<Value *> Operands,
-                             unsigned RowNum, unsigned ColNum, raw_fd_ostream &CTOutput);
-  MatrixType sumAllSignBitsInMatrix(MatrixType Matrix,
-                                    unsigned RowNum, unsigned ColNum);
+  MatrixRow *createMaskedDMRow(std::string Name, unsigned Width, float ArrivalTime,
+                               unsigned Level, BitMask Mask);
+  std::pair<DotMatrix *, DotMatrix *>
+  createDotMatrix(std::vector<Value *> NormalOps,
+                  std::vector<std::pair<Value *, Value *> > MulOps,
+                  unsigned Width, std::string Name, raw_fd_ostream &Output,
+                  raw_fd_ostream &CTOutput);
+  DotMatrix *createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
+                                unsigned Idx, float ArrivalTime, unsigned Width,
+                                raw_fd_ostream &Output);
 
-  MatrixType sumRowsByAdder(MatrixType Matrix, unsigned ColNum, raw_fd_ostream &Output);
+  DotMatrix *preComputing(DotMatrix *DM);
+  DotMatrix *preHandling(DotMatrix *DM, DotMatrix *MulDM);
+
+  void printPCBCC(std::vector<MatrixDot *> OpA, std::vector<MatrixDot *> OpB,
+                  unsigned Idx, raw_fd_ostream &Output);
+
+  DotMatrix *sumRowsByAdder(DotMatrix *DM, raw_fd_ostream &Output);
+  DotMatrix *preComputingByCarryChain(DotMatrix *DM, DotMatrix *MulDM,
+                                      raw_fd_ostream &Output);
 
   float getCritialPathDelay(DFGNode *Node);
   float getOperandArrivalTime(Value *Operand);
 
-  bool isConstantInt(MatrixRowType Row);
-  unsigned getOperandBitWidth(MatrixRowType Row);
-  std::vector<unsigned> getSignBitNumList(MatrixType Matrix);
-  std::vector<unsigned> getActiveBitNumList(MatrixType TMatrix, unsigned Stage);
-  std::vector<unsigned> getOneBitNumList(MatrixType TMatrix);
-  std::vector<unsigned> getBitNumList(MatrixType TMatrix);
-  std::vector<unsigned> getMaxEBitNumList(std::vector<unsigned> ActiveDotNumList);
+  DotMatrix *transportDotMatrix(DotMatrix *DM);
 
-  MatrixType
-    transportMatrix(MatrixType Matrix, unsigned RowNum, unsigned ColumnNum);
-
-  MatrixType simplifyTMatrix(MatrixType TMatrix);
-  MatrixType sortTMatrix(MatrixType TMatrix);
-  MatrixType sumAllOneBitsInTMatrix(MatrixType TMatrix);
-  MatrixType eliminateOneBitInTMatrix(MatrixType TMatrix);
+  DotMatrix *abandonZeroDots(DotMatrix *TDM);
+  DotMatrix *sumOneDots(DotMatrix *DM);
 
   // Initial the GPCs.
   CompressComponent createAddChainComponent(std::string Name, unsigned OpNum,
@@ -218,40 +554,30 @@ struct SIRMOAOpt : public SIRPass {
   void initAddChains();
   void initLibrary();
 
-  std::vector<unsigned> calculateIHs(MatrixType TMatrix, unsigned TargetHeight);
+  std::vector<unsigned> calculateIHs(DotMatrix *TDM);
 
-  MatrixType compressTMatrixUsingComponent(MatrixType TMatrix, unsigned ComponentIdx,
-                                           unsigned RowNo, unsigned Stage,
-                                           unsigned &FinalGPCLevel,
-                                           raw_fd_ostream &Output);
+  DotMatrix *compressTDMUsingGPC(DotMatrix *TDM, unsigned GPCIdx, unsigned RowNo,
+                                 unsigned Level, unsigned &TotalLevels,
+                                 raw_fd_ostream &Output);
 
-  unsigned getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
-                                       unsigned ActiveStage, unsigned IH);
+  unsigned getHighestPriorityGPC(DotMatrix *TDM, unsigned RowNo,
+                                 unsigned Level, unsigned IH);
 
-  MatrixType preCompressTMatrixUsingComponent(MatrixType TMatrix, unsigned ComponentIdx,
-                                              unsigned RowNo, unsigned Stage,
-                                              unsigned &FinalGPCLevel);
-  MatrixType preCompressTMatrixInStage(MatrixType TMatrix, unsigned IH, unsigned ActiveStage,
-                                       unsigned &FinalGPCLevel, unsigned &Area);
-  unsigned preCompressTMatrix(MatrixType TMatrix, std::vector<unsigned> IHs);
+  DotMatrix *compressTDMInLevel(DotMatrix *TDM, unsigned IH, unsigned Level,
+                                unsigned &TotalLevels, unsigned &TotalArea,
+                                raw_fd_ostream &Output);
+  void compressDotMatrix(DotMatrix *DM, raw_fd_ostream &Output);
 
-  MatrixType compressTMatrixInStage(MatrixType TMatrix, unsigned IH,
-                                    unsigned ActiveStage,
-                                    unsigned &FinalGPCLevel, unsigned &Area,
-                                    raw_fd_ostream &Output);
-  void compressMatrix(MatrixType TMatrix, std::string MatrixName,
-                      unsigned OperandNum, unsigned OperandWidth, raw_fd_ostream &Output);
-
-  void hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
-                         unsigned RowNum, unsigned ColNum, raw_fd_ostream &Output);
+  void hybridTreeCodegen(DotMatrix *DM, raw_fd_ostream &Output);
 
   // The function to output verilog and debug files.
-  void printTMatrixForDebug(MatrixType TMatrix);
+  void printDotMatrixForDebug(DotMatrix *DM);
+
   void printGPCModule(raw_fd_ostream &Output);
   void printAddChainModule(unsigned OpNum, unsigned BitWidth, raw_fd_ostream &Output);
   void printCompressComponent(raw_fd_ostream &Output);
   void printComponentInstance(unsigned ComponentIdx,
-                              std::vector<std::vector<DotType> > InputDots,
+                              std::vector<std::vector<MatrixDot *> > InputDots,
                               std::string OutputName, raw_fd_ostream &Output);
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -280,9 +606,35 @@ INITIALIZE_PASS_END(SIRMOAOpt, "sir-multi-operand-optimization",
                     "Perform the multi-operand adder optimization",
                     false, true)
 
-static bool LessThan(std::pair<unsigned, float> OpA,
-                     std::pair<unsigned, float> OpB) {
-  return OpA.second < OpB.second;
+static bool sortInArrivalTime(std::pair<unsigned, float> RowA,
+                              std::pair<unsigned, float> RowB) {
+  return RowA.second < RowB.second;
+}
+
+
+static bool sortInPeformance(std::pair<unsigned, PerfType> GPCA,
+                             std::pair<unsigned, PerfType> GPCB) {
+  if (GPCA.second.first < GPCB.second.first)
+    return true;
+  else if (GPCA.second.first > GPCB.second.first)
+    return false;
+  else {
+    if (GPCA.second.second < GPCB.second.second)
+      return true;
+    else
+      return false;
+  }
+}
+
+static bool sortInInfos(MulDMInfoTy InfoA, MulDMInfoTy InfoB) {
+  if (InfoA.second.second.second > InfoB.second.second.second)
+    return true;
+  else {
+    if (InfoA.second.first < InfoB.second.first)
+      return true;
+    else
+      return false;
+  }
 }
 
 std::string float2String(float FV) {
@@ -324,44 +676,23 @@ bool SIRMOAOpt::runOnSIR(SIR &SM) {
   return false;
 }
 
-void SIRMOAOpt::hybridTreeCodegen(MatrixType Matrix, std::string MatrixName,
-                                  unsigned RowNum, unsigned ColNum,
-                                  raw_fd_ostream &Output) {
-  // Print the declaration of the module.  
-  Output << "module " << "compressor_" << MatrixName << "(\n";
-  for (unsigned i = 0; i < RowNum; ++i) {
-    Output << "\tinput wire[";
-    Output << utostr_32(ColNum - 1) << ":0] operand_" << utostr_32(i) << ",\n";
-  }
-  Output << "\toutput wire[";
-  Output << utostr_32(ColNum - 1) << ":0] result\n);\n\n";
+void SIRMOAOpt::hybridTreeCodegen(DotMatrix *DM, raw_fd_ostream &Output) {
+  // Basic information of DotMatrix
+  std::string MatrixName = DM->getName();
+  unsigned RowNum = DM->getRowNum();
+  unsigned ColNum = DM->getColNum();
 
-  // Optimize the dot matrix taking advantage of the sign bits.
-  Matrix = sumAllSignBitsInMatrix(Matrix, RowNum, ColNum);
-  RowNum = Matrix.size();
-  printTMatrixForDebug(Matrix);
+  // Eliminate the KnownDots in DotMatrix by pre-computation.
+  DM = preComputing(DM);
 
-  // Consider use normal adder to sum some rows which have earlier arrival time.
-  if (sumFirstRowsByAdder) {
-    Matrix = sumRowsByAdder(Matrix, ColNum, Output);
-    RowNum = Matrix.size();
-  }
+  printDotMatrixForDebug(DM);
 
-  // Optimize the dot matrix taking advantage of the known bits.
-  MatrixType TMatrix = transportMatrix(Matrix, RowNum, ColNum);
-  TMatrix = sumAllOneBitsInTMatrix(TMatrix);
-  ++RowNum;
-  Matrix = transportMatrix(TMatrix, ColNum, RowNum);
-  printTMatrixForDebug(Matrix);
-
-  // After these optimization, the first row of dot matrix
-  // should be a constant integer.
-  assert(isConstantInt(Matrix[0]) && "Should be a constant integer!");
-
-  TMatrix = transportMatrix(Matrix, Matrix.size(), ColNum);
+  // Consider use ternary adder to sum some rows which have earlier arrival time.
+  if (sumFirstRowsByAdder)
+    DM = sumRowsByAdder(DM, Output);
 
   // Compress the dot matrix.
-  compressMatrix(TMatrix, MatrixName, Matrix.size(), ColNum, Output);
+  compressDotMatrix(DM, Output);
 }
 
 static unsigned LogCeiling(unsigned x, unsigned n) {
@@ -466,6 +797,11 @@ float SIRMOAOpt::getCritialPathDelay(DFGNode *Node) {
 }
 
 float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
+  // If the operand is a constant integer, the arrival time
+  // is 0.0f of course.
+  if (isa<ConstantInt>(Operand))
+    return 0.0f;
+
   SM->indexKeepVal(Operand);
 
   // Get the corresponding DFG node.
@@ -630,95 +966,237 @@ SIRMOAOpt::eliminateIdenticalOperands(std::vector<Value *> Operands,
   return FinalOperands;
 }
 
-MatrixRowType SIRMOAOpt::createDotMatrixRow(std::string OpName, unsigned OpWidth,
-                                            unsigned ColNum, float ArrivalTime,
-                                            unsigned Stage, BitMask Mask) {
-  // The row we will create.
-  MatrixRowType Row;
+MatrixRow *SIRMOAOpt::createMaskedDMRow(std::string Name, unsigned Width,
+                                        float ArrivalTime, unsigned Level,
+                                        BitMask Mask) {
+  MatrixRow *Row = new MatrixRow();
 
   // Used to denote the sign bit of the operand if it exists.
   std::string SameBit;
-  for (unsigned i = 0; i < ColNum; ++i) {
+  for (unsigned i = 0; i < Width; ++i) {
     // When the dot position is within the range of operand bit width,
     // we get the name of dot considering the bit mask.
-    if (i < OpWidth) {
+    if (i < Mask.getMaskWidth()) {
       // If it is a known bit, then use the known value.
       if (Mask.isOneKnownAt(i)) {
-        Row.push_back(std::make_pair("1'b1", std::make_pair(0.0f, 0)));
+        MatrixDot *OneDot = createNormalMatrixDot("1'b1", 0.0f, 0);
+        Row->addDot(OneDot);
         continue;
       }
       else if (Mask.isZeroKnownAt(i)) {
-        Row.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
+        MatrixDot *ZeroDot = createNormalMatrixDot("1'b0", 0.0f, 0);
+        Row->addDot(ZeroDot);
         continue;
       }
       else if (Mask.isSameKnownAt(i)) {
-        if (SameBit.size() != 0)
-          Row.push_back(std::make_pair(SameBit, std::make_pair(ArrivalTime, Stage)));
-        else {
-          SameBit = Mangle(OpName) + "[" + utostr_32(i) + "]";
-          Row.push_back(std::make_pair(SameBit, std::make_pair(ArrivalTime, Stage)));
+        if (SameBit.size() != 0) {
+          MatrixDot *SameDot = createNormalMatrixDot(SameBit, ArrivalTime, Level);
+          Row->addDot(SameDot);
         }
+        else {
+          SameBit = Mangle(Name) + "[" + utostr_32(i) + "]";
+          MatrixDot *SameDot = createNormalMatrixDot(SameBit, ArrivalTime, Level);
+          Row->addDot(SameDot);
+        }
+
         continue;
       }
       else {
         // Or use the form like operand[0], operand[1]...
-        std::string DotName = Mangle(OpName) + "[" + utostr_32(i) + "]";
-        Row.push_back(std::make_pair(DotName, std::make_pair(ArrivalTime, Stage)));
+        std::string DotName = Mangle(Name) + "[" + utostr_32(i) + "]";
+        MatrixDot *Dot = createNormalMatrixDot(DotName, ArrivalTime, Level);
+        Row->addDot(Dot);
       }
     }
     // When the dot position is beyond the range of operand bit width,
     // we need to pad zero into the matrix.
     else {
-      Row.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
+      MatrixDot *ZeroDot = createNormalMatrixDot("1'b0", 0.0f, 0);
+      Row->addDot(ZeroDot);
     }
   }
 
   return Row;
 }
 
+DotMatrix *SIRMOAOpt::createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
+                                         unsigned Idx, float ArrivalTime, unsigned Width,
+                                         raw_fd_ostream &Output) {
+  DotMatrix *MulMatrix = new DotMatrix();
+  std::string OpAName = "MulOp_" + utostr_32(Idx) + "_a";
+  std::string OpBName = "MulOp_" + utostr_32(Idx) + "_b";
+
+  // Decide which operand is multiplicand and which is multiplier.
+  unsigned MultiplicandBW = (OpAWidth > OpBWidth) ? OpBWidth : OpAWidth;
+  unsigned MultiplierBW = (OpAWidth > OpBWidth) ? OpAWidth : OpBWidth;
+  std::string MultiplicandName = (OpAWidth > OpBWidth) ? OpBName : OpAName;
+  std::string MultiplierName = (OpAWidth > OpBWidth) ? OpAName : OpBName;
+
+  // Calculate the height of the mul matrix.
+  unsigned RowNum = std::floor(MultiplierBW / 2.0f) + 1;
+
+  // Generate the implementation of sign extension bits.
+  for (unsigned i = 0; i < RowNum; ++i) {
+    if (2 * i + 1 < MultiplicandBW) {
+      Output << "wire s" + utostr_32(i) << " = ";
+      Output << MultiplierName + "[" << utostr_32(2 * i + 1) << "];\n";
+    }    
+  }
+  Output << "\n";
+
+  // Generate the partial products.
+  for (unsigned i = 0; i < RowNum; ++i) {
+    MatrixRow *Row = new MatrixRow();
+
+    // The shift bit number for each partial product
+    unsigned ShiftBitNum = i * 2;
+
+    for (unsigned j = 0; j < Width; ++j) {
+      // The shift bits should be zero.
+      if (j < ShiftBitNum)
+        Row->addZeroDot();
+
+      // The +2, +1, 0, -1, -2 multiplicand.
+      else if (j < ShiftBitNum + MultiplicandBW + 1) {
+        std::string MulDotName = "pp_" + utostr_32(i) + "_" + utostr_32(j);
+        unsigned MulDotLevel = 0;
+
+        std::vector<std::string> BoothCodingElements;
+        // Booth coding bit #1
+        int FirstBitIdx = 2 * i - 1;
+        if (FirstBitIdx < 0) {
+          BoothCodingElements.push_back("1'b0");
+        }
+        else {
+          std::string FirstEleName
+            = MultiplierName + "[" + utostr_32(FirstBitIdx) + "]";
+          BoothCodingElements.push_back(FirstEleName);
+        }
+        // Booth coding bit #2
+        int SecondBitIdx = 2 * i;
+        if (SecondBitIdx < MultiplierBW) {
+          std::string SecondEleName
+            = MultiplierName + "[" + utostr_32(SecondBitIdx) + "]";
+          BoothCodingElements.push_back(SecondEleName);
+        }
+        else {
+          BoothCodingElements.push_back("1'b0");
+        }
+        // Booth coding bit #3
+        int ThirdBitIdx = 2 * i + 1;
+        if (ThirdBitIdx < MultiplierBW) {
+          std::string ThirdEleName
+            = MultiplierName + "[" + utostr_32(ThirdBitIdx) + "]";
+          BoothCodingElements.push_back(ThirdEleName);
+        }
+        else {
+          BoothCodingElements.push_back("1'b0");
+        }
+        // Booth coding bit #4 & #5
+        int FFBitIdx = j - ShiftBitNum;
+        if (FFBitIdx < MultiplicandBW) {
+          std::string ForthEleName
+            = MultiplicandName + "[" + utostr_32(FFBitIdx) + "]";
+          BoothCodingElements.push_back(ForthEleName);
+        }
+        else {
+          BoothCodingElements.push_back("1'b0");
+        }        
+        if (FFBitIdx - 1 < 0) {
+          BoothCodingElements.push_back("1'b0");
+        }
+        else {
+          std::string FifthEleName
+            = MultiplicandName + "[" + utostr_32(FFBitIdx - 1) + "]";
+          BoothCodingElements.push_back(FifthEleName);
+        }
+
+        // Create the mul partial product dot.
+        MatrixDot *MulDot
+          = createMulMatrixDot(MulDotName, ArrivalTime, MulDotLevel, BoothCodingElements);
+
+        Row->addDot(MulDot);
+      }
+
+      // The sign extension bits
+      else {
+        std::string SignBitName = "s" + utostr_32(i);
+        MatrixDot *Dot = createNormalMatrixDot(SignBitName, 0.0f, 0);
+
+        Row->addDot(Dot);
+      }
+    }
+
+    MulMatrix->addRow(Row);
+  }
+
+  // Remember to add a row to patch the possible 1'b1 in two's complement.
+  MatrixRow *AdditionRow = new MatrixRow();
+  unsigned UpperBound = 2 * RowNum - 1;
+  for (unsigned i = 0; i < Width; ++i) {
+    if (i < UpperBound) {
+      if (i % 2 == 0) {
+        unsigned AdditionIdx = i / 2;
+        std::string AdditionBitName = "s" + utostr_32(AdditionIdx);
+        MatrixDot *Dot = createNormalMatrixDot(AdditionBitName, ArrivalTime, 0);
+
+        AdditionRow->addDot(Dot);
+        continue;
+      }
+    }
+
+    MatrixDot *ZeroDot = createNormalMatrixDot("1'b0", 0.0f, 0);
+    AdditionRow->addDot(ZeroDot);
+  }
+  MulMatrix->addRow(AdditionRow);
+
+  return MulMatrix;
+}
+
 // This function is used to create matrix which can be synthesized into compressor tree
 // for experiment purpose. The synthesized compressor tree has nothing to do with the
 // HLS target C-program.
-MatrixType createExperimentDotMatrix() {
-  const unsigned RowNum = 8;
-  const unsigned ColNum = 16;
-
-  int Masks[RowNum][ColNum] =
-  { { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 1, 0 },
-    { 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0 },
-    { 0, 0, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0 },
-    { 0, 0, 0, 0, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
-    { 0, 0, 0, 0, 0, 0, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2 },
-    { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
-    { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
-    { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 }
-//     { 2, 0, 2, 0, 2, 0, 2, 0, 0, 2, 0, 0, 0, 0, 0, 0 }
-//     { 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0 },
-//     { 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0 },
-//     { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2 }
-   };
-
-  MatrixType Matrix;
-  for (unsigned i = 0; i < RowNum; ++i) {
-    MatrixRowType Row;
-
-    for (unsigned j = 0; j < ColNum; ++j) {
-      std::string Name;
-      if (Masks[i][j] == 0)
-        Name = "1'b0";
-      else if (Masks[i][j] == 1)
-        Name = "1'b1";
-      else
-        Name = "operand_" + utostr_32(i) + "[" + utostr_32(j) + "]";
-
-      Row.push_back(std::make_pair(Name, std::make_pair(0.0f, 0)));
-    }
-
-    Matrix.push_back(Row);
-  }
-
-  return Matrix;
-}
+// MatrixType createExperimentDotMatrix() {
+//   const unsigned RowNum = 8;
+//   const unsigned ColNum = 16;
+// 
+//   int Masks[RowNum][ColNum] =
+//   { { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 1, 0 },
+//     { 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0 },
+//     { 0, 0, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0 },
+//     { 0, 0, 0, 0, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
+//     { 0, 0, 0, 0, 0, 0, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2 },
+//     { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
+//     { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
+//     { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 }
+// //     { 2, 0, 2, 0, 2, 0, 2, 0, 0, 2, 0, 0, 0, 0, 0, 0 }
+// //     { 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0 },
+// //     { 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0 },
+// //     { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2 }
+//    };
+// 
+//   MatrixType Matrix;
+//   for (unsigned i = 0; i < RowNum; ++i) {
+//     MatrixRowType Row;
+// 
+//     for (unsigned j = 0; j < ColNum; ++j) {
+//       std::string Name;
+//       if (Masks[i][j] == 0)
+//         Name = "1'b0";
+//       else if (Masks[i][j] == 1)
+//         Name = "1'b1";
+//       else
+//         Name = "operand_" + utostr_32(i) + "[" + utostr_32(j) + "]";
+// 
+//       MatrixDot *Dot = new MatrixDot(Name, 0.0f, 0, false, std::vector<std::string>());
+//       Row.push_back(Dot);
+//     }
+// 
+//     Matrix.push_back(Row);
+//   }
+// 
+//   return Matrix;
+// }
 
 MatrixDot *SIRMOAOpt::createNormalMatrixDot(std::string Name, float ArrivalTime,
                                            unsigned Level) {
@@ -736,63 +1214,117 @@ MatrixDot *SIRMOAOpt::createMulMatrixDot(std::string Name, float ArrivalTime,
   return MulDot;
 }
 
-MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
-                                      unsigned RowNum, unsigned ColNum,
-                                      raw_fd_ostream &CTOutput) {
-  MatrixType Matrix;
+std::pair<DotMatrix *, DotMatrix *>
+SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
+                           std::vector<std::pair<Value *, Value *> > MulOps,
+                           unsigned Width, std::string Name,
+                           raw_fd_ostream &Output, raw_fd_ostream &CTOutput) {
+  unsigned NormalOpNum = NormalOps.size();
+  unsigned MulOpNum = MulOps.size();
 
-  // Initial a empty matrix first.
-  for (unsigned i = 0; i < RowNum; ++i) {
-    MatrixRowType Row;
+  // Print the declaration of the module.  
+  Output << "module " << "compressor_" << Name << "(\n";
+  for (unsigned i = 0; i < NormalOpNum; ++i) {
+    Value *NormalOp = NormalOps[i];
+    std::string NormalOpName = "Op_" + utostr_32(i);
+    unsigned NormalOpWidth = TD->getTypeSizeInBits(NormalOp->getType());
 
-    for (unsigned j = 0; j < ColNum; ++j)
-      Row.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
+    Output << "\tinput wire[" << utostr_32(NormalOpWidth - 1) << ":0] "
+           << NormalOpName << ", \n";
+  }
+  for (unsigned i = 0; i < MulOpNum; ++i) {
+    std::pair<Value *, Value *> MulOpPair = MulOps[i];
+    std::string MulOpName = "MulOp_" + utostr_32(i);
+    unsigned MulOpAWidth = TD->getTypeSizeInBits(MulOpPair.first->getType());
+    unsigned MulOpBWidth = TD->getTypeSizeInBits(MulOpPair.second->getType());
 
-    Matrix.push_back(Row);
+    Output << "\tinput wire[" << utostr_32(MulOpAWidth - 1) << ":0] "
+           << MulOpName + "_a" << ", \n";
+    Output << "\tinput wire[" << utostr_32(MulOpBWidth - 1) << ":0] "
+           << MulOpName + "_b" << ", \n";
+  }
+  Output << "\toutput wire[";
+  Output << utostr_32(Width - 1) << ":0] result\n);\n\n";
+
+  DotMatrix *DM = new DotMatrix(Name);
+  DotMatrix *TopMulDM = new DotMatrix(Name + "_MulDM");
+
+  // Create the MulDM for MulOps.
+  for (unsigned i = 0; i < MulOpNum; ++i) {
+    std::pair<Value *, Value *> MulOpPair = MulOps[i];
+    unsigned MulOpAWidth = TD->getTypeSizeInBits(MulOpPair.first->getType());
+    unsigned MulOpBWidth = TD->getTypeSizeInBits(MulOpPair.second->getType());
+
+    float MulOpA_AT = getOperandArrivalTime(MulOpPair.first) * VFUs::Period;
+    float MulOpB_AT = getOperandArrivalTime(MulOpPair.second) * VFUs::Period;
+    float ArrivalTime = std::max(MulOpA_AT, MulOpB_AT);
+
+    DotMatrix *MulDM
+      = createMulDotMatrix(MulOpAWidth, MulOpBWidth, i, ArrivalTime, Width, Output);
+    MulDM = preHandling(DM, MulDM);
+
+    // Merge each the MulDM into the TopMulDM.
+    for (unsigned i = 0; i < MulDM->getRowNum(); ++i)
+      TopMulDM->addRow(MulDM->getRow(i));
   }
 
-  for (unsigned i = 0; i < RowNum; ++i) {
-    Value *Operand = Operands[i];
+  // Sort the normal operands in ascending order of arrival time.
+  std::vector<std::pair<unsigned, float> > SortedOps;
+  for (unsigned i = 0; i < NormalOps.size(); ++i) {
+    Value *NormalOp = NormalOps[i];
+    float ArrivalTime = getOperandArrivalTime(NormalOp) * VFUs::Period;
 
-    unsigned OpWidth = TD->getTypeSizeInBits(Operand->getType());
-    std::string OpName = Operand->getName();
+    SortedOps.push_back(std::make_pair(i, ArrivalTime));
+  }
+  std::sort(SortedOps.begin(), SortedOps.end(), sortInArrivalTime);
 
+  for (unsigned i = 0; i < SortedOps.size(); ++i) {
+    unsigned NormalOpIdx = SortedOps[i].first;
+    Value *NormalOp = NormalOps[NormalOpIdx];
+    float ArrivalTime = SortedOps[i].second;
+    unsigned OpWidth = TD->getTypeSizeInBits(NormalOp->getType());
+
+    /// Create MatrixRow for normal operands.
+    std::string RowName = "operand_" + utostr_32(NormalOpIdx);
+    MatrixRow *Row = new MatrixRow(RowName);
     // If the operand is a constant integer, then the dots will be
     // its binary representation.
-    if (ConstantInt *CI = dyn_cast<ConstantInt>(Operand)) {
-      unsigned CIVal = CI->getZExtValue();
+    if (ConstantInt *CI = dyn_cast<ConstantInt>(NormalOp)) {
+      APInt CIV = CI->getValue();
 
-      for (unsigned j = 0; j < ColNum; ++j) {
-        unsigned BaseVal = int(std::pow(double(2.0), double(ColNum - 1 - j)));
-        unsigned BitVal = CIVal / (BaseVal);
-        CIVal = (CIVal >= BaseVal) ? CIVal - BaseVal : CIVal;
+      for (unsigned j = 0; j < Width; ++j) {
+        if (j < OpWidth) {
+          APInt LShiftedCIV = CIV.shl(OpWidth - 1 - j);
+          APInt RLShiftedCIV = LShiftedCIV.lshr(OpWidth - 1);
 
-        // Insert the binary representation to the matrix in reverse order.
-        if (BitVal)
-          Matrix[i][ColNum - 1 - j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
+          unsigned BitVal = RLShiftedCIV.getZExtValue();
+          if (BitVal)
+            Row->addOneDot();
+          else
+            Row->addZeroDot();
+        }
         else
-          Matrix[i][ColNum - 1 - j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+          Row->addZeroDot();
       }
+
+      DM->addRow(Row);
     }
     // Or the dots will be the form like operand[0], operand[1]...
     else {
-      // Get the arrival time of the dots.
-      float ArrivalTime = getOperandArrivalTime(Operand) * VFUs::Period;
       // Get the bit mask of the dots.
-      DFGNode *OpNode = SM->getDFGNodeOfVal(Operand);
+      DFGNode *OpNode = SM->getDFGNodeOfVal(NormalOp);
       assert(OpNode && "DFG node not created?");
       BitMask Mask = SM->getBitMask(OpNode);
 
-      errs() << "Operand_" + utostr_32(i) << ": ArrivalTime[ " << float2String(ArrivalTime) << "], ";
+      errs() << "Operand_" + utostr_32(i) << ": ArrivalTime[ "
+             << float2String(ArrivalTime) << "], ";
       errs() << "BitMask[";
       Mask.print(errs());
       errs() << "];\n";
 
-      // Get the name of the operand to denote the name of the dot later.
-      std::string OpName = "operand_" + utostr_32(i);
       // Used to denote the sign bit of the operand if it exists.
       std::string SameBit;
-      for (unsigned j = 0; j < ColNum; ++j) {
+      for (unsigned j = 0; j < Width; ++j) {
         // When the dot position is within the range of operand bit width,
         // we get the name of dot considering the bit mask.
         if (j < OpWidth) {
@@ -801,39 +1333,46 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
           if (enableBitMaskOpt) {
             // If it is a known bit, then use the known value.
             if (Mask.isOneKnownAt(j)) {
-              Matrix[i][j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
+              Row->addOneDot();
               continue;
             }
             else if (Mask.isZeroKnownAt(j)) {
-              Matrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+              Row->addZeroDot();
               continue;
             }
             else if (Mask.isSameKnownAt(j)) {
-              if (SameBit.size() != 0)
-                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
+              if (SameBit.size() != 0) {
+                MatrixDot *Dot = createNormalMatrixDot(SameBit, ArrivalTime, 0);
+                Row->addDot(Dot);
+              }                
               else {
-                SameBit = Mangle(OpName) + "[" + utostr_32(j) + "]";
-                Matrix[i][j] = std::make_pair(SameBit, std::make_pair(ArrivalTime, 0));
+                SameBit = Mangle(RowName) + "[" + utostr_32(j) + "]";
+                MatrixDot *Dot = createNormalMatrixDot(SameBit, ArrivalTime, 0);
+                Row->addDot(Dot);
               }
               continue;
             }
           }
 
           // Or use the form like operand[0], operand[1]...
-          std::string DotName = Mangle(OpName) + "[" + utostr_32(j) + "]";
-          Matrix[i][j] = std::make_pair(DotName, std::make_pair(ArrivalTime, 0));
+          std::string DotName = Mangle(RowName) + "[" + utostr_32(j) + "]";
+          MatrixDot *Dot = createNormalMatrixDot(DotName, ArrivalTime, 0);
+
+          Row->addDot(Dot);
         }
         // When the dot position is beyond the range of operand bit width,
         // we need to pad zero into the matrix.
-        else {
-          Matrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
-        }
+        else
+          Row->addZeroDot();
       }
+
+      DM->addRow(Row);
     }
   }
 
-  for (unsigned i = 0; i < Operands.size(); ++i) {
-    Value *Operand = Operands[i];
+  // Output all the bitmask information of operands for debug.
+  for (unsigned i = 0; i < NormalOps.size(); ++i) {
+    Value *Operand = NormalOps[i];
     unsigned Width = TD->getTypeSizeInBits(Operand->getType());
     std::string OperandName = "operand_" + utostr_32(i);
 
@@ -884,53 +1423,56 @@ MatrixType SIRMOAOpt::createDotMatrix(std::vector<Value *> Operands,
   }
   CTOutput << "\n\n";
 
-  return Matrix;
-}
-
-std::vector<Value *>
-SIRMOAOpt::OptimizeOperands(std::vector<Value *> Operands,
-                            Value *MOA, unsigned BitWidth) {
-  // Eliminate the identical operands in add chain.
-  std::vector<Value *>
-    OptOperands = eliminateIdenticalOperands(Operands, MOA, BitWidth);
-
-  return OptOperands;
+  return std::make_pair(DM, TopMulDM);
 }
 
 void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
                                          raw_fd_ostream &Output,
                                          raw_fd_ostream &CTOutput) {
-  // Get all the operands of MOA.
+  unsigned Width = TD->getTypeSizeInBits(MOA->getType());
   std::vector<Value *> Operands = MOA2Ops[MOA];
 
-  // Optimize operands if there exists
-  // 1) identical operands.
-  std::vector<Value *> OptOperands = Operands;
-  OptOperands
-    = OptimizeOperands(Operands, MOA, TD->getTypeSizeInBits(MOA->getType()));
+  // Eliminate the identical operands in add chain.
+  Operands = eliminateIdenticalOperands(Operands, MOA, Width);
+
+  std::vector<Value *> NormalOps;
+  std::vector<std::pair<Value *, Value *> > MulOps;
+  // Extract out the multiplication operands.
+  for (unsigned i = 0; i < Operands.size(); ++i) {
+    Value *Operand = Operands[i];
+
+    if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(Operand)) {
+      if (OpII->getIntrinsicID() == Intrinsic::shang_mul) {
+        Value *OperandA = OpII->getOperand(0);
+        Value *OperandB = OpII->getOperand(1);
+
+        MulOps.push_back(std::make_pair(OperandA, OperandB));
+        continue;
+      }
+    }
+
+    NormalOps.push_back(Operand);
+  }
 
   // Index the connection of operands and pseudo hybrid tree instruction.
   // So we can generate the instance of the hybrid tree module.
   IntrinsicInst *PseudoHybridTreeInst = MOA2PseudoHybridTreeInst[MOA];
-  SM->IndexOps2AdderChain(PseudoHybridTreeInst, OptOperands);
+  SM->IndexOps2AdderChain(PseudoHybridTreeInst, NormalOps);
 
-  // Generate dot matrix.
-  unsigned MatrixRowNum = OptOperands.size();
-  unsigned MatrixColNum = TD->getTypeSizeInBits(MOA->getType());
   std::string MatrixName = Mangle(PseudoHybridTreeInst->getName());
+  unsigned MatrixWidth = TD->getTypeSizeInBits(MOA->getType());
 
   errs() << "Synthesize compressor tree for " << MatrixName << "......\n";
 
-//   MatrixType
-//     Matrix = createExperimentDotMatrix();
-  MatrixType
-    Matrix = createDotMatrix(OptOperands, MatrixRowNum, MatrixColNum, CTOutput);
+  std::pair<DotMatrix *, DotMatrix *> DMPair
+    = createDotMatrix(NormalOps, MulOps, MatrixWidth, MatrixName, Output, CTOutput);
+
+  DotMatrix *DM = preComputingByCarryChain(DMPair.first, DMPair.second, Output);
 
   DebugOutput << "---------- Matrix for " << MatrixName << " ------------\n";
-  printTMatrixForDebug(Matrix);
+  printDotMatrixForDebug(DM);
 
-  hybridTreeCodegen(Matrix, MatrixName, MatrixRowNum, MatrixColNum, Output);
-  //hybridTreeCodegen(Matrix, MatrixName, 8, 16, Output);
+  hybridTreeCodegen(DM, Output);
 }
 
 void SIRMOAOpt::generateHybridTrees() {
@@ -1120,202 +1662,293 @@ void SIRMOAOpt::collectMOAOps(IntrinsicInst *MOA) {
   }
 }
 
-bool SIRMOAOpt::isConstantInt(MatrixRowType Row) {
-  bool IsConstantInt = true;
+DotMatrix *SIRMOAOpt::preHandling(DotMatrix *DM, DotMatrix *MulDM) {
+  // Sum all the LeadingDots in each row.
+  MulDM = preComputing(MulDM);
 
-  for (unsigned i = 0; i < Row.size(); ++i) {
-    DotType Dot = Row[i];
+  /// Divide the MulDM into two matrix, 1) first matrix to contain
+  /// the normal dots like 1'b1 and s?; 2) second matrix to contain
+  /// all the MulDots.
 
-    if (Dot.first != "1'b0" && Dot.first != "1'b1") {
-      IsConstantInt = false;
-      break;
+  // Get the first part matrix.
+  DotMatrix *FistPartMatrix = new DotMatrix(MulDM);
+  for (unsigned i = 0; i < FistPartMatrix->getRowNum(); ++i) {
+    MatrixRow *Row = FistPartMatrix->getRow(i);
+
+    for (unsigned j = 0; j < Row->getWidth(); ++j) {
+      MatrixDot *Dot = Row->getDot(j);
+
+      if (Dot->isMulDot())
+        Dot->setToZero();
     }
   }
 
-  return IsConstantInt;
-}
+  // Get the second part matrix.
+  DotMatrix *SecondPartMatrix = new DotMatrix(MulDM);
+  for (unsigned i = 0; i < SecondPartMatrix->getRowNum(); ++i) {
+    MatrixRow *Row = SecondPartMatrix->getRow(i);
 
-unsigned SIRMOAOpt::getOperandBitWidth(MatrixRowType Row) {
-  unsigned BitWidth = 0;
-  bool HeadingZero = true;
-  for (unsigned i = 0; i < Row.size(); ++i) {
-    if (Row[Row.size() - 1 - i].first == "1\'b0" && HeadingZero)
-      continue;
-    else {
-      ++BitWidth;
-      HeadingZero = false;
+    for (unsigned j = 0; j < Row->getWidth(); ++j) {
+      MatrixDot *Dot = Row->getDot(j);
+
+      if (!Dot->isMulDot())
+        Dot->setToZero();
     }
   }
 
-  return BitWidth;
-}
+  /// Since all the dots in second part matrix have same arrival time, so the dots
+  /// with same rank in different row are actually the same. To utilized the carry
+  /// chain as much as possible, we need to transform the MulDM from the origin shape:
+  /// ----00000000ssssssssss
+  /// ----000000ssssssssss00
+  /// ----0000ssssssssss0000
+  /// ----00ssssssssss000000
+  /// ----ssssssssss00000000
+  /// into the new shape:
+  /// ----ssssssssssssssssss
+  /// ----00ssssssssssssss00
+  /// ----0000ssssssssss0000
+  /// ----000000ssssss000000
+  /// ----00000000ss00000000
 
-std::vector<unsigned> SIRMOAOpt::getSignBitNumList(MatrixType Matrix) {
-  std::vector<unsigned> SignBitNumList;
+  unsigned RowNum = SecondPartMatrix->getRowNum();
+  unsigned ColNum = SecondPartMatrix->getColNum();
 
-  for (unsigned i = 0; i < Matrix.size(); ++i) {
-    MatrixRowType Row = Matrix[i];
+  // First we transport the DotMatrix and abandon the ZeroDots.
+  SecondPartMatrix = transportDotMatrix(SecondPartMatrix);
+  SecondPartMatrix = abandonZeroDots(SecondPartMatrix);
 
-    // If this row is a integer, then there are only one sign bit really.
-    if (isConstantInt(Row)) {
-      SignBitNumList.push_back(1);
-      continue;
-    }
+  // Then we padding each row in MulTDM with ZeroDots so that
+  // the TDM can be transport back into DM.
+  for (unsigned i = 0; i < SecondPartMatrix->getRowNum(); ++i) {
+    MatrixRow *Row = SecondPartMatrix->getRow(i);
+    unsigned RowValidWidth = Row->getValidWidth();
 
-    // Extract the MSB as it is sign bit really.
-    DotType SignBit = Row.back();
+    unsigned PaddingZeroNum = RowNum - RowValidWidth;
+    for (unsigned j = 0; j < PaddingZeroNum; ++j)
+      Row->addZeroDot();
+  }
 
-    // Ignore the 0 sign bit.
-    if (SignBit.first == "1'b0" || SignBit.first == "1'b1") {
-      SignBitNumList.push_back(1);
-      continue;
-    }
+  // Transport the MulTDM back to MulDM.
+  SecondPartMatrix = transportDotMatrix(SecondPartMatrix);
 
-    // Then traverse the row from MSB to LSB and these bits that same as the
-    // SignBit will be counted as SignBit.
-    unsigned SignBitNum = 0;
-    for (unsigned j = 0; j < Row.size(); ++j) {
-      if (Row[Row.size() - 1 - j] == SignBit)
-        ++SignBitNum;
-      else
+  // Eliminate the empty rows.
+  DotMatrix *SimplifedSPM = new DotMatrix();
+  for (unsigned i = 0; i < SecondPartMatrix->getRowNum(); ++i) {
+    MatrixRow *Row = SecondPartMatrix->getRow(i);
+
+    bool isZeroRow = true;
+    for (unsigned j = 0; j < Row->getWidth(); ++j) {
+      MatrixDot *Dot = Row->getDot(j);
+
+      if (!Dot->isZero()) {
+        isZeroRow = false;
         break;
+      }
     }
 
-    SignBitNumList.push_back(SignBitNum);
+    if (!isZeroRow)
+      SimplifedSPM->addRow(Row);
   }
+  
+  // The non-zero rows of first part matrix will be merged into MOA matrix.
+  for (unsigned i = 0; i < FistPartMatrix->getRowNum(); ++i) {
+    MatrixRow *Row = FistPartMatrix->getRow(i);
 
-  return SignBitNumList;
+    bool isZeroRow = true;
+    for (unsigned j = 0; j < Row->getWidth(); ++j) {
+      MatrixDot *Dot = Row->getDot(j);
+
+      if (!Dot->isZero()) {
+        isZeroRow = false;
+        break;
+      }
+    }
+
+    if (!isZeroRow)
+      DM->addRow(Row);
+  }   
+
+  return SimplifedSPM;
 }
 
-MatrixType SIRMOAOpt::sumAllSignBitsInMatrix(MatrixType Matrix, unsigned RowNum,
-                                             unsigned ColNum) {
-  // Get the number of sign bit in each row in Matrix.
-  std::vector<unsigned> SignBitNumList = getSignBitNumList(Matrix);
+DotMatrix *SIRMOAOpt::preComputing(DotMatrix *DM) {
+  /// First, transform all LeadingDots in DotMatrix using equation:
+  /// ssssssss = 11111111 + 0000000~s,
+  /// then we create a new DotMatrix to contain all the 11111111,
+  /// after we sum all these OneDots, the sum result is inserted
+  /// back to the origin DotMatrix.
 
-  // Sum all sign bit using the equation:
-  // ssssssss = 11111111 + 0000000~s,
-  // then sum all the one bit.
-  MatrixType SignBitMatrix = Matrix;
-  for (unsigned i = 0; i < Matrix.size(); ++i) {
+  // Get the number of LeadingDots in each row of DotMatrix.
+  std::vector<unsigned> LDNumList;
+  for (unsigned i = 0; i < DM->getRowNum(); ++i) {
+    MatrixRow *MR = DM->getRow(i);
+
+    LDNumList.push_back(MR->countingLeadingDots());
+  }
+
+  // Transform the LeadingDots and create the LDDM to contain all the
+  // 111111111. And don't forget the invert the s-dot in origin DotMatrix
+  // in transformation.
+  DotMatrix *LDDM = new DotMatrix(DM);
+  for (unsigned i = 0; i < DM->getRowNum(); ++i) {
     // If there is sign bit pattern in current row.
-    if (SignBitNumList[i] > 1) {
-      unsigned SignBitStartPoint = Matrix[i].size() - SignBitNumList[i];
+    if (LDNumList[i] > 1) {
+      unsigned LeadingDotStartPoint = DM->getRow(i)->getWidth() - LDNumList[i];
 
       // Set the ssssssss to 0000000~s in origin Matrix.
-      DotType OriginDot = Matrix[i][SignBitStartPoint];
-      Matrix[i][SignBitStartPoint] = std::make_pair("~" + OriginDot.first, OriginDot.second);
-      for (unsigned j = SignBitStartPoint + 1; j < Matrix[i].size(); ++j)
-        Matrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+      MatrixDot *OriginDot = DM->getRow(i)->getDot(LeadingDotStartPoint);
+      OriginDot->setName("~" + OriginDot->getName());
+      for (unsigned j = LeadingDotStartPoint + 1; j < DM->getRow(i)->getWidth(); ++j)
+        DM->getRow(i)->getDot(j)->setToZero();
 
       // Set the non-sign bit to 00000000 in sign bit Matrix.
-      for (unsigned j = 0; j < SignBitStartPoint; ++j)
-        SignBitMatrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+      for (unsigned j = 0; j < LeadingDotStartPoint; ++j)
+        LDDM->getRow(i)->getDot(j)->setToZero();
+
       // Set the ssssssss to 11111111 in sign bit Matrix.
-      for (unsigned j = SignBitStartPoint; j < SignBitMatrix[i].size(); ++j)
-        SignBitMatrix[i][j] = std::make_pair("1'b1", std::make_pair(0.0f, 0));
+      for (unsigned j = LeadingDotStartPoint; j < LDDM->getRow(i)->getWidth(); ++j)
+        LDDM->getRow(i)->getDot(j)->setToOne();
     }
     // If there is no sign bit pattern in current row.
     else {
       // Set all bits to 00000000 in sign bit Matrix.
-      for (unsigned j = 0; j < SignBitMatrix[i].size(); ++j)
-        SignBitMatrix[i][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
+      for (unsigned j = 0; j < LDDM->getRow(i)->getWidth(); ++j)
+        LDDM->getRow(i)->getDot(j)->setToZero();
     }
   }
 
-  MatrixType SignBitTMatrix = transportMatrix(SignBitMatrix, RowNum, ColNum);
-  SignBitTMatrix = sumAllOneBitsInTMatrix(SignBitTMatrix);
+  // Sum all the OneDots in LDDM and the sum result will be in the first row.
+  LDDM = sumOneDots(LDDM);
+  MatrixRow *SumResultRow = LDDM->getRow(0);
 
-  SignBitMatrix = transportMatrix(SignBitTMatrix, ColNum, ++RowNum);  
-  MatrixRowType Row = SignBitMatrix[0];
-  Matrix.push_back(SignBitMatrix[0]);
+  // Insert the sum result back to the origin DotMatrix
+  DM->addRow(SumResultRow);
 
-  return Matrix;
+  // Then sum all the OneDots in origin DotMatrix.
+  DM = sumOneDots(DM);
+
+  return DM;
 }
 
-bool AscendingOrderInAT(MatrixRowInfoType AT1, MatrixRowInfoType AT2) {
-  if (AT1.second.second.first < AT2.second.second.first)
-    return true;
-  else if (AT1.second.second.first == AT2.second.second.first) {
-    if (AT1.second.first < AT2.second.first)
-      return true;
+DotMatrix *SIRMOAOpt::sumOneDots(DotMatrix *DM) {
+  // Transport the DotMatrix first.
+  DotMatrix *TDM = transportDotMatrix(DM);
+
+  // Get the number of LeadingDots in each row of TDM.
+  std::vector<unsigned> ODNumList;
+  for (unsigned i = 0; i < TDM->getRowNum(); ++i) {
+    MatrixRow *TRow = TDM->getRow(i);
+
+    unsigned OneDotNum = 0;
+    for (unsigned j = 0; j < TRow->getWidth(); ++j) {
+      if (TRow->getDot(j)->isOne())
+        ++OneDotNum;
+    }
+
+    ODNumList.push_back(OneDotNum);
   }
 
-  return false;
+  // The number of OneDots in each row of TDM after sum.
+  std::vector<unsigned> ODNumListAfterSum;
+  for (unsigned i = 0; i < ODNumList.size(); ++i) {
+    unsigned ODNum = ODNumList[i];
+
+    ODNumListAfterSum.push_back(ODNum % 2);
+    unsigned CarryOneNum = ODNum / 2;
+
+    if (i != ODNumList.size() - 1)
+      ODNumList[i + 1] += CarryOneNum;
+  }
+
+  // Create a row to represent the sum result.
+  MatrixRow *SumResult = new MatrixRow();
+  for (unsigned i = 0; i < ODNumListAfterSum.size(); ++i) {
+    MatrixDot *SumResultDot;
+    if (ODNumListAfterSum[i] == 0)
+      SumResultDot = createNormalMatrixDot("1'b0", 0.0f, 0);
+    else
+      SumResultDot = createNormalMatrixDot("1'b1", 0.0f, 0);
+    SumResult->addDot(SumResultDot);
+  }
+
+  DotMatrix *ResultDM = new DotMatrix(DM->getName());
+  ResultDM->addRow(SumResult);
+  for (unsigned i = 0; i < DM->getRowNum(); ++i) {
+    MatrixRow *Row = DM->getRow(i);
+    MatrixRow *ResultRow = new MatrixRow(Row->getName());
+
+    for (unsigned j = 0; j < Row->getWidth(); ++j) {
+      MatrixDot *Dot = Row->getDot(j);
+
+      if (!Dot->isOne())
+        ResultRow->addDot(Dot);
+      else
+        ResultRow->addZeroDot();
+    }
+
+    ResultDM->addRow(ResultRow);
+  }
+
+  return ResultDM;
 }
 
-MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
-                                     raw_fd_ostream &Output) {
-  /// First we should check each row by its arrival time to identify which rows can be
-  /// summed by adder without increasing critical path delay of compressor tree.
+DotMatrix *SIRMOAOpt::sumRowsByAdder(DotMatrix *DM, raw_fd_ostream &Output) {
+  // We expect the DotMatrix are inerratic here.
+  assert(DM->isInerratic() && "Unexpected erratic DotMatrix!");
 
-  // Collect information of each row, including name, index, arrival time & valid width.
-  std::vector<MatrixRowInfoType> RowInfos;
-  for (unsigned i = 0; i < Matrix.size(); ++i) {
-    MatrixRowType Row = Matrix[i];
+  /// First we should check each row by its arrival time to identify which
+  /// rows can be summed by adder without increasing critical path delay of
+  /// compressor tree.
+
+  // Collect information of each row, including name, index,
+  // arrival time & valid width.
+  std::vector<std::pair<unsigned, float> > SortedRows;
+  for (unsigned i = 0; i < DM->getRowNum(); ++i) {
+    MatrixRow *Row = DM->getRow(i);
 
     // Ignore the constant int row.
-    if (isConstantInt(Row))
+    if (Row->isConstantInt())
       continue;
 
-    float ArrivalTime = 0.0f;
-    for (unsigned j = 0; j < Row.size(); ++j) {
-      DotType Dot = Row[j];
+    // We expect the dots in the row have same arrival time here.
+    assert(Row->hasSameArrivalTime() && "Unexpected different arrival time!");
 
-      if (Dot.second.first != 0.0f) {
-        if (ArrivalTime == 0.0f)
-          ArrivalTime = Dot.second.first;
-        else
-          assert(ArrivalTime == Dot.second.first && "Unexpected arrival time!");
-      }
-    }
+    // Collect the arrival time and valid width information.
+    float ArrivalTime = Row->getMaxArrivalTime();
+    assert(ArrivalTime != 0.0f && "Unexpected arrival time!");
 
-    bool ValidWidth = false;
-    unsigned Width = 0;
-    for (unsigned j = 0; j < Row.size(); ++j) {
-      DotType Dot = Row[Row.size() - 1 - j];
-
-      if (Dot.first == "1'b0")
-        continue;
-      else
-        ValidWidth = true;
-
-      if (ValidWidth)
-        ++Width;
-    }
-
-    assert(ArrivalTime != 0.0f || isConstantInt(Row) && "Unexpected arrival time!");
-
-    // The name of origin row in matrix is the operands of multi-input addition.
-    std::string Name = "operand_" + utostr_32(i);
-
-    ATAndWidthType ATW = std::make_pair(ArrivalTime, Width);
-    RowInfos.push_back(std::make_pair(Name, std::make_pair(i, ATW)));
+    SortedRows.push_back(std::make_pair(i, ArrivalTime));
   }
-  std::sort(RowInfos.begin(), RowInfos.end(), AscendingOrderInAT);
+  std::sort(SortedRows.begin(), SortedRows.end(), sortInArrivalTime);
 
   // Identify which rows can be summed by adder.
-  float TimeLimit = RowInfos.back().second.second.first/* + VFUs::WireDelay * VFUs::Period*/;
+  unsigned ColNum = DM->getColNum();
+  float TimeLimit = SortedRows.back().second/* + VFUs::WireDelay * VFUs::Period*/;
   std::vector<std::pair<std::vector<unsigned>, float> > TernaryAdders;
   unsigned AdderIdx = 0;
   bool Continue = true;
-  while (Continue && RowInfos.size() > 3) {
+  while (Continue && SortedRows.size() > 3) {
     Continue = false;
 
     // Get the max arrival time and valid width of first triple row after sorting.
-    float MaxInputArrivalTime = 0.0f;
-    unsigned MaxInputWidth = 0;
+    float MaxArrivalTime = 0.0f;
+    unsigned MaxValidWidth = 0;
     for (unsigned i = 0; i < 3; ++i) {
-      float ArrivalTime = RowInfos[i].second.second.first;
-      unsigned Width = RowInfos[i].second.second.second;
+      unsigned RowIdx = SortedRows[i].first;
+      MatrixRow *Row = DM->getRow(RowIdx);
 
-      MaxInputArrivalTime = std::max(MaxInputArrivalTime, ArrivalTime);
-      MaxInputWidth = std::max(MaxInputWidth, Width);
+      float ArrivalTime = Row->getMaxArrivalTime();
+      unsigned ValidWidth = Row->getValidWidth();
+
+      MaxArrivalTime = std::max(MaxArrivalTime, ArrivalTime);
+      MaxValidWidth = std::max(MaxValidWidth, ValidWidth);
     }
 
     // Predict the arrival time of result if a adder is used.
     float TernaryAddDelay
-      = LuaI::Get<VFUTernaryAdd>()->lookupLatency(MaxInputWidth) * VFUs::Period;
-    float ResultAT = MaxInputArrivalTime + TernaryAddDelay;
+      = LuaI::Get<VFUTernaryAdd>()->lookupLatency(MaxValidWidth) * VFUs::Period;
+    float ResultAT = MaxArrivalTime + TernaryAddDelay;
 
     if (ResultAT < TimeLimit) {
       // The name of adder.
@@ -1326,9 +1959,9 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
         Output << "wire[" << utostr_32(ColNum - 1) << ":0] " + AdderName
                << "_Op_" + utostr_32(i) << " = {";
 
-        unsigned RowIdx = RowInfos[i].second.first;
+        unsigned RowIdx = SortedRows[i].first;
         for (unsigned j = 0; j < ColNum; ++j) {
-          Output << Matrix[RowIdx][ColNum - 1 - j].first;
+          Output << DM->getRow(RowIdx)->getDot(ColNum - 1 - j)->getName();
 
           if (j != ColNum - 1)
             Output << ", ";
@@ -1349,9 +1982,12 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
       }
 
       // Debug code
-      errs() << utostr_32(MaxInputWidth) << "-bit ternary adder sum: ";
+      errs() << utostr_32(MaxValidWidth) << "-bit ternary adder sum: ";
       for (unsigned i = 0; i < 3; ++i) {
-        errs() << RowInfos[i].first;
+        unsigned RowIdx = SortedRows[i].first;
+        MatrixRow *Row = DM->getRow(RowIdx);
+
+        errs() << Row->getName();
 
         if (i != 2)
           errs() << ", ";
@@ -1362,17 +1998,17 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
       // Get the mask for each operand row of current adder.
       std::vector<BitMask> AdderOpMasks;
       for (unsigned i = 0; i < 3; ++i) {
-        unsigned RowIdx = RowInfos[i].second.first;
-        MatrixRowType Row = Matrix[RowIdx];
+        unsigned RowIdx = SortedRows[i].first;
+        MatrixRow *Row = DM->getRow(RowIdx);
 
         // Initialize a empty mask.
         BitMask Mask = BitMask(ColNum);
 
         // Set each bit of mask according to the dot in row.
         for (unsigned j = 0; j < ColNum; ++j) {
-          if (Row[j].first == "1'b0")
+          if (Row->getDot(j)->getName() == "1'b0")
             Mask.setKnownZeroAt(j);
-          else if (Row[j].first == "1'b1")
+          else if (Row->getDot(j)->getName() == "1'b1")
             Mask.setKnownOneAt(j);
         }
 
@@ -1389,295 +2025,349 @@ MatrixType SIRMOAOpt::sumRowsByAdder(MatrixType Matrix, unsigned ColNum,
       unsigned ResultValidWidth
         = ResultMask.getMaskWidth() - ResultMask.countLeadingZeros();
 
-      MatrixRowType AdderResultRow
-        = createDotMatrixRow(AdderName, ColNum, ColNum, ResultAT, 0, ResultMask);
+      MatrixRow *AdderResultRow
+        = createMaskedDMRow(AdderName, ColNum, ResultAT, 0, ResultMask);
 
       // Insert the adder result back into matrix.
-      Matrix.push_back(AdderResultRow);
+      DM->addRow(AdderResultRow);
 
       // Also insert the information of created row into RowInfos.
-      ATAndWidthType RowATAndWidth = std::make_pair(ResultAT, ResultValidWidth);
-      MatrixRowInfoType RowInfo
-        = std::make_pair(AdderName, std::make_pair(Matrix.size() - 1, RowATAndWidth));
-      RowInfos.push_back(RowInfo);
+      SortedRows.push_back(std::make_pair(DM->getRowNum() - 1, ResultAT));
 
       // Clear the rows summed by adder in Matrix.
       for (unsigned i = 0; i < 3; ++i) {
-        unsigned RowIdx = RowInfos[i].second.first;
+        unsigned RowIdx = SortedRows[i].first;
 
-        for (unsigned j = 0; j < ColNum; ++j) {
-          Matrix[RowIdx][j] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
-        }
+        for (unsigned j = 0; j < ColNum; ++j)
+          DM->getRow(RowIdx)->getDot(j)->setToZero();
       }
 
       // Also clear the row information in RowInfos.
-      std::vector<MatrixRowInfoType> NewRowInfos;
-      for (unsigned i = 3; i < RowInfos.size(); ++i) {
-        NewRowInfos.push_back(RowInfos[i]);
+      std::vector<std::pair<unsigned, float> > NewSortedRows;
+      for (unsigned i = 3; i < SortedRows.size(); ++i) {
+        NewSortedRows.push_back(SortedRows[i]);
       }
-      RowInfos = NewRowInfos;
+      SortedRows = NewSortedRows;
 
       // Sort the new rows in matrix and continue the identifying.
-      std::sort(RowInfos.begin(), RowInfos.end(), AscendingOrderInAT);
+      std::sort(NewSortedRows.begin(), NewSortedRows.end(), sortInArrivalTime);
       Continue = true;
       AdderIdx++;
     }
   }
 
-  return Matrix;
+  // We also expect the result DotMatrix are inerratic here.
+  assert(DM->isInerratic() && "Unexpected erratic DotMatrix!");
+
+  return DM;
 }
 
-MatrixType SIRMOAOpt::transportMatrix(MatrixType Matrix, unsigned RowNum,
-                                      unsigned ColumnNum) {
-  MatrixType TMatrix;
+DotMatrix *SIRMOAOpt::preComputingByCarryChain(DotMatrix *DM, DotMatrix *MulDM,
+                                               raw_fd_ostream &Output) {
+  std::vector<MulDMInfoTy> MulDMInfos;
+  for (unsigned i = 0; i < MulDM->getRowNum(); ++i) {
+    MatrixRow *Row = MulDM->getRow(i);
+    assert(Row->hasSameArrivalTime() && "Unexpected different arrival time!");
 
-  for (unsigned j = 0; j < ColumnNum; ++j) {
-    MatrixRowType TRow;
+    float ArrivalTime = Row->getMaxArrivalTime();
+    unsigned StartPoint = Row->countingTrailingZeros();
+    unsigned ValidWidth = Row->getWidth() - Row->countingLeadingZeros() - StartPoint;
 
-    for (unsigned i = 0; i < Matrix.size(); ++i) {
-      MatrixRowType Row = Matrix[i];
+    MulDMInfoTy Info
+      = std::make_pair(i, std::make_pair(ArrivalTime,
+                                         std::make_pair(StartPoint, ValidWidth)));
 
-      TRow.push_back(Row[j]);
+    MulDMInfos.push_back(Info);
+  }
+
+  // Sort the rows in MulDM.
+  std::sort(MulDMInfos.begin(), MulDMInfos.end(), sortInInfos);
+
+  /// Pre-compute each row in MulDM by carry chain.
+
+  // First transform the DM into TDM.
+  DotMatrix *TDM = transportDotMatrix(DM);
+
+  // Handle the MulDM row by row.
+  for (unsigned i = 0; i < MulDMInfos.size(); ++i) {
+    unsigned MulDMRowIdx = MulDMInfos[i].first;
+    float TimeLimit = MulDMInfos[i].second.first;
+    unsigned StartPoint = MulDMInfos[i].second.second.first;
+    unsigned ValidWidth = MulDMInfos[i].second.second.second;
+
+    MatrixRow *MulDMRow = MulDM->getRow(MulDMRowIdx);
+    std::vector<MatrixDot *> PCBCCOpA;
+    std::vector<MatrixDot *> PCBCCOpB;
+    for (unsigned j = StartPoint; j < StartPoint + ValidWidth; ++j) {
+      MatrixDot *MulDMDot = MulDMRow->getDot(j);
+
+      // Search for available dot in TDM.
+      MatrixRow *TDMRow = TDM->getRow(j);
+      bool Continue = true;
+      for (unsigned k = 0; k < TDMRow->getWidth(); ++k) {
+        MatrixDot *TDMDot = TDMRow->getDot(k);
+
+        // Ignore the ZeroDot.
+        if (TDMDot->isZero())
+          continue;
+
+        float TDMDotAT = TDMDot->getArrivalTime();
+        
+        if (TDMDotAT <= TimeLimit) {
+          PCBCCOpA.push_back(MulDMDot);
+          PCBCCOpB.push_back(TDMDot);
+          break;
+        }
+        else {
+          Continue = false;
+          break;
+        }
+      }
+
+      if (!Continue)
+        break;
     }
 
-    TMatrix.push_back(TRow);
+    assert(PCBCCOpA.size() == PCBCCOpB.size() && "Unexpected different size!");
+    unsigned Length = PCBCCOpA.size();
+
+    // Ignore if the length of carry chain is too small.
+    if (Length <= 2)
+      continue;
+
+    // Print the implementation of PreComputingByCarryChain.
+    printPCBCC(PCBCCOpA, PCBCCOpB, i, Output);
+
+    /// Generate the result dots.
+
+    // The arrival time of result dots.
+    float MaxOpArrivalTime = 0.0f;
+    for (unsigned j = 0; j < PCBCCOpA.size(); ++j) {
+      MatrixDot *PCBCCOpADot = PCBCCOpA[j];
+      MaxOpArrivalTime = std::max(MaxOpArrivalTime, PCBCCOpADot->getArrivalTime());
+    }
+    for (unsigned j = 0; j < PCBCCOpB.size(); ++j) {
+      MatrixDot *PCBCCOpBDot = PCBCCOpB[j];
+      MaxOpArrivalTime = std::max(MaxOpArrivalTime, PCBCCOpBDot->getArrivalTime());
+    }
+    // TODO: set the correct carry chain delay.
+    MaxOpArrivalTime = MaxOpArrivalTime + 2.0f;
+
+    std::vector<MatrixDot *> ResultDots;
+    for (unsigned j = 0; j < Length; ++j) {
+      unsigned C4Idx = j / 4;
+      unsigned C4BitIdx = j % 4;
+
+      std::string DotName = "c4_" + utostr_32(i) + "_" + utostr_32(C4Idx) +
+                            "_sum" + "[" + utostr_32(C4BitIdx) + "]";
+
+      MatrixDot *ResultDot = createNormalMatrixDot(DotName, 2.0f, 0);
+      ResultDots.push_back(ResultDot);
+    }
+    if (Length % 4 == 0) {
+      unsigned C4Idx = (Length - 1) / 4;
+      std::string DotName
+        = "c4_" + utostr_32(i) + "_" + utostr_32(C4Idx) + "_carry[3]";
+
+      MatrixDot *ResultDot = createNormalMatrixDot(DotName, 2.0f, 0);
+      ResultDots.push_back(ResultDot);
+    }
+    else {
+      unsigned C4Idx = Length / 4;
+      unsigned C4BitIdx = Length % 4;
+
+      std::string DotName = "c4_" + utostr_32(i) + "_" + utostr_32(C4Idx) +
+                            "_sum" + "[" + utostr_32(C4BitIdx) + "]";
+
+      MatrixDot *ResultDot = createNormalMatrixDot(DotName, 2.0f, 0);
+      ResultDots.push_back(ResultDot);
+    }
+
+    // Clear the dots used in the implementation of PreComputingByCarryChain.
+    for (unsigned j = 0; j < Length; ++j) {
+      MatrixDot *PCBCCOpADot = PCBCCOpA[j];
+      MatrixDot *PCBCCOpBDot = PCBCCOpB[j];
+
+      PCBCCOpADot->setToZero();
+      PCBCCOpBDot->setToZero();
+    }
+
+    // Insert the result into TDM.
+    for (unsigned j = StartPoint; j < StartPoint + Length; ++j) {
+      MatrixDot *ResultDot = ResultDots[j - StartPoint];
+      MatrixRow *TDMRow = TDM->getRow(j);
+
+      TDMRow->addDot(ResultDot);
+    }
+  }
+
+  /// For these dots in MulDM which can't be pre-computed by carry-chain,
+  /// generate the origin booth coding elements and insert them into the DM.
+  for (unsigned i = 0; i < MulDM->getRowNum(); ++i) {
+    MatrixRow *MulDMRow = MulDM->getRow(i);
+
+    for (unsigned j = 0; j < MulDMRow->getWidth(); ++j) {
+      MatrixDot *MulDMDot = MulDMRow->getDot(j);
+
+      if (MulDMDot->isZero())
+        continue;
+
+      Output << "wire " + MulDMDot->getName() << ";\n";
+      Output << "PCBCC_LUT PCBCC_LUT_" + utostr_32(i) + "_" + utostr_32(j) << "(\n";
+
+      std::vector<std::string> CodingElements = MulDMDot->getCodingElements();
+      Output << "\t.triple_bit_group({" << CodingElements[2] << ", "
+        << CodingElements[1] << ", " << CodingElements[0] << "}),\n";
+      Output << "\t.current_bit(" << CodingElements[3] << "),\n";
+      Output << "\t.previous_bit(" << CodingElements[4] << "),\n";
+      Output << "\t.operand_bit(1'b0),\n";
+      Output << "\t.result(" << MulDMDot->getName() << ")\n";
+      Output << ");\n\n";
+
+      MatrixRow *TDMRow = TDM->getRow(j);
+      TDMRow->addDot(MulDMDot);
+    }
+  }
+
+  // Transport the TDM back to DM.
+  unsigned MaxColNum = 0;
+  for (unsigned i = 0; i < TDM->getRowNum(); ++i) {
+    unsigned ColNum = TDM->getRow(i)->getWidth();
+    MaxColNum = std::max(MaxColNum, ColNum);
+  }
+  for (unsigned i = 0; i < TDM->getRowNum(); ++i) {
+    MatrixRow *Row = TDM->getRow(i);
+    unsigned ColNum = Row->getWidth();
+    unsigned PaddingNum = MaxColNum - ColNum;
+    
+    for (unsigned j = 0; j < PaddingNum; ++j)
+      Row->addZeroDot();
+  }
+
+  DM = transportDotMatrix(TDM);
+
+  return DM;
+}
+
+void SIRMOAOpt::printPCBCC(std::vector<MatrixDot *> OpA,
+                           std::vector<MatrixDot *> OpB,
+                           unsigned Idx, raw_fd_ostream &Output) {
+  assert(OpA.size() == OpB.size() && "Unexpected different size!");
+  unsigned Length = OpA.size();
+
+  // Print the LUT part.
+  for (unsigned i = 0; i < Length; ++i) {
+    std::string LUTResultName = "CC_result_" + utostr_32(Idx) + "_" + utostr_32(i);
+
+    Output << "wire " + LUTResultName << ";\n";
+    Output << "PCBCC_LUT PCBCC_LUT_" + utostr_32(Idx) + "_" + utostr_32(i) << "(\n";
+    
+    MatrixDot *MulDMDot = OpA[i];
+    MatrixDot *DMDot = OpB[i];
+
+    std::vector<std::string> CodingElements = MulDMDot->getCodingElements();
+    Output << "\t.triple_bit_group({" << CodingElements[2] << ", "
+           << CodingElements[1] << ", " << CodingElements[0] << "}),\n";
+    Output << "\t.current_bit(" << CodingElements[3] << "),\n";
+    Output << "\t.previous_bit(" << CodingElements[4] << "),\n";
+    Output << "\t.operand_bit(" << DMDot->getName() << "),\n";
+    Output << "\t.result(" << LUTResultName << ")\n";
+    Output << ");\n\n";
+  }
+
+  // Print the CarryChain part.
+  unsigned C4Num = std::ceil(Length / 4.0f);
+  for (unsigned i = 0; i < C4Num; ++i) {
+    std::string C4SumName = "c4_" + utostr_32(Idx) + "_" + utostr_32(i) + "_sum";
+    std::string C4CarryName = "c4_" + utostr_32(Idx) + "_" + utostr_32(i) + "_carry";
+
+    Output << "wire[3:0] " << C4SumName << ";\n";
+    Output << "wire[3:0] " << C4CarryName << ";\n";
+    Output << "CARRY4 CARRY4_" + utostr_32(Idx) + "_" + utostr_32(i) << "(\n";
+
+    Output << "\t.DI({";
+    for (unsigned j = i * 4; j < (i + 1) * 4; ++j) {
+      if ((i + 1) * 4 - 1 - j + i * 4 < Length) {
+        MatrixDot *Dot = OpB[(i + 1) * 4 - 1 - j + i * 4];
+        Output << Dot->getName();
+      }
+      else
+        Output << "1'b0";      
+
+      if (j != (i + 1) * 4 - 1)
+        Output << ", ";
+    }
+    Output << "}),\n";
+
+    Output << "\t.S({";
+    for (unsigned j = i * 4; j < (i + 1) * 4; ++j) {
+      if ((i + 1) * 4 - 1 - j + i * 4 < Length)
+        Output << "CC_result_" + utostr_32(Idx) + "_"
+               << utostr_32((i + 1) * 4 - 1 - j + i * 4);
+      else
+        Output << "1'b0";
+
+      if (j != (i + 1) * 4 - 1)
+        Output << ", ";
+    }
+    Output << "}),\n";
+
+    Output << "\t.O(" << C4SumName << "),\n";
+    Output << "\t.CO(" << C4CarryName << "),\n";
+    Output << "\t.CYINIT(1'b0),\n";
+
+    if (i != 0)
+      Output << "\t.CI(" << "c4_" + utostr_32(Idx)
+             << "_" + utostr_32(i - 1) + "_carry[3])\n";
+    else
+      Output << "\t.CI(1'b0)\n";
+
+    Output << ");\n\n";
+  }
+}
+
+DotMatrix *SIRMOAOpt::transportDotMatrix(DotMatrix *DM) {
+  unsigned RowNum = DM->getRowNum();
+  unsigned ColNum = DM->getColNum();
+
+  DotMatrix *TDM = new DotMatrix(DM->getName());
+
+  for (unsigned j = 0; j < ColNum; ++j) {
+    MatrixRow *TRow = new MatrixRow();
+
+    for (unsigned i = 0; i < RowNum; ++i) {
+      MatrixRow *Row = DM->getRow(i);
+
+      TRow->addDot(Row->getDot(j));
+    }
+
+    TDM->addRow(TRow);
   }
   
-  return TMatrix;
+  return TDM;
 }
 
-std::vector<unsigned> SIRMOAOpt::getOneBitNumList(MatrixType TMatrix) {
-  std::vector<unsigned> OneBitNumList;
+DotMatrix *SIRMOAOpt::abandonZeroDots(DotMatrix *TDM) {
+  DotMatrix *ResultTDM = new DotMatrix();
 
-  for (unsigned i = 0; i < TMatrix.size(); ++i) {
-    MatrixRowType TRow = TMatrix[i];
+  for (unsigned i = 0; i < TDM->getRowNum(); ++i) {
+    MatrixRow *ResultTRow = new MatrixRow();
 
-    unsigned OneBitNum = 0;
-    for (unsigned j = 0; j < TRow.size(); ++j) {
-      if (TRow[j].first == "1'b1")
-        ++OneBitNum;
+    MatrixRow *OriginTRow = TDM->getRow(i);
+    for (unsigned j = 0; j < OriginTRow->getWidth(); ++j) {
+      MatrixDot *Dot = OriginTRow->getDot(j);
+
+      if (!Dot->isZero())
+        ResultTRow->addDot(Dot);
     }
 
-    OneBitNumList.push_back(OneBitNum);
+    ResultTDM->addRow(ResultTRow);
   }
 
-  return OneBitNumList;
+  return ResultTDM;
 }
 
-std::vector<unsigned> SIRMOAOpt::getBitNumList(MatrixType TMatrix) {
-  std::vector<unsigned> BitNumList;
-
-  for (unsigned i = 0; i < TMatrix.size(); ++i) {
-    MatrixRowType Row = TMatrix[i];
-
-    // If there are no dot in current row.
-    if (Row.size() == 0) {
-      BitNumList.push_back(0);
-      continue;
-    }
-
-    unsigned BitNum = 0;
-    for (unsigned j = 0; j < Row.size(); ++j) {
-      if (Row[j].first != "1'b0")
-        ++BitNum;
-    }
-
-    BitNumList.push_back(BitNum);   
-  }
-
-  return BitNumList;
-}
-
-std::vector<unsigned>
-SIRMOAOpt::getActiveBitNumList(MatrixType TMatrix, unsigned Stage) {
-  std::vector<unsigned> ActiveBitNumList;
-
-  for (unsigned i = 0; i < TMatrix.size(); ++i) {
-    MatrixRowType Row = TMatrix[i];
-
-    // If there are no dot in current row.
-    if (Row.size() == 0) {
-      ActiveBitNumList.push_back(0);
-      continue;
-    }
-
-    unsigned BitNum = 0;
-    for (unsigned j = 0; j < Row.size(); ++j) {
-      if (Row[j].first != "1'b0" && Row[j].second.second <= Stage)
-        ++BitNum;
-    }
-
-    ActiveBitNumList.push_back(BitNum);
-  }
-
-  return ActiveBitNumList;
-}
-
-std::vector<unsigned>
-SIRMOAOpt::getMaxEBitNumList(std::vector<unsigned> ActiveDotNumList) {
-  // Calculate the maximal number of dots which can be eliminated now.
-  std::vector<unsigned> MaxEDotNumList;
-  for (unsigned i = 0; i < ActiveDotNumList.size(); ++i) {
-    unsigned ActiveDotNum = ActiveDotNumList[i];
-
-    unsigned MaxEDotNum = 0;
-    if (ActiveDotNum >= 2) {
-      unsigned MaxEDotNum_part1 = std::ceil(ActiveDotNum / 6) * 5;
-      unsigned MaxEDotNum_part2 = ActiveDotNum % 6 == 0 ? 0 : (ActiveDotNum % 6 - 1);
-
-      MaxEDotNum = MaxEDotNum_part1 + MaxEDotNum_part2;
-    }
-
-    MaxEDotNumList.push_back(MaxEDotNum);
-  }
-
-  return MaxEDotNumList;
-}
-
-MatrixType SIRMOAOpt::simplifyTMatrix(MatrixType TMatrix) {
-  // Eliminate the useless 1'b0 and its delay-stage info
-  MatrixType SimplifiedTMatrix;
-
-  for (unsigned i = 0; i < TMatrix.size(); ++i) {
-    MatrixRowType SimplifiedTRow;
-
-    MatrixRowType TRow = TMatrix[i];
-
-    for (unsigned j = 0; j < TRow.size(); ++j) {
-      DotType Dot = TRow[j];
-
-      if (Dot.first != "1'b0" && Dot.first != "~1'b1")
-        SimplifiedTRow.push_back(Dot);
-    }
-
-    SimplifiedTMatrix.push_back(SimplifiedTRow);
-  }
-
-  return SimplifiedTMatrix;
-}
-
-bool DotCompare(const DotType &DotA, const DotType &DotB) {
-  unsigned DotAStage = DotA.second.second;
-  unsigned DotBStage = DotB.second.second;
-  float DotADelay = DotA.second.first;
-  float DotBDelay = DotB.second.first;
-
-  if (sortMatrixByArrivalTime) {
-    if (DotAStage < DotBStage)
-      return true;
-    else if (DotAStage > DotBStage)
-      return false;
-    else {
-      if (DotADelay < DotBDelay)
-        return true;
-      else
-        return false;
-    }
-  }
-  else {
-    if (DotAStage < DotBStage)
-      return true;
-    else
-      return false;
-  }
-}
-
-MatrixType SIRMOAOpt::sortTMatrix(MatrixType TMatrix) {
-  // Sort the bits according to #1: stage, #2: delay.
-  MatrixType SortedTMatrix;
-
-  for (unsigned i = 0; i < TMatrix.size(); ++i) {
-    MatrixRowType SimplifiedTRow = TMatrix[i];
-
-    std::sort(SimplifiedTRow.begin(), SimplifiedTRow.end(), DotCompare);
-
-    SortedTMatrix.push_back(SimplifiedTRow);
-  }
-
-  return SortedTMatrix;
-}
-
-MatrixType SIRMOAOpt::sumAllOneBitsInTMatrix(MatrixType TMatrix) {
-  // Get the number of one bit in each row in TMatrix.
-  std::vector<unsigned> OneBitNumList = getOneBitNumList(TMatrix);
-
-  // The number of one bit in each row after sum.
-  std::vector<unsigned> OneBitNumAfterSumList;
-  for (unsigned i = 0; i < OneBitNumList.size(); ++i) {
-    unsigned OneBitNumInCurrentRow = OneBitNumList[i];
-
-    OneBitNumAfterSumList.push_back(OneBitNumInCurrentRow % 2);
-    unsigned CarryOneNum = OneBitNumInCurrentRow / 2;
-
-    if (i != OneBitNumList.size() - 1)
-      OneBitNumList[i + 1] += CarryOneNum;
-  }
-
-  /// Insert the one bit after sum to TMatrix and eliminate all origin one bits.
-  MatrixType TMatrixAfterSum;
-
-  for (unsigned i = 0; i < TMatrix.size(); ++i) {
-    MatrixRowType TRowAfterSum;
-
-    // Insert the one bit.
-    std::string DotName;
-    if (OneBitNumAfterSumList[i] == 0)
-      DotName = "1'b0";
-    else
-      DotName = "1'b1";
-
-    TRowAfterSum.push_back(std::make_pair(DotName, std::make_pair(0.0f, 0)));
-
-    // Insert other origin bits other than one bits which will be eliminated.
-    MatrixRowType TRow = TMatrix[i];
-    for (unsigned j = 0; j < TRow.size(); ++j) {
-      if (TRow[j].first != "1'b1")
-        TRowAfterSum.push_back(TRow[j]);
-      else
-        TRowAfterSum.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
-    }
-
-    TMatrixAfterSum.push_back(TRowAfterSum);
-  }
-
-  return TMatrixAfterSum;
-}
-
-MatrixType SIRMOAOpt::eliminateOneBitInTMatrix(MatrixType TMatrix) {
-  return TMatrix;
-
-  // Simplify and sort the TMatrix to prepare for the eliminating.
-  TMatrix = simplifyTMatrix(TMatrix);
-  TMatrix = sortTMatrix(TMatrix);
-
-  // Eliminate the 1'b1 in TMatrix using the equation:
-  // 1'b1 + 1'bs = 2'bs~s
-  std::vector<unsigned> OneBitNumList = getOneBitNumList(TMatrix);
-  for (unsigned i = 0; i < TMatrix.size(); ++i) {
-    MatrixRowType Row = TMatrix[i];
-
-    unsigned OneBitNum = OneBitNumList[i];
-    if (OneBitNum == 0 || Row.size() <= 1)
-      continue;
-
-    assert(Row[0].first == "1'b1" && "Unexpected Bit!");
-    assert(Row[1].first != "1'b0" && Row[1].first != "1'b1" && "Unexpected Bit!");
-
-    std::string SumName = "~" + Row[1].first;
-    std::string CarryName = Row[1].first;
-
-    TMatrix[i][0] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
-    TMatrix[i][1] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
-
-    TMatrix[i].push_back(std::make_pair(SumName, Row[1].second));
-    if (i + 1 < TMatrix.size())
-      TMatrix[i + 1].push_back(std::make_pair(CarryName, Row[1].second));
-  }
-
-  return TMatrix;
-}
-
-SIRMOAOpt::CompressComponent
+CompressComponent
 SIRMOAOpt::createAddChainComponent(std::string Name, unsigned OpNum,
                                    unsigned BitWidth, unsigned Area,
                                    float CriticalDelay) {
@@ -2116,13 +2806,12 @@ void SIRMOAOpt::initLibrary() {
   //initAddChains();
 }
 
-std::vector<unsigned>
-SIRMOAOpt::calculateIHs(MatrixType TMatrix, unsigned TargetHeight) {
-  // Get the dot numbers in each columns.
-  std::vector<unsigned> BitNumList = getBitNumList(TMatrix);
-  unsigned MaxBitNum = 0;
-  for (unsigned i = 0; i < BitNumList.size(); ++i) {
-    MaxBitNum = std::max(MaxBitNum, BitNumList[i]);
+std::vector<unsigned> SIRMOAOpt::calculateIHs(DotMatrix *TDM) {
+  // Get the non-zero dot numbers in each row of TDM.
+  std::vector<unsigned> NZDotNumList = TDM->getNonZeroDotNumList();
+  unsigned MaxNZDotNum = 0;
+  for (unsigned i = 0; i < NZDotNumList.size(); ++i) {
+    MaxNZDotNum = std::max(MaxNZDotNum, NZDotNumList[i]);
   }
 
 //   // Get the highest priority GPC.
@@ -2175,7 +2864,7 @@ SIRMOAOpt::calculateIHs(MatrixType TMatrix, unsigned TargetHeight) {
   std::vector<unsigned> IHs;
 
   unsigned IH = TargetHeight;
-  while (IH < MaxBitNum) {
+  while (IH < MaxNZDotNum) {
     IHs.push_back(IH);
 
     IH = std::floor(IH * CompressionRatio);
@@ -2184,87 +2873,84 @@ SIRMOAOpt::calculateIHs(MatrixType TMatrix, unsigned TargetHeight) {
   return IHs;
 }
 
-MatrixType
-SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
-                                         unsigned ComponentIdx,
-                                         unsigned RowNo, unsigned Stage,
-                                         unsigned &FinalGPCLevel,
-                                         raw_fd_ostream &Output) {
-  // Get information of TMatrix.
-  std::vector<unsigned> ActiveBitNumList
-    = getActiveBitNumList(TMatrix, Stage);
+DotMatrix *SIRMOAOpt::compressTDMUsingGPC(DotMatrix *TDM, unsigned GPCIdx,
+                                          unsigned RowNo, unsigned Level,
+                                          unsigned &TotalLevels,
+                                          raw_fd_ostream &Output) {
+  // Get information of TDM.
+  std::vector<unsigned> ActiveNZDotNumList = TDM->getActiveNZDotNumList(Level);
 
-  // Get the Component to be used.
-  CompressComponent *Component = Library[ComponentIdx];
+  // Get the GPC to be used.
+  CompressComponent *GPC = Library[GPCIdx];
 
   // Identify if the component is GPC with extra one type.
-  bool IsSpecialGPC = isa<GPC_with_extra_One>(Component);
+  bool IsSpecialGPC = isa<SpecialGPC>(GPC);
   unsigned RankOfExtraOne = 0;
   if (IsSpecialGPC) {
     assert(useSepcialGPC && "Unexpected special GPC here!");
 
-    GPC_with_extra_One *SpecialGPC = dyn_cast<GPC_with_extra_One>(Component);
-    RankOfExtraOne = SpecialGPC->getRankOfExtraOne();
+    SpecialGPC *SpGPC = dyn_cast<SpecialGPC>(GPC);
+    RankOfExtraOne = SpGPC->getRankOfExtraOne();
 
     // Code for debug
-    errs() << "Use the special GPC: " << SpecialGPC->getName() << "\n";
+    errs() << "Use the special GPC: " << SpGPC->getName() << "\n";
   }    
 
   // Collect input dots. It should be noted that, we do not restrict that the
-  // inputs of GPC must be fulfilled by dots in TMatrix here. This is for the
+  // inputs of GPC must be fulfilled by dots in TDM here. This is for the
   // convenience of coding. For example, if we want to relieve the restriction
   // someday, we just need to change the code in function "getHighestPriority-
   // Component".
   float MaxInputArrivalTime = 0.0f;
-  std::vector<std::vector<DotType> > InputDots;
-  std::vector<unsigned> InputDotNums = Component->getInputDotNums();
+  std::vector<std::vector<MatrixDot *> > InputDots;
+  std::vector<unsigned> InputDotNums = GPC->getInputDotNums();
   for (unsigned i = 0; i < InputDotNums.size(); ++i) {
     unsigned InputDotNum = InputDotNums[i];
 
-    std::vector<DotType> InputDotRow;
-    if (RowNo + i < TMatrix.size()) {
+    std::vector<MatrixDot *> InputDotRow;
+    if (RowNo + i < TDM->getRowNum()) {
       for (unsigned j = 0; j < InputDotNum; ++j) {
         unsigned DotIdx = j;
 
         if (useSepcialGPC) {
           // Reserve the 1'b1 dot so it may be summed by GPC with extra
           // one in process of next row.
-          if (i != RankOfExtraOne && TMatrix[RowNo + i][0].first == "1'b1" &&
-            InputDotNum < ActiveBitNumList[RowNo + i]) {
+          if (i != RankOfExtraOne &&
+              TDM->getRow(RowNo + i)->getDot(0)->isOne() &&
+              InputDotNum < ActiveNZDotNumList[RowNo + i]) {
             ++DotIdx;
           }
         }        
 
-        if (DotIdx < ActiveBitNumList[RowNo + i]) {
-          DotType Dot = TMatrix[RowNo + i][DotIdx];
+        if (DotIdx < ActiveNZDotNumList[RowNo + i]) {
+          MatrixDot *Dot = TDM->getRow(RowNo + i)->getDot(DotIdx);
 
           if (useSepcialGPC) {
             // Make sure the input is valid if it is a GPC with extra one.
             if (IsSpecialGPC && i == RankOfExtraOne && DotIdx == 0)
-              assert(Dot.first == "1'b1" && "Unexpected input dot!");
+              assert(Dot->getName() == "1'b1" && "Unexpected input dot!");
           }          
 
           InputDotRow.push_back(Dot);
 
-          // Clear input dots in TMatrix.
-          TMatrix[RowNo + i][DotIdx] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
-
           // Collect the arrival time of each input dot.
-          float InputArrivalTime = Dot.second.first;
-          MaxInputArrivalTime = MaxInputArrivalTime > InputArrivalTime ?
-                                  MaxInputArrivalTime : InputArrivalTime;
+          float InputArrivalTime = Dot->getArrivalTime();
+          MaxInputArrivalTime = std::max(MaxInputArrivalTime, InputArrivalTime);
 
-          // Make sure we compress the dots in right stage.
-          assert(Dot.second.second <= Stage && "Unexpected dot stage!");
+          // Make sure we compress the dots in right level.
+          assert(Dot->getLevel() <= Level && "Unexpected level!");
         }
         else {
-          InputDotRow.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
+          MatrixDot *ZeroDot = createNormalMatrixDot("1'b0", 0.0f, 0);
+          InputDotRow.push_back(ZeroDot);
         }
       }
     }
     else {
-      for (unsigned j = 0; j < InputDotNum; ++j)
-        InputDotRow.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
+      for (unsigned j = 0; j < InputDotNum; ++j) {
+        MatrixDot *ZeroDot = createNormalMatrixDot("1'b0", 0.0f, 0);
+        InputDotRow.push_back(ZeroDot);
+      }
     }
 
     InputDots.push_back(InputDotRow);
@@ -2274,128 +2960,115 @@ SIRMOAOpt::compressTMatrixUsingComponent(MatrixType TMatrix,
   unsigned MaxInputDotLevel = 0;
   for (unsigned i = 0; i < InputDots.size(); ++i) {
     for (unsigned j = 0; j < InputDots[i].size(); ++j) {
-      unsigned InputDotLevel = InputDots[i][j].second.second;
-
-      MaxInputDotLevel
-        = MaxInputDotLevel > InputDotLevel ? MaxInputDotLevel : InputDotLevel;
+      unsigned InputDotLevel = InputDots[i][j]->getLevel();
+      MaxInputDotLevel = std::max(MaxInputDotLevel, InputDotLevel);
     }
   }
   unsigned GPCLevel = MaxInputDotLevel + 1;
 
   // Update the final GPC level.
-  FinalGPCLevel = FinalGPCLevel > GPCLevel ? FinalGPCLevel : GPCLevel;
+  TotalLevels = std::max(TotalLevels, GPCLevel);
 
   // Get name and delay for output dots.
   std::string OutputName
-    = "gpc_result_" + utostr_32(Component_NUM++) + "_" + utostr_32(GPCLevel);
+    = "gpc_result_" + utostr_32(GPCNum++) + "_" + utostr_32(GPCLevel);
   float OutputArrivalTime
-    = MaxInputArrivalTime + Component->getCriticalDelay() + VFUs::WireDelay;
+    = MaxInputArrivalTime + GPC->getCriticalDelay() + VFUs::WireDelay;
 
   // Insert the output dots into TMatrix.
-  unsigned OutputDotNum = Component->getOutputDotNum();
+  unsigned OutputDotNum = GPC->getOutputDotNum();
   for (unsigned i = 0; i < OutputDotNum; ++i) {
     // Do not insert if exceed the range of TMatrix.
-    if (RowNo + i >= TMatrix.size())
+    if (RowNo + i >= TDM->getRowNum())
       break;
 
     std::string OutputDotName = OutputName + "[" + utostr_32(i) + "]";
-    TMatrix[RowNo + i].push_back(std::make_pair(OutputDotName,
-                                                std::make_pair(0.0f, GPCLevel)));
+
+    MatrixDot *Dot
+      = createNormalMatrixDot(OutputDotName, OutputArrivalTime, GPCLevel);
+    TDM->getRow(RowNo + i)->addDot(Dot);
   }
 
   // Generate component instance.
-  printComponentInstance(ComponentIdx, InputDots,
-                         OutputName, Output);
+  printComponentInstance(GPCIdx, InputDots, OutputName, Output);
 
-  printTMatrixForDebug(TMatrix);
-
-  return TMatrix;
-}
-
-bool AscendingOrderInPerformance(std::pair<unsigned, GPCPerformanceType> OpA,
-                                 std::pair<unsigned, GPCPerformanceType> OpB) {
-  if (OpA.second.first < OpB.second.first)
-    return true;
-  else if (OpA.second.first > OpB.second.first)
-    return false;
-  else {
-    if (OpA.second.second < OpB.second.second)
-      return true;
-    else
-      return false;
+  // Clear input dots in TMatrix.
+  for (unsigned i = 0; i < InputDots.size(); ++i) {
+    std::vector<MatrixDot *> IDsInCurrentRow = InputDots[i];
+    for (unsigned j = 0; j < IDsInCurrentRow.size(); ++j) {
+      MatrixDot *InputDot = IDsInCurrentRow[j];
+      InputDot->setToZero();
+    }
   }
+
+  printDotMatrixForDebug(TDM);
+
+  return TDM;
 }
 
-unsigned
-SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
-                                       unsigned ActiveStage, unsigned IH) {
+unsigned SIRMOAOpt::getHighestPriorityGPC(DotMatrix *TDM, unsigned RowNo,
+                                          unsigned Level, unsigned IH) {
   // Get information of TMatrix.
-  std::vector<unsigned> BitNumList = getBitNumList(TMatrix);
-  std::vector<unsigned> ActiveBitNumList
-    = getActiveBitNumList(TMatrix, ActiveStage);
-  std::vector<unsigned> MaxEBitNumList = getMaxEBitNumList(ActiveBitNumList);
+  std::vector<unsigned> NZDotNumList = TDM->getNonZeroDotNumList();
+  std::vector<unsigned> ActiveNZDotNumList = TDM->getActiveNZDotNumList(Level);
 
-  // Get the excess bit number.
-  std::vector<unsigned> ExcessBitNumList;
-  for (unsigned i = 0; i < BitNumList.size(); ++i) {
-    
-    unsigned ExcessBitNum = BitNumList[i] > IH ? BitNumList[i] - IH: 0;
-
-    ExcessBitNumList.push_back(ExcessBitNum);
+  // Get the number of dots excess the target intermediate height.
+  std::vector<unsigned> ExcessDotNumList;
+  for (unsigned i = 0; i < NZDotNumList.size(); ++i) {    
+    unsigned ExcessDotNum = NZDotNumList[i] > IH ? NZDotNumList[i] - IH: 0;
+    ExcessDotNumList.push_back(ExcessDotNum);
   }
 
   // Try all library and evaluate its priority.
-  std::vector<std::pair<unsigned, GPCPerformanceType> > PerformanceList;
+  std::vector<std::pair<unsigned, PerfType> > PerformanceList;
   for (unsigned i = 0; i < Library.size(); ++i) {
-    CompressComponent *Component = Library[i];
+    CompressComponent *GPC = Library[i];
 
     // Get the information of current GPC.
-    std::vector<unsigned> InputDotNums = Component->getInputDotNums();
+    std::vector<unsigned> InputDotNums = GPC->getInputDotNums();
     unsigned InputDotNum = 0;
     for (unsigned j = 0; j < InputDotNums.size(); ++j) {
       InputDotNum += InputDotNums[j];
     }
 
-    unsigned OutputDotNum = Component->getOutputDotNum();
-    unsigned MaxOutputDotNum = TMatrix.size() - RowNo + 1;
-    OutputDotNum = OutputDotNum < MaxOutputDotNum ? OutputDotNum : MaxOutputDotNum;
+    unsigned OutputDotNum
+      = std::min(GPC->getOutputDotNum(), TDM->getRowNum() - RowNo + 1);
 
     unsigned CompressedDotNum
       = InputDotNum > OutputDotNum ? InputDotNum - OutputDotNum : 0;
 
-    float CriticalDelay = Component->getCriticalDelay() + VFUs::WireDelay;
-    unsigned Area = Component->getArea();
+    float CriticalDelay = GPC->getCriticalDelay() + VFUs::WireDelay;
+    unsigned Area = GPC->getArea();
 
-    /// Ignore the invalid component which satisfy following conditions:
-    bool ComponentInValid = false;
+    /// Ignore the invalid GPC which satisfy following conditions:
+    bool GPCInValid = false;
 
     // 1) eliminate dots more than what we need.
-    if (InputDotNums[0] - 1 > ExcessBitNumList[RowNo])
-      ComponentInValid = true;
+    if (InputDotNums[0] - 1 > ExcessDotNumList[RowNo])
+      GPCInValid = true;
 
     // 2) Inputs can not be fulfilled.
-    if (RowNo + InputDotNums.size() > TMatrix.size())
-      ComponentInValid = true;
+    if (RowNo + InputDotNums.size() > TDM->getRowNum())
+      GPCInValid = true;
     else {
       for (unsigned j = 0; j < InputDotNums.size(); ++j) {
-        if (InputDotNums[j] > ActiveBitNumList[RowNo + j]) {
-          ComponentInValid = true;
+        if (InputDotNums[j] > ActiveNZDotNumList[RowNo + j]) {
+          GPCInValid = true;
           break;
         }
       }
     }      
 
-    // 3) No available 1'b1 if the component is special GPC.
-    if (GPC_with_extra_One *SpecialGPC
-      = dyn_cast<GPC_with_extra_One>(Component)) {
-      unsigned ExtraOneRank = SpecialGPC->getRankOfExtraOne();
+    // 3) No available 1'b1 if the GPC is special GPC.
+    if (SpecialGPC *SpGPC = dyn_cast<SpecialGPC>(GPC)) {
+      unsigned ExtraOneRank = SpGPC->getRankOfExtraOne();
 
-      MatrixRowType TargetRow = TMatrix[RowNo + ExtraOneRank];
-      if (TargetRow[0].first != "1'b1")
-        ComponentInValid = true;
+      MatrixRow *Row = TDM->getRow(RowNo + ExtraOneRank);
+      if (!Row->getDot(0)->isOne())
+        GPCInValid = true;
     }
 
-    if (ComponentInValid)
+    if (GPCInValid)
       continue;
 
     // Evaluate the performance.
@@ -2404,7 +3077,7 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
     //float Performance = ((float)CompressedDotNum) / RealDelay;
     float CompressRatio = ((float)InputDotNum) / OutputDotNum;
     float NegativeDelay = 0.0f - CriticalDelay;
-    GPCPerformanceType Perf
+    PerfType Perf
       = std::make_pair(std::make_pair(InputDotNums[0], CompressRatio), NegativeDelay);
     PerformanceList.push_back(std::make_pair(i, Perf));
   }
@@ -2412,7 +3085,7 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
   assert(!PerformanceList.empty() && "No feasible GPC!");
 
   // Sort the PriorityList and get the highest one.
-  std::sort(PerformanceList.begin(), PerformanceList.end(), AscendingOrderInPerformance);
+  std::sort(PerformanceList.begin(), PerformanceList.end(), sortInPeformance);
 
 //   // Debug
 //   errs() << "Component performance list is as follows:\n";
@@ -2428,392 +3101,156 @@ SIRMOAOpt::getHighestPriorityComponent(MatrixType TMatrix, unsigned RowNo,
   return PerformanceList.back().first;
 }
 
-MatrixType
-SIRMOAOpt::preCompressTMatrixUsingComponent(MatrixType TMatrix,
-                                            unsigned ComponentIdx,
-                                            unsigned RowNo, unsigned Stage,
-                                            unsigned &FinalGPCLevel) {
-  // Get information of TMatrix.
-  std::vector<unsigned> ActiveBitNumList
-    = getActiveBitNumList(TMatrix, Stage);
-
-  // Get the Component to be used.
-  CompressComponent *Component = Library[ComponentIdx];
-
-  // Identify if the component is GPC with extra one type.
-  bool IsSpecialGPC = isa<GPC_with_extra_One>(Component);
-  unsigned RankOfExtraOne = 0;
-  if (IsSpecialGPC) {
-    assert(useSepcialGPC && "Unexpected special GPC here!");
-
-    GPC_with_extra_One *SpecialGPC = dyn_cast<GPC_with_extra_One>(Component);
-    RankOfExtraOne = SpecialGPC->getRankOfExtraOne();
-
-    // Code for debug
-    errs() << "Use the special GPC: " << SpecialGPC->getName() << "\n";
-  }
-
-  // Collect input dots. It should be noted that, we do not restrict that the
-  // inputs of GPC must be fulfilled by dots in TMatrix here. This is for the
-  // convenience of coding. For example, if we want to relieve the restriction
-  // someday, we just need to change the code in function "getHighestPriority-
-  // Component".
-  float MaxInputArrivalTime = 0.0f;
-  std::vector<std::vector<DotType> > InputDots;
-  std::vector<unsigned> InputDotNums = Component->getInputDotNums();
-  for (unsigned i = 0; i < InputDotNums.size(); ++i) {
-    unsigned InputDotNum = InputDotNums[i];
-
-    std::vector<DotType> InputDotRow;
-    if (RowNo + i < TMatrix.size()) {
-      for (unsigned j = 0; j < InputDotNum; ++j) {
-        unsigned DotIdx = j;
-
-        if (useSepcialGPC) {
-          // Reserve the 1'b1 dot so it may be summed by GPC with extra
-          // one in process of next row.
-          if (i != RankOfExtraOne && TMatrix[RowNo + i][0].first == "1'b1" &&
-            InputDotNum < ActiveBitNumList[RowNo + i]) {
-            ++DotIdx;
-          }
-        }
-
-        if (DotIdx < ActiveBitNumList[RowNo + i]) {
-          DotType Dot = TMatrix[RowNo + i][DotIdx];
-
-          if (useSepcialGPC) {
-            // Make sure the input is valid if it is a GPC with extra one.
-            if (IsSpecialGPC && i == RankOfExtraOne && DotIdx == 0)
-              assert(Dot.first == "1'b1" && "Unexpected input dot!");
-          }
-
-          InputDotRow.push_back(Dot);
-
-          // Clear input dots in TMatrix.
-          TMatrix[RowNo + i][DotIdx] = std::make_pair("1'b0", std::make_pair(0.0f, 0));
-
-          // Collect the arrival time of each input dot.
-          float InputArrivalTime = Dot.second.first;
-          MaxInputArrivalTime = MaxInputArrivalTime > InputArrivalTime ?
-                                  MaxInputArrivalTime : InputArrivalTime;
-
-          // Make sure we compress the dots in right stage.
-          assert(Dot.second.second <= Stage && "Unexpected dot stage!");
-        }
-        else {
-          InputDotRow.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
-        }
-      }
-    }
-    else {
-      for (unsigned j = 0; j < InputDotNum; ++j)
-        InputDotRow.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
-    }
-
-    InputDots.push_back(InputDotRow);
-  }
-
-  // Calculate the level of current GPC.
-  unsigned MaxInputDotLevel = 0;
-  for (unsigned i = 0; i < InputDots.size(); ++i) {
-    for (unsigned j = 0; j < InputDots[i].size(); ++j) {
-      unsigned InputDotLevel = InputDots[i][j].second.second;
-
-      MaxInputDotLevel = MaxInputDotLevel > InputDotLevel ?
-                           MaxInputDotLevel : InputDotLevel;
-    }
-  }
-  unsigned GPCLevel = MaxInputDotLevel + 1;
-
-  // Update the final GPC level.
-  FinalGPCLevel = FinalGPCLevel > GPCLevel ? FinalGPCLevel : GPCLevel;
-
-  // Get name and delay for output dots.
-  std::string OutputName
-    = "gpc_result_" + utostr_32(Component_NUM++) + "_" + utostr_32(GPCLevel);
-  float OutputArrivalTime
-    = MaxInputArrivalTime + Component->getCriticalDelay() + VFUs::WireDelay;
-
-  // Insert the output dots into TMatrix.
-  unsigned OutputDotNum = Component->getOutputDotNum();
-  for (unsigned i = 0; i < OutputDotNum; ++i) {
-    // Do not insert if exceed the range of TMatrix.
-    if (RowNo + i >= TMatrix.size())
-      break;
-
-    std::string OutputDotName = OutputName + "[" + utostr_32(i) + "]";
-    TMatrix[RowNo + i].push_back(std::make_pair(OutputDotName,
-                                                std::make_pair(0.0f, GPCLevel)));
-  }
-
-  printTMatrixForDebug(TMatrix);
-
-  return TMatrix;
-}
-
-MatrixType SIRMOAOpt::preCompressTMatrixInStage(MatrixType TMatrix,
-                                                unsigned IH, unsigned ActiveStage,
-                                                unsigned &FinalGPCLevel, unsigned &Area) {
+DotMatrix *SIRMOAOpt::compressTDMInLevel(DotMatrix *TDM, unsigned IH, unsigned Level,
+                                         unsigned &TotalLevels, unsigned &TotalArea,
+                                         raw_fd_ostream &Output) {
   // Get the informations of the TMatrix.
-  std::vector<unsigned> BitNumList = getBitNumList(TMatrix);
-  std::vector<unsigned> ActiveBitNumList
-    = getActiveBitNumList(TMatrix, ActiveStage);
+  std::vector<unsigned> NZDotNumList = TDM->getNonZeroDotNumList();
+  std::vector<unsigned> ActiveNZDotNumList = TDM->getActiveNZDotNumList(Level);
 
   // Compress row by row.
-  for (unsigned i = 0; i < TMatrix.size(); ++i) {
+  for (unsigned i = 0; i < TDM->getRowNum(); ++i) {
     // Compress current row if it has dots more than target IH.
-    while (BitNumList[i] > IH) {
-      unsigned ComponentIdx
-        = getHighestPriorityComponent(TMatrix, i, ActiveStage, IH);
+    while (NZDotNumList[i] > IH) {
+      unsigned GPCIdx
+        = getHighestPriorityGPC(TDM, i, Level, IH);
 
-      TMatrix = preCompressTMatrixUsingComponent(TMatrix, ComponentIdx, i,
-                                                 ActiveStage, FinalGPCLevel);
+      TDM = compressTDMUsingGPC(TDM, GPCIdx, i, Level, TotalLevels, Output);
 
       // Update the area.
-      CompressComponent *Component = Library[ComponentIdx];
-      Area += Component->getArea();
+      CompressComponent *GPC = Library[GPCIdx];
+      TotalArea += GPC->getArea();
 
-      // Do some clean up and optimize work.
-      TMatrix = eliminateOneBitInTMatrix(TMatrix);
-      TMatrix = simplifyTMatrix(TMatrix);
-      TMatrix = sortTMatrix(TMatrix);
+      // Do some clean up work.
+      TDM = abandonZeroDots(TDM);
 
       // Update the informations of the TMatrix.
-      BitNumList = getBitNumList(TMatrix);
-      ActiveBitNumList = getActiveBitNumList(TMatrix, ActiveStage);
+      NZDotNumList = TDM->getNonZeroDotNumList();
+      ActiveNZDotNumList = TDM->getActiveNZDotNumList(Level);
     }
   }
 
-  return TMatrix;
+  return TDM;
 }
 
-unsigned SIRMOAOpt::preCompressTMatrix(MatrixType TMatrix, std::vector<unsigned> IHs) {
-  // Backup the TMatrix.
-  MatrixType OriginTMatrix = TMatrix;
-
-  errs() << "Start pre-synthesize compressor tree:\n";
-
-  std::vector<std::pair<unsigned, std::pair<unsigned, unsigned> > > Costs;
-  for (unsigned i = 0; i < IHs.size(); ++i) {
-    errs() << "Pre-synthesis solution #" << utostr_32(i) << ":\n";
-
-    // Initialize the temporary IHs.
-    std::vector<unsigned> TempIHs;
-    for (unsigned j = 0; j < (IHs.size() - i); ++j) {
-      TempIHs.push_back(IHs[j]);
-    }
-
-    assert(!TempIHs.empty() && "Unexpected empty temporary IHs!");
-
-    // Pre-compress the TMatrix using the temporary
-    // IHs and record the area-delay cost.
-    unsigned FinalGPCLevel = 0;
-    unsigned Area = 0;
-    for (unsigned j = 0; j < TempIHs.size(); ++j) {
-      unsigned TempIH = TempIHs[TempIHs.size() - j - 1];
-
-      // Only in the fist compress progress, we allow
-      // the stage have a range from 0 to i.
-      unsigned StageRange = 0;
-      if (j == 0)
-        StageRange = i;
-
-      bool Continue = true;
-      while (Continue) {
-        TMatrix = preCompressTMatrixInStage(TMatrix, TempIH, i + j, FinalGPCLevel, Area);
-
-        // Determine if we need to continue compressing.
-        std::vector<unsigned> BitNumList = getBitNumList(TMatrix);
-        Continue = false;
-        for (unsigned i = 0; i < TMatrix.size(); ++i) {
-          if (BitNumList[i] > TempIH)
-            Continue = true;
-        }
-      }
-    }
-
-    // Record the cost of current solution.
-    Costs.push_back(std::make_pair(i, std::make_pair(FinalGPCLevel, Area)));
-
-    // Restore the TMatrix and start evaluate next solution.
-    TMatrix = OriginTMatrix;
-  }
-
-  for (unsigned i = 0; i < Costs.size(); ++i) {
-    errs() << "\tSolution #" << utostr_32(i) << " with stage of ["
-           << utostr_32(Costs[i].second.first) << "] and area of ["
-           << utostr_32(Costs[i].second.second) << "]\n";
-  }
-
-  return 0;
-}
-
-MatrixType SIRMOAOpt::compressTMatrixInStage(MatrixType TMatrix,
-                                             unsigned IH, unsigned ActiveStage,
-                                             unsigned &FinalGPCLevel, unsigned &Area,
-                                             raw_fd_ostream &Output) {
-  // Get the informations of the TMatrix.
-  std::vector<unsigned> BitNumList = getBitNumList(TMatrix);
-  std::vector<unsigned> ActiveBitNumList
-    = getActiveBitNumList(TMatrix, ActiveStage);
-
-  // Compress row by row.
-  for (unsigned i = 0; i < TMatrix.size(); ++i) {
-    // Compress current row if it has dots more than target IH.
-    while (BitNumList[i] > IH) {
-      unsigned ComponentIdx
-        = getHighestPriorityComponent(TMatrix, i, ActiveStage, IH);
-
-      TMatrix = compressTMatrixUsingComponent(TMatrix, ComponentIdx, i,
-                                              ActiveStage, FinalGPCLevel, Output);
-
-      // Update the area.
-      CompressComponent *Component = Library[ComponentIdx];
-      Area += Component->getArea();
-
-      // Do some clean up and optimize work.
-      TMatrix = eliminateOneBitInTMatrix(TMatrix);
-      TMatrix = simplifyTMatrix(TMatrix);
-      TMatrix = sortTMatrix(TMatrix);
-
-      // Update the informations of the TMatrix.
-      BitNumList = getBitNumList(TMatrix);
-      ActiveBitNumList = getActiveBitNumList(TMatrix, ActiveStage);
-    }
-  }
-
-  return TMatrix;
-}
-
-void SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
-                               unsigned OperandNum, unsigned OperandWidth,
-                               raw_fd_ostream &Output) {
+void SIRMOAOpt::compressDotMatrix(DotMatrix *DM, raw_fd_ostream &Output) {
   // Code for debug.
-  printTMatrixForDebug(TMatrix);
+  printDotMatrixForDebug(DM);
 
-  /// Prepare for the compress progress
-  // Sum all one bits in TMatrix.
-  TMatrix = sumAllOneBitsInTMatrix(TMatrix);
-  // Eliminate the one bit in TMatrix.
-  TMatrix = eliminateOneBitInTMatrix(TMatrix);
-  // Simplify the TMatrix.
-  TMatrix = simplifyTMatrix(TMatrix);
-  // Sort the TMatrix.
-  TMatrix = sortTMatrix(TMatrix);
+  /// Prepare for the compress progress by transport the DotMatrix and
+  /// abandon the ZeroDots. Then the dots in TDM are sorted according
+  /// to the algorithm settings.
+
+  DotMatrix *TDM = transportDotMatrix(DM);
+  TDM = abandonZeroDots(TDM);
 
   // Code for debug.
-  printTMatrixForDebug(TMatrix);
+  printDotMatrixForDebug(DM);
 
   /// Calculate the ideal intermediate height(IH).
-  std::vector<unsigned> IHs = calculateIHs(TMatrix, 3);
 
-  /// Pre-compress the TMatrix with different start IH and
-  /// evaluate the area-delay cost.
-  //preCompressTMatrix(TMatrix, IHs);
+  std::vector<unsigned> IHs = calculateIHs(TDM);
 
-  /// Start to compress the TMatrix
-  unsigned FinalGPCLevel = 0;
-  unsigned Area = 0;
+  /// Start to compress the TDM
+  unsigned TotalLevels = 0;
+  unsigned TotalArea = 0;
   for (unsigned i = 0; i < IHs.size(); ++i) {
     unsigned IH = IHs[IHs.size() - i - 1];
 
     bool Continue = true;
     while (Continue) {
       // We expect each level of IH can be achieved in one compress
-      // stage (one level of GPCs), that is, the level index of IH
+      // level (one level of GPCs), that is, the level index of IH
       // equals to the active stage in compression.
-      TMatrix = compressTMatrixInStage(TMatrix, IH, i, FinalGPCLevel, Area, Output);
+      TDM = compressTDMInLevel(TDM, IH, i, TotalLevels, TotalArea, Output);
     
       // Determine if we need to continue compressing.
-      std::vector<unsigned> BitNumList = getBitNumList(TMatrix);
+      std::vector<unsigned> NZDotNumList = TDM->getNonZeroDotNumList();
       Continue = false;
-      for (unsigned i = 0; i < TMatrix.size(); ++i) {
-        if (BitNumList[i] > IH)
+      for (unsigned i = 0; i < NZDotNumList.size(); ++i) {
+        if (NZDotNumList[i] > IH)
           Continue = true;
       }
     }
   }
 
   errs() << "Synthesized compressor tree with GPC level of ["
-         << utostr_32(FinalGPCLevel) << "] and Area of ["
-         << utostr_32(Area) << "]\n";
+         << utostr_32(TotalLevels) << "] and Area of ["
+         << utostr_32(TotalArea) << "]\n";
 
   /// Finish the compress by sum the left-behind bits using ternary CPA.
-  MatrixRowType CPADataA, CPADataB, CPADataC;
-  float CPADataA_ArrivalTime = 0.0f;
-  float CPADataB_ArrivalTime = 0.0f;
-  float CPADataC_ArrivalTime = 0.0f;
+  MatrixRow *CPADataA = new MatrixRow();
+  MatrixRow *CPADataB = new MatrixRow();
+  MatrixRow *CPADataC = new MatrixRow();
   
-  for (unsigned i = 0; i < TMatrix.size(); ++i) {
-    CPADataA.push_back(TMatrix[i][0]);
+  for (unsigned i = 0; i < TDM->getRowNum(); ++i) {
+    MatrixRow *Row = TDM->getRow(i);
 
-    float CPADataA_DotArrivalTime = TMatrix[i][0].second.first;
-    CPADataA_ArrivalTime = CPADataA_ArrivalTime > CPADataA_DotArrivalTime ?
-                             CPADataA_ArrivalTime : CPADataA_DotArrivalTime;
-
-    if (TMatrix[i].size() == 1) {
-      CPADataB.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
-      CPADataC.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
+    if (Row->getWidth() == 0) {
+      CPADataA->addZeroDot();
+      CPADataB->addZeroDot();
+      CPADataC->addZeroDot();
     }
-    else if (TMatrix[i].size() == 2) {
-      CPADataB.push_back(TMatrix[i][1]);
+    else if (Row->getWidth() == 1) {
+      CPADataA->addDot(Row->getDot(0));
 
-      float CPADataB_DotArrivalTime = TMatrix[i][1].second.first;
-      CPADataB_ArrivalTime = CPADataB_ArrivalTime > CPADataB_DotArrivalTime ?
-                               CPADataB_ArrivalTime : CPADataB_DotArrivalTime;
-
-      CPADataC.push_back(std::make_pair("1'b0", std::make_pair(0.0f, 0)));
+      CPADataB->addZeroDot();
+      CPADataC->addZeroDot();
     }
-    else if (TMatrix[i].size() == 3) {
-      CPADataB.push_back(TMatrix[i][1]);
+    else if (Row->getWidth() == 2) {
+      CPADataA->addDot(Row->getDot(0));
+      CPADataB->addDot(Row->getDot(1));
 
-      float CPADataB_DotArrivalTime = TMatrix[i][1].second.first;
-      CPADataB_ArrivalTime = CPADataB_ArrivalTime > CPADataB_DotArrivalTime ?
-                               CPADataB_ArrivalTime : CPADataB_DotArrivalTime;
+      CPADataC->addZeroDot();
+    }
+    else {
+      assert(Row->getWidth() == 3 && "Unexpected width!");
 
-      CPADataC.push_back(TMatrix[i][2]);
-
-      float CPADataC_DotArrivalTime = TMatrix[i][2].second.first;
-      CPADataC_ArrivalTime = CPADataC_ArrivalTime > CPADataC_DotArrivalTime ?
-                               CPADataC_ArrivalTime : CPADataC_DotArrivalTime;
+      CPADataA->addDot(Row->getDot(0));
+      CPADataB->addDot(Row->getDot(1));
+      CPADataC->addDot(Row->getDot(2));
     }
   }
-  assert(CPADataA.size() == CPADataB.size() &&
-         CPADataA.size() == CPADataC.size() && "Should be same size!");
+
+  unsigned CPAWidth = DM->getColNum();
+  assert(CPADataA->getWidth() == CPAWidth &&
+         CPADataB->getWidth() == CPAWidth &&
+         CPADataC->getWidth() == CPAWidth &&
+         "Should be same size!");
 
   Output << "\n";
 
   // Print the declaration and definition of DataA & DataB & DataC of CPA.
-  Output << "wire[" << utostr_32(CPADataA.size() - 1) << ":0] CPA_DataA = {";
-  for (unsigned i = 0; i < CPADataA.size(); ++i) {
-    Output << CPADataA[CPADataA.size() - 1 - i].first;
+  Output << "wire[" << utostr_32(CPAWidth - 1) << ":0] CPA_DataA = {";
+  for (unsigned i = 0; i < CPAWidth; ++i) {
+    Output << CPADataA->getDot(CPAWidth - 1 - i)->getName();
 
-    if (i != CPADataA.size() - 1)
+    if (i != CPAWidth - 1)
       Output << ", ";
   }
   Output << "};\n";
 
-  Output << "wire[" << utostr_32(CPADataB.size() - 1) << ":0] CPA_DataB = {";
-  for (unsigned i = 0; i < CPADataB.size(); ++i) {
-    Output << CPADataB[CPADataB.size() - 1 - i].first;
+  Output << "wire[" << utostr_32(CPAWidth - 1) << ":0] CPA_DataB = {";
+  for (unsigned i = 0; i < CPAWidth; ++i) {
+    Output << CPADataB->getDot(CPAWidth - 1 - i)->getName();
 
-    if (i != CPADataB.size() - 1)
+    if (i != CPAWidth - 1)
       Output << ", ";
   }
   Output << "};\n";
 
-  Output << "wire[" << utostr_32(CPADataC.size() - 1) << ":0] CPA_DataC = {";
-  for (unsigned i = 0; i < CPADataC.size(); ++i) {
-    Output << CPADataC[CPADataC.size() - 1 - i].first;
+  Output << "wire[" << utostr_32(CPAWidth - 1) << ":0] CPA_DataC = {";
+  for (unsigned i = 0; i < CPAWidth; ++i) {
+    Output << CPADataC->getDot(CPAWidth - 1 - i)->getName();
 
-    if (i != CPADataC.size() - 1)
+    if (i != CPAWidth - 1)
       Output << ", ";
   }
   Output << "};\n";
 
   // Print the implementation of the CPA.
-  Output << "wire[" << utostr_32(CPADataA.size() - 1)
-    << ":0] CPA_Result = CPA_DataA + CPA_DataB + CPA_DataC;\n";
+  Output << "wire[" << utostr_32(CPAWidth - 1)
+         << ":0] CPA_Result = CPA_DataA + CPA_DataB + CPA_DataC;\n";
 
   // Print the implementation of the result.
   Output << "assign result = CPA_Result;\n";
@@ -2822,16 +3259,16 @@ void SIRMOAOpt::compressMatrix(MatrixType TMatrix, std::string MatrixName,
   Output << "\nendmodule\n\n";
 }
 
-void SIRMOAOpt::printTMatrixForDebug(MatrixType TMatrix) {
-  for (unsigned i = 0; i < TMatrix.size(); ++i) {
-    MatrixRowType Row = TMatrix[i];
+void SIRMOAOpt::printDotMatrixForDebug(DotMatrix *DM) {
+  for (unsigned i = 0; i < DM->getRowNum(); ++i) {
+    MatrixRow *MR = DM->getRow(i);
 
-    for (unsigned j = 0; j < Row.size(); ++j) {
-      DotType Dot = Row[j];
+    for (unsigned j = 0; j < MR->getWidth(); ++j) {
+      MatrixDot *Dot = MR->getDot(j);
 
-      DebugOutput << Dot.first/* << "--" << Dot.second.first*/;
+      DebugOutput << Dot->getName();
 
-      if (j != Row.size() - 1)
+      if (j != MR->getWidth() - 1)
         DebugOutput << "  ";
     }
 
@@ -3123,7 +3560,7 @@ void SIRMOAOpt::printCompressComponent(raw_fd_ostream &Output) {
 
 void
 SIRMOAOpt::printComponentInstance(unsigned ComponentIdx,
-                                  std::vector<std::vector<DotType> > InputDots,
+                                  std::vector<std::vector<MatrixDot *> > InputDots,
                                   std::string OutputName,
                                   raw_fd_ostream &Output) {
   // Get the Component to be used and its information.
@@ -3133,18 +3570,18 @@ SIRMOAOpt::printComponentInstance(unsigned ComponentIdx,
   std::string ComponentName = Component->getName();
 
   // Identify the special GPC component.
-  bool IsSpecialGPC = isa<GPC_with_extra_One>(Component);
+  bool IsSpecialGPC = isa<SpecialGPC>(Component);
   unsigned RankOfExtraOne = 0;
   if (IsSpecialGPC) {
-    GPC_with_extra_One *SpecialGPC = dyn_cast<GPC_with_extra_One>(Component);
-    RankOfExtraOne = SpecialGPC->getRankOfExtraOne();
+    SpecialGPC *SpGPC = dyn_cast<SpecialGPC>(Component);
+    RankOfExtraOne = SpGPC->getRankOfExtraOne();
   }
 
   // Print the declaration of the result.  
   Output << "wire [" << utostr_32(OutputDotNum - 1) << ":0] " << OutputName << ";\n";
 
   // Print the instantiation of the compressor module.
-  Output << ComponentName << " " + ComponentName + "_" << utostr_32(Component_NUM) << "(";
+  Output << ComponentName << " " + ComponentName + "_" << utostr_32(GPCNum) << "(";
 
   // Print the inputs and outputs instance.
   for (unsigned i = 0; i < InputDotNums.size(); ++i) {
@@ -3154,15 +3591,15 @@ SIRMOAOpt::printComponentInstance(unsigned ComponentIdx,
 
     Output << ".col" << utostr_32(i) << "({";
 
-    std::vector<DotType> InputDotRow = InputDots[i];
+    std::vector<MatrixDot *> InputDotRow = InputDots[i];
     assert(InputDotRow.size() == InputDotNums[i] || InputDotRow.size() == 0
-      && "Unexpected input dot number!");
+           && "Unexpected input dot number!");
     for (unsigned j = 0; j < InputDotRow.size(); ++j) {
       // If this is a special GPC, then do not print the extra 1'b1 input.
       if (IsSpecialGPC && i == RankOfExtraOne && j == 0)
         continue;
 
-      Output << InputDotRow[j].first;
+      Output << InputDotRow[j]->getName();
 
       if (j != InputDotRow.size() - 1)
         Output << ", ";
