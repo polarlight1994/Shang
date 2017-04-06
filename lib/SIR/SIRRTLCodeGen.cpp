@@ -895,9 +895,10 @@ bool SIRDatapathPrinter::printCompressor(IntrinsicInst &I) {
   // Extract all operands to be added.
   OS << "compressor_" + Mangle(I.getName()) + " compressor_" + Mangle(I.getName()) << "(\n";
 
-  std::vector<Value *> Ops = SM->lookupOpsOfChain(&I);
-  for (unsigned i = 0; i < Ops.size(); ++i) {
-    Value *Op = Ops[i];
+  // The normal operands of CompressorTrees.
+  std::vector<Value *> NormalOps = SM->getNormalOpsOfCT(&I);
+  for (unsigned i = 0; i < NormalOps.size(); ++i) {
+    Value *Op = NormalOps[i];
     std::string OpName = Op->getName();
 
     if (isa<ConstantInt>(Op)) {
@@ -911,6 +912,40 @@ bool SIRDatapathPrinter::printCompressor(IntrinsicInst &I) {
     }
     else {
       OS.indent(2) << ".operand_" << utostr_32(i) << "(" << Mangle(Op->getName()) << "),\n";
+    }
+  }
+  // The mul operands of CompressorTrees.
+  std::vector<std::pair<Value *, Value *> > MulOps = SM->getMulOpsOfCT(&I);
+  for (unsigned i = 0; i < MulOps.size(); ++i) {
+    Value *MulOpA = MulOps[i].first;
+    Value *MulOpB = MulOps[i].second;
+    std::string OpAName = MulOpA->getName();
+    std::string OpBName = MulOpB->getName();
+
+    if (isa<ConstantInt>(MulOpA)) {
+      OS.indent(2) << ".mul_operand_" << utostr_32(i) + "_a" << "(";
+      printAsOperand(OS, MulOpA, TD.getTypeSizeInBits(MulOpA->getType()));
+      OS << "),\n";
+    }
+    else if (SIRRegister *Reg = SM->lookupSIRReg(MulOpA)) {
+      OpAName = Reg->getName();
+      OS.indent(2) << ".mul_operand_" << utostr_32(i) + "_a" << "(" << Mangle(OpAName) << "),\n";
+    }
+    else {
+      OS.indent(2) << ".mul_operand_" << utostr_32(i) + "_a" << "(" << Mangle(MulOpA->getName()) << "),\n";
+    }
+
+    if (isa<ConstantInt>(MulOpB)) {
+      OS.indent(2) << ".mul_operand_" << utostr_32(i) + "_b" << "(";
+      printAsOperand(OS, MulOpB, TD.getTypeSizeInBits(MulOpB->getType()));
+      OS << "),\n";
+    }
+    else if (SIRRegister *Reg = SM->lookupSIRReg(MulOpB)) {
+      OpBName = Reg->getName();
+      OS.indent(2) << ".mul_operand_" << utostr_32(i) + "_b" << "(" << Mangle(OpBName) << "),\n";
+    }
+    else {
+      OS.indent(2) << ".mul_operand_" << utostr_32(i) + "_b" << "(" << Mangle(MulOpB->getName()) << "),\n";
     }
   }
   OS.indent(2) << ".result(" << Mangle(I.getName()) << ")\n";
@@ -1115,8 +1150,6 @@ struct SIR2RTL : public SIRPass {
   SIR2RTL() : SIRPass(ID), Out() {
     initializeSIR2RTLPass(*PassRegistry::getPassRegistry());
   }
-
-  ~SIR2RTL() {}
 
   // Should be moved into Control path printer in the future
   void printRegisterBlock(const SIRRegister *Reg, raw_ostream &OS,
@@ -1579,6 +1612,9 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
 
   // Generate the code for testsuite.
   generateCodeForTestsuite(SM, TD);
+
+  // Clear the SIR module.
+  SM.clear();
 
   return false;
 }

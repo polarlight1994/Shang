@@ -55,13 +55,10 @@ struct MatrixDot {
       assert(BoothCodingElements.size() == 5
              && "Unexpected size of booth coding elements!");
   }
-  // Replicate the MatrixDot
-  MatrixDot(MatrixDot *Dot) {
-    this->Name = Dot->getName();
-    this->ArrivalTime = Dot->getArrivalTime();
-    this->Level = Dot->getLevel();
-    this->IsMulDot = Dot->isMulDot();
-    this->BoothCodingElements = Dot->getCodingElements();
+
+  void gc() {
+    Name.clear();
+    BoothCodingElements.clear();
   }
 
   std::string getName() const { return Name; }
@@ -71,8 +68,14 @@ struct MatrixDot {
   bool isZero() const { return Name == "1'b0" || Name == "~1'b0"; }
   bool isOne() const { return Name == "1'b1"; }
   bool isMulDot() const { return IsMulDot; }
-  std::vector<std::string> getCodingElements() const {
-    return BoothCodingElements;
+  bool hasCodingElements() const {
+    unsigned Num = BoothCodingElements.size();
+    assert(Num == 0 || Num == 5 && "Unexpected size!");
+
+    return Num;
+  }
+  std::string getCodingElements(unsigned Idx) const {
+    return BoothCodingElements[Idx];
   }
   bool isSameAs(MatrixDot *Dot) const {
     return Name == Dot->getName() &&
@@ -102,16 +105,12 @@ struct MatrixRow {
   // The dots in row
   std::vector<MatrixDot *> Dots;
 
-  MatrixRow() : Name(""), Dots(std::vector<MatrixDot *>()) {}
-  MatrixRow(std::string Name) : Name(Name), Dots(std::vector<MatrixDot *>()) {}
-  // Replicate the MatrixRow
-  MatrixRow(MatrixRow *Row) {
-    this->Name = Row->getName();
+  MatrixRow() : Name("") {}
+  MatrixRow(std::string Name) : Name(Name) {}
 
-    for (unsigned i = 0; i < Row->getWidth(); ++i) {
-      MatrixDot *ReplicateDot = new MatrixDot(Row->getDot(i));
-      this->addDot(ReplicateDot);
-    }
+  void gc() {
+    Name.clear();
+    Dots.clear();
   }
 
   std::string getName() const { return Name; }
@@ -119,16 +118,6 @@ struct MatrixRow {
 
   void addDot(MatrixDot *Dot) {
     Dots.push_back(Dot);
-  }
-  void addZeroDot() {
-    MatrixDot *Zero = new MatrixDot("1'b0", 0.0f, 0, false, std::vector<std::string>());
-
-    Dots.push_back(Zero);
-  }
-  void addOneDot() {
-    MatrixDot *One = new MatrixDot("1'b1", 0.0f, 0, false, std::vector<std::string>());
-
-    Dots.push_back(One);
   }
 
   MatrixDot *getDot(unsigned DotIdx) {
@@ -311,15 +300,6 @@ struct DotMatrix {
     : Name(""), Rows(std::vector<MatrixRow *>()) {}
   DotMatrix(std::string Name)
     : Name(Name), Rows(std::vector<MatrixRow *>()) {}
-  // Replicate constructor
-  DotMatrix(DotMatrix *DM) {
-    this->Name = DM->getName();
-    
-    for (unsigned i = 0; i < DM->getRowNum(); ++i) {
-      MatrixRow *ReplicateRow = new MatrixRow(DM->getRow(i));
-      this->addRow(ReplicateRow);
-    }
-  }
 
   std::string getName() const { return Name; }
   unsigned getRowNum() const { return Rows.size(); }
@@ -438,8 +418,12 @@ public:
   // Default constructor
   CompressComponent(Type T, std::string Name, std::vector<unsigned> InputDotNums,
                     unsigned OutputDotNum, unsigned Area, float CriticalDelay)
-    : T(T), Name(Name), InputDotNums(InputDotNums), OutputDotNum(OutputDotNum),
-      Area(Area), CriticalDelay(CriticalDelay) {}
+    : T(T), Name(Name), /*InputDotNums(InputDotNums),*/ OutputDotNum(OutputDotNum),
+      Area(Area), CriticalDelay(CriticalDelay) {
+    for (unsigned i = 0; i < InputDotNums.size(); ++i) {
+      this->InputDotNums.push_back(InputDotNums[i]);
+    }
+  }
 
   std::string getName() { return Name; }
   std::vector<unsigned> getInputDotNums() { return InputDotNums; }
@@ -477,6 +461,10 @@ struct SIRMOAOpt : public SIRPass {
   SIR *SM;
   DataFlowGraph *DFG;
 
+  std::vector<MatrixDot *> CreatedDots;
+  std::vector<MatrixRow *> CreatedRows;
+  std::vector<DotMatrix *> CreatedDMs;
+
   // Output for debug.
   std::string Error;
   raw_fd_ostream DebugOutput;
@@ -500,11 +488,38 @@ struct SIRMOAOpt : public SIRPass {
 
   bool runOnSIR(SIR &SM);
 
+  void gc() {
+    for (unsigned i = 0; i < CreatedDots.size(); ++i) {
+      MatrixDot *Dot = CreatedDots[i];
+
+      delete Dot;
+    }
+
+    for (unsigned i = 0; i < CreatedRows.size(); ++i) {
+      MatrixRow *Row = CreatedRows[i];
+
+      delete Row;
+    }
+
+    for (unsigned i = 0; i < CreatedDMs.size(); ++i) {
+      DotMatrix *DM = CreatedDMs[i];
+
+      delete DM;
+    }
+
+    for (unsigned i = 0; i < Library.size(); ++i) {
+      CompressComponent *Component = Library[i];
+
+      delete Component;
+    }
+
+    DFG->clear();
+    delete DFG;
+  }
+
   // Optimization on operands of MOA.
   std::vector<Value *> eliminateIdenticalOperands(std::vector<Value *> Operands,
                                                   Value *MOA, unsigned BitWidth);
-  std::vector<Value *> OptimizeOperands(std::vector<Value *> Operands,
-                                        Value *MOA, unsigned BitWidth);
 
   void generateHybridTreeForMOA(IntrinsicInst *MOA, raw_fd_ostream &Output,
                                 raw_fd_ostream &CTOutput);
@@ -513,12 +528,20 @@ struct SIRMOAOpt : public SIRPass {
   void collectMOAOps(IntrinsicInst *MOA);
   void collectMOAs();
 
+  DotMatrix *replicateDotMatrix(DotMatrix *DM);
+  MatrixRow *replicateMatrixRow(MatrixRow *Row);
+  MatrixDot *replicateMatrixDot(MatrixDot *Dot);
   MatrixDot *createNormalMatrixDot(std::string Name, float ArrivalTime, unsigned Level);
 
   MatrixDot *createMulMatrixDot(std::string Name, float ArrivalTime, unsigned Level,
                                 std::vector<std::string> BoothCodingElements);
+
+  MatrixRow *createMatrixRow(std::string Name = "");
   MatrixRow *createMaskedDMRow(std::string Name, unsigned Width, float ArrivalTime,
                                unsigned Level, BitMask Mask);
+
+  DotMatrix *createMatrix(std::string Name = "");
+
   std::pair<DotMatrix *, DotMatrix *>
   createDotMatrix(std::vector<Value *> NormalOps,
                   std::vector<std::pair<Value *, Value *> > MulOps,
@@ -527,6 +550,17 @@ struct SIRMOAOpt : public SIRPass {
   DotMatrix *createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
                                 unsigned Idx, float ArrivalTime, unsigned Width,
                                 raw_fd_ostream &Output);
+
+  void addZeroDot(MatrixRow *Row) {
+    MatrixDot *Zero = createNormalMatrixDot("1'b0", 0.0f, 0);
+
+    Row->addDot(Zero);
+  }
+  void addOneDot(MatrixRow *Row) {
+    MatrixDot *One = createNormalMatrixDot("1'b1", 0.0f, 0);
+
+    Row->addDot(One);
+  }
 
   DotMatrix *preComputing(DotMatrix *DM);
   DotMatrix *preHandling(DotMatrix *DM, DotMatrix *MulDM);
@@ -672,6 +706,8 @@ bool SIRMOAOpt::runOnSIR(SIR &SM) {
   generateHybridTrees();
 
   errs() << "==========Compressor Tree Synthesis End============\n";
+
+  gc();
 
   return false;
 }
@@ -966,10 +1002,19 @@ SIRMOAOpt::eliminateIdenticalOperands(std::vector<Value *> Operands,
   return FinalOperands;
 }
 
+MatrixRow *SIRMOAOpt::createMatrixRow(std::string Name) {
+  MatrixRow *Row = new MatrixRow(Name);
+
+  // Index the created row.
+  CreatedRows.push_back(Row);
+
+  return Row;
+}
+
 MatrixRow *SIRMOAOpt::createMaskedDMRow(std::string Name, unsigned Width,
                                         float ArrivalTime, unsigned Level,
                                         BitMask Mask) {
-  MatrixRow *Row = new MatrixRow();
+  MatrixRow *Row = createMatrixRow();
 
   // Used to denote the sign bit of the operand if it exists.
   std::string SameBit;
@@ -1022,9 +1067,9 @@ MatrixRow *SIRMOAOpt::createMaskedDMRow(std::string Name, unsigned Width,
 DotMatrix *SIRMOAOpt::createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
                                          unsigned Idx, float ArrivalTime, unsigned Width,
                                          raw_fd_ostream &Output) {
-  DotMatrix *MulMatrix = new DotMatrix();
-  std::string OpAName = "MulOp_" + utostr_32(Idx) + "_a";
-  std::string OpBName = "MulOp_" + utostr_32(Idx) + "_b";
+  DotMatrix *MulMatrix = createMatrix();
+  std::string OpAName = "mul_operand_" + utostr_32(Idx) + "_a";
+  std::string OpBName = "mul_operand_" + utostr_32(Idx) + "_b";
 
   // Decide which operand is multiplicand and which is multiplier.
   unsigned MultiplicandBW = (OpAWidth > OpBWidth) ? OpBWidth : OpAWidth;
@@ -1038,7 +1083,7 @@ DotMatrix *SIRMOAOpt::createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
   // Generate the implementation of sign extension bits.
   for (unsigned i = 0; i < RowNum; ++i) {
     if (2 * i + 1 < MultiplicandBW) {
-      Output << "wire s" + utostr_32(i) << " = ";
+      Output << "wire s_" + utostr_32(Idx) + "_" + utostr_32(i) << " = ";
       Output << MultiplierName + "[" << utostr_32(2 * i + 1) << "];\n";
     }    
   }
@@ -1046,7 +1091,7 @@ DotMatrix *SIRMOAOpt::createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
 
   // Generate the partial products.
   for (unsigned i = 0; i < RowNum; ++i) {
-    MatrixRow *Row = new MatrixRow();
+    MatrixRow *Row = createMatrixRow();
 
     // The shift bit number for each partial product
     unsigned ShiftBitNum = i * 2;
@@ -1054,11 +1099,11 @@ DotMatrix *SIRMOAOpt::createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
     for (unsigned j = 0; j < Width; ++j) {
       // The shift bits should be zero.
       if (j < ShiftBitNum)
-        Row->addZeroDot();
+        addZeroDot(Row);
 
       // The +2, +1, 0, -1, -2 multiplicand.
       else if (j < ShiftBitNum + MultiplicandBW + 1) {
-        std::string MulDotName = "pp_" + utostr_32(i) + "_" + utostr_32(j);
+        std::string MulDotName = "pp_" + utostr_32(Idx) + "_" + utostr_32(i) + "_" + utostr_32(j);
         unsigned MulDotLevel = 0;
 
         std::vector<std::string> BoothCodingElements;
@@ -1112,15 +1157,15 @@ DotMatrix *SIRMOAOpt::createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
         }
 
         // Create the mul partial product dot.
-        MatrixDot *MulDot
-          = createMulMatrixDot(MulDotName, ArrivalTime, MulDotLevel, BoothCodingElements);
+        MatrixDot *MulDot = createMulMatrixDot(MulDotName, ArrivalTime,
+                                               MulDotLevel, BoothCodingElements);
 
         Row->addDot(MulDot);
       }
 
       // The sign extension bits
       else {
-        std::string SignBitName = "s" + utostr_32(i);
+        std::string SignBitName = "s_" + utostr_32(Idx) + "_" + utostr_32(i);
         MatrixDot *Dot = createNormalMatrixDot(SignBitName, 0.0f, 0);
 
         Row->addDot(Dot);
@@ -1131,13 +1176,13 @@ DotMatrix *SIRMOAOpt::createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
   }
 
   // Remember to add a row to patch the possible 1'b1 in two's complement.
-  MatrixRow *AdditionRow = new MatrixRow();
+  MatrixRow *AdditionRow = createMatrixRow();
   unsigned UpperBound = 2 * RowNum - 1;
   for (unsigned i = 0; i < Width; ++i) {
     if (i < UpperBound) {
       if (i % 2 == 0) {
         unsigned AdditionIdx = i / 2;
-        std::string AdditionBitName = "s" + utostr_32(AdditionIdx);
+        std::string AdditionBitName = "s_" + utostr_32(Idx) + "_" + utostr_32(AdditionIdx);
         MatrixDot *Dot = createNormalMatrixDot(AdditionBitName, ArrivalTime, 0);
 
         AdditionRow->addDot(Dot);
@@ -1198,9 +1243,57 @@ DotMatrix *SIRMOAOpt::createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
 //   return Matrix;
 // }
 
+MatrixDot *SIRMOAOpt::replicateMatrixDot(MatrixDot *Dot) {
+  std::vector<std::string> BoothCodingElements;
+  if (Dot->hasCodingElements()) {
+    for (unsigned i = 0; i < 5; ++i)
+      BoothCodingElements.push_back(Dot->getCodingElements(i));
+  }
+
+  MatrixDot *RelicatedDot = new MatrixDot(Dot->getName(), Dot->getArrivalTime(),
+                                          Dot->getLevel(), Dot->isMulDot(),
+                                          BoothCodingElements);
+
+  // Index the created dot.
+  CreatedDots.push_back(RelicatedDot);
+
+  return RelicatedDot;
+}
+
+MatrixRow *SIRMOAOpt::replicateMatrixRow(MatrixRow *Row) {
+  MatrixRow *RelicatedRow = new MatrixRow(Row->getName());
+
+  for (unsigned i = 0; i < Row->getWidth(); ++i) {
+    MatrixDot *ReplicatedDot = replicateMatrixDot(Row->getDot(i));
+    RelicatedRow->addDot(ReplicatedDot);
+  }
+
+  // Index the replicated row.
+  CreatedRows.push_back(RelicatedRow);
+
+  return RelicatedRow;
+}
+
+DotMatrix *SIRMOAOpt::replicateDotMatrix(DotMatrix *DM) {
+  DotMatrix *ReplicatedDM = new DotMatrix(DM->getName());
+
+  for (unsigned i = 0; i < DM->getRowNum(); ++i) {
+    MatrixRow *ReplicatedRow = replicateMatrixRow(DM->getRow(i));
+    ReplicatedDM->addRow(ReplicatedRow);
+  }
+
+  // Index the created dot matrix.
+  CreatedDMs.push_back(ReplicatedDM);
+
+  return ReplicatedDM;
+}
+
 MatrixDot *SIRMOAOpt::createNormalMatrixDot(std::string Name, float ArrivalTime,
                                            unsigned Level) {
   MatrixDot *Dot = new MatrixDot(Name, ArrivalTime, Level, false, std::vector<std::string>());
+
+  // Index the created dot.
+  CreatedDots.push_back(Dot);
 
   return Dot;
 }
@@ -1211,7 +1304,19 @@ MatrixDot *SIRMOAOpt::createMulMatrixDot(std::string Name, float ArrivalTime,
   MatrixDot *MulDot
     = new MatrixDot(Name, ArrivalTime, Level, true, BoothCodingElements);
 
+  // Index the created dot.
+  CreatedDots.push_back(MulDot);
+
   return MulDot;
+}
+
+DotMatrix *SIRMOAOpt::createMatrix(std::string Name) {
+  DotMatrix *DM = new DotMatrix(Name);
+
+  // Index the created dot matrix.
+  CreatedDMs.push_back(DM);
+
+  return DM;
 }
 
 std::pair<DotMatrix *, DotMatrix *>
@@ -1226,7 +1331,7 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
   Output << "module " << "compressor_" << Name << "(\n";
   for (unsigned i = 0; i < NormalOpNum; ++i) {
     Value *NormalOp = NormalOps[i];
-    std::string NormalOpName = "Op_" + utostr_32(i);
+    std::string NormalOpName = "operand_" + utostr_32(i);
     unsigned NormalOpWidth = TD->getTypeSizeInBits(NormalOp->getType());
 
     Output << "\tinput wire[" << utostr_32(NormalOpWidth - 1) << ":0] "
@@ -1234,7 +1339,7 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
   }
   for (unsigned i = 0; i < MulOpNum; ++i) {
     std::pair<Value *, Value *> MulOpPair = MulOps[i];
-    std::string MulOpName = "MulOp_" + utostr_32(i);
+    std::string MulOpName = "mul_operand_" + utostr_32(i);
     unsigned MulOpAWidth = TD->getTypeSizeInBits(MulOpPair.first->getType());
     unsigned MulOpBWidth = TD->getTypeSizeInBits(MulOpPair.second->getType());
 
@@ -1246,8 +1351,8 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
   Output << "\toutput wire[";
   Output << utostr_32(Width - 1) << ":0] result\n);\n\n";
 
-  DotMatrix *DM = new DotMatrix(Name);
-  DotMatrix *TopMulDM = new DotMatrix(Name + "_MulDM");
+  DotMatrix *DM = createMatrix(Name);
+  DotMatrix *TopMulDM = createMatrix(Name + "_MulDM");
 
   // Create the MulDM for MulOps.
   for (unsigned i = 0; i < MulOpNum; ++i) {
@@ -1286,7 +1391,7 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
 
     /// Create MatrixRow for normal operands.
     std::string RowName = "operand_" + utostr_32(NormalOpIdx);
-    MatrixRow *Row = new MatrixRow(RowName);
+    MatrixRow *Row = createMatrixRow(RowName);
     // If the operand is a constant integer, then the dots will be
     // its binary representation.
     if (ConstantInt *CI = dyn_cast<ConstantInt>(NormalOp)) {
@@ -1299,12 +1404,12 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
 
           unsigned BitVal = RLShiftedCIV.getZExtValue();
           if (BitVal)
-            Row->addOneDot();
+            addOneDot(Row);
           else
-            Row->addZeroDot();
+            addZeroDot(Row);
         }
         else
-          Row->addZeroDot();
+          addZeroDot(Row);
       }
 
       DM->addRow(Row);
@@ -1333,11 +1438,11 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
           if (enableBitMaskOpt) {
             // If it is a known bit, then use the known value.
             if (Mask.isOneKnownAt(j)) {
-              Row->addOneDot();
+              addOneDot(Row);
               continue;
             }
             else if (Mask.isZeroKnownAt(j)) {
-              Row->addZeroDot();
+              addZeroDot(Row);
               continue;
             }
             else if (Mask.isSameKnownAt(j)) {
@@ -1363,7 +1468,7 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
         // When the dot position is beyond the range of operand bit width,
         // we need to pad zero into the matrix.
         else
-          Row->addZeroDot();
+          addZeroDot(Row);
       }
 
       DM->addRow(Row);
@@ -1435,6 +1540,7 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
   // Eliminate the identical operands in add chain.
   Operands = eliminateIdenticalOperands(Operands, MOA, Width);
 
+  unsigned Num = 0;
   std::vector<Value *> NormalOps;
   std::vector<std::pair<Value *, Value *> > MulOps;
   // Extract out the multiplication operands.
@@ -1442,11 +1548,27 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
     Value *Operand = Operands[i];
 
     if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(Operand)) {
-      if (OpII->getIntrinsicID() == Intrinsic::shang_mul) {
+      if (OpII->getIntrinsicID() == Intrinsic::shang_mul/* && Num < 1*/) {
+        // Ignore the mul instruction which are used by several users.
+        unsigned UserNum = 0;
+        typedef Value::use_iterator use_iterator;
+        for (use_iterator UI = OpII->use_begin(), UE = OpII->use_end();
+             UI != UE; ++UI) {
+          Value *UserVal = *UI;
+
+          if (IntrinsicInst *UserInst = dyn_cast<IntrinsicInst>(UserVal))
+            ++UserNum;
+        }
+        if (UserNum >= 2)
+          continue;
+
         Value *OperandA = OpII->getOperand(0);
         Value *OperandB = OpII->getOperand(1);
 
         MulOps.push_back(std::make_pair(OperandA, OperandB));
+
+        ++Num;
+        SM->removeKeepVal(OpII);
         continue;
       }
     }
@@ -1457,7 +1579,7 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
   // Index the connection of operands and pseudo hybrid tree instruction.
   // So we can generate the instance of the hybrid tree module.
   IntrinsicInst *PseudoHybridTreeInst = MOA2PseudoHybridTreeInst[MOA];
-  SM->IndexOps2AdderChain(PseudoHybridTreeInst, NormalOps);
+  SM->IndexOps2CT(PseudoHybridTreeInst, NormalOps, MulOps);
 
   std::string MatrixName = Mangle(PseudoHybridTreeInst->getName());
   unsigned MatrixWidth = TD->getTypeSizeInBits(MOA->getType());
@@ -1514,6 +1636,9 @@ void SIRMOAOpt::generateHybridTrees() {
 
   // Print the compress component modules.
   printCompressComponent(Output);
+
+  Output.flush();
+  CTOutput.flush();
 }
 
 void SIRMOAOpt::collectMOAs() {
@@ -1648,9 +1773,9 @@ void SIRMOAOpt::collectMOAOps(IntrinsicInst *MOA) {
           if (AdderSet.count(OperandInst))
             continue;
 
-          // Identify the MAC.
-          if (OperandInst->getIntrinsicID() == Intrinsic::shang_mul)
-            errs() << "MAC found!\n";
+//           // Identify the MAC.
+//           if (OperandInst->getIntrinsicID() == Intrinsic::shang_mul)
+//             errs() << "MAC found!\n";
         }
 
         Operands.push_back(Operand);
@@ -1671,7 +1796,7 @@ DotMatrix *SIRMOAOpt::preHandling(DotMatrix *DM, DotMatrix *MulDM) {
   /// all the MulDots.
 
   // Get the first part matrix.
-  DotMatrix *FistPartMatrix = new DotMatrix(MulDM);
+  DotMatrix *FistPartMatrix = replicateDotMatrix(MulDM);
   for (unsigned i = 0; i < FistPartMatrix->getRowNum(); ++i) {
     MatrixRow *Row = FistPartMatrix->getRow(i);
 
@@ -1684,7 +1809,7 @@ DotMatrix *SIRMOAOpt::preHandling(DotMatrix *DM, DotMatrix *MulDM) {
   }
 
   // Get the second part matrix.
-  DotMatrix *SecondPartMatrix = new DotMatrix(MulDM);
+  DotMatrix *SecondPartMatrix = replicateDotMatrix(MulDM);
   for (unsigned i = 0; i < SecondPartMatrix->getRowNum(); ++i) {
     MatrixRow *Row = SecondPartMatrix->getRow(i);
 
@@ -1726,14 +1851,14 @@ DotMatrix *SIRMOAOpt::preHandling(DotMatrix *DM, DotMatrix *MulDM) {
 
     unsigned PaddingZeroNum = RowNum - RowValidWidth;
     for (unsigned j = 0; j < PaddingZeroNum; ++j)
-      Row->addZeroDot();
+      addZeroDot(Row);
   }
 
   // Transport the MulTDM back to MulDM.
   SecondPartMatrix = transportDotMatrix(SecondPartMatrix);
 
   // Eliminate the empty rows.
-  DotMatrix *SimplifedSPM = new DotMatrix();
+  DotMatrix *SimplifedSPM = createMatrix();
   for (unsigned i = 0; i < SecondPartMatrix->getRowNum(); ++i) {
     MatrixRow *Row = SecondPartMatrix->getRow(i);
 
@@ -1790,7 +1915,7 @@ DotMatrix *SIRMOAOpt::preComputing(DotMatrix *DM) {
   // Transform the LeadingDots and create the LDDM to contain all the
   // 111111111. And don't forget the invert the s-dot in origin DotMatrix
   // in transformation.
-  DotMatrix *LDDM = new DotMatrix(DM);
+  DotMatrix *LDDM = replicateDotMatrix(DM);
   for (unsigned i = 0; i < DM->getRowNum(); ++i) {
     // If there is sign bit pattern in current row.
     if (LDNumList[i] > 1) {
@@ -1862,7 +1987,7 @@ DotMatrix *SIRMOAOpt::sumOneDots(DotMatrix *DM) {
   }
 
   // Create a row to represent the sum result.
-  MatrixRow *SumResult = new MatrixRow();
+  MatrixRow *SumResult = createMatrixRow();
   for (unsigned i = 0; i < ODNumListAfterSum.size(); ++i) {
     MatrixDot *SumResultDot;
     if (ODNumListAfterSum[i] == 0)
@@ -1872,11 +1997,11 @@ DotMatrix *SIRMOAOpt::sumOneDots(DotMatrix *DM) {
     SumResult->addDot(SumResultDot);
   }
 
-  DotMatrix *ResultDM = new DotMatrix(DM->getName());
+  DotMatrix *ResultDM = createMatrix(DM->getName());
   ResultDM->addRow(SumResult);
   for (unsigned i = 0; i < DM->getRowNum(); ++i) {
     MatrixRow *Row = DM->getRow(i);
-    MatrixRow *ResultRow = new MatrixRow(Row->getName());
+    MatrixRow *ResultRow = createMatrixRow(Row->getName());
 
     for (unsigned j = 0; j < Row->getWidth(); ++j) {
       MatrixDot *Dot = Row->getDot(j);
@@ -1884,7 +2009,7 @@ DotMatrix *SIRMOAOpt::sumOneDots(DotMatrix *DM) {
       if (!Dot->isOne())
         ResultRow->addDot(Dot);
       else
-        ResultRow->addZeroDot();
+        addZeroDot(ResultRow);
     }
 
     ResultDM->addRow(ResultRow);
@@ -2161,6 +2286,7 @@ DotMatrix *SIRMOAOpt::preComputingByCarryChain(DotMatrix *DM, DotMatrix *MulDM,
       std::string DotName = "c4_" + utostr_32(i) + "_" + utostr_32(C4Idx) +
                             "_sum" + "[" + utostr_32(C4BitIdx) + "]";
 
+      // TODO: set the correct result dot time.
       MatrixDot *ResultDot = createNormalMatrixDot(DotName, 2.0f, 0);
       ResultDots.push_back(ResultDot);
     }
@@ -2169,6 +2295,7 @@ DotMatrix *SIRMOAOpt::preComputingByCarryChain(DotMatrix *DM, DotMatrix *MulDM,
       std::string DotName
         = "c4_" + utostr_32(i) + "_" + utostr_32(C4Idx) + "_carry[3]";
 
+      // TODO: set the correct result dot time.
       MatrixDot *ResultDot = createNormalMatrixDot(DotName, 2.0f, 0);
       ResultDots.push_back(ResultDot);
     }
@@ -2179,6 +2306,7 @@ DotMatrix *SIRMOAOpt::preComputingByCarryChain(DotMatrix *DM, DotMatrix *MulDM,
       std::string DotName = "c4_" + utostr_32(i) + "_" + utostr_32(C4Idx) +
                             "_sum" + "[" + utostr_32(C4BitIdx) + "]";
 
+      // TODO: set the correct result dot time.
       MatrixDot *ResultDot = createNormalMatrixDot(DotName, 2.0f, 0);
       ResultDots.push_back(ResultDot);
     }
@@ -2213,13 +2341,13 @@ DotMatrix *SIRMOAOpt::preComputingByCarryChain(DotMatrix *DM, DotMatrix *MulDM,
         continue;
 
       Output << "wire " + MulDMDot->getName() << ";\n";
-      Output << "PCBCC_LUT PCBCC_LUT_" + utostr_32(i) + "_" + utostr_32(j) << "(\n";
+      Output << "PCBCC_LUT PCBCC_LUT_NO_OP" + utostr_32(i) + "_" + utostr_32(j) << "(\n";
 
-      std::vector<std::string> CodingElements = MulDMDot->getCodingElements();
-      Output << "\t.triple_bit_group({" << CodingElements[2] << ", "
-        << CodingElements[1] << ", " << CodingElements[0] << "}),\n";
-      Output << "\t.current_bit(" << CodingElements[3] << "),\n";
-      Output << "\t.previous_bit(" << CodingElements[4] << "),\n";
+      Output << "\t.triple_bit_group({" << MulDMDot->getCodingElements(2) << ", "
+             << MulDMDot->getCodingElements(1) << ", "
+             << MulDMDot->getCodingElements(0) << "}),\n";
+      Output << "\t.current_bit(" << MulDMDot->getCodingElements(3) << "),\n";
+      Output << "\t.previous_bit(" << MulDMDot->getCodingElements(4) << "),\n";
       Output << "\t.operand_bit(1'b0),\n";
       Output << "\t.result(" << MulDMDot->getName() << ")\n";
       Output << ");\n\n";
@@ -2241,7 +2369,7 @@ DotMatrix *SIRMOAOpt::preComputingByCarryChain(DotMatrix *DM, DotMatrix *MulDM,
     unsigned PaddingNum = MaxColNum - ColNum;
     
     for (unsigned j = 0; j < PaddingNum; ++j)
-      Row->addZeroDot();
+      addZeroDot(Row);
   }
 
   DM = transportDotMatrix(TDM);
@@ -2265,11 +2393,11 @@ void SIRMOAOpt::printPCBCC(std::vector<MatrixDot *> OpA,
     MatrixDot *MulDMDot = OpA[i];
     MatrixDot *DMDot = OpB[i];
 
-    std::vector<std::string> CodingElements = MulDMDot->getCodingElements();
-    Output << "\t.triple_bit_group({" << CodingElements[2] << ", "
-           << CodingElements[1] << ", " << CodingElements[0] << "}),\n";
-    Output << "\t.current_bit(" << CodingElements[3] << "),\n";
-    Output << "\t.previous_bit(" << CodingElements[4] << "),\n";
+    Output << "\t.triple_bit_group({" << MulDMDot->getCodingElements(2) << ", "
+           << MulDMDot->getCodingElements(1) << ", "
+           << MulDMDot->getCodingElements(0) << "}),\n";
+    Output << "\t.current_bit(" << MulDMDot->getCodingElements(3) << "),\n";
+    Output << "\t.previous_bit(" << MulDMDot->getCodingElements(4) << "),\n";
     Output << "\t.operand_bit(" << DMDot->getName() << "),\n";
     Output << "\t.result(" << LUTResultName << ")\n";
     Output << ");\n\n";
@@ -2330,10 +2458,10 @@ DotMatrix *SIRMOAOpt::transportDotMatrix(DotMatrix *DM) {
   unsigned RowNum = DM->getRowNum();
   unsigned ColNum = DM->getColNum();
 
-  DotMatrix *TDM = new DotMatrix(DM->getName());
+  DotMatrix *TDM = createMatrix(DM->getName());
 
   for (unsigned j = 0; j < ColNum; ++j) {
-    MatrixRow *TRow = new MatrixRow();
+    MatrixRow *TRow = createMatrixRow();
 
     for (unsigned i = 0; i < RowNum; ++i) {
       MatrixRow *Row = DM->getRow(i);
@@ -2348,10 +2476,10 @@ DotMatrix *SIRMOAOpt::transportDotMatrix(DotMatrix *DM) {
 }
 
 DotMatrix *SIRMOAOpt::abandonZeroDots(DotMatrix *TDM) {
-  DotMatrix *ResultTDM = new DotMatrix();
+  DotMatrix *ResultTDM = createMatrix();
 
   for (unsigned i = 0; i < TDM->getRowNum(); ++i) {
-    MatrixRow *ResultTRow = new MatrixRow();
+    MatrixRow *ResultTRow = createMatrixRow();
 
     MatrixRow *OriginTRow = TDM->getRow(i);
     for (unsigned j = 0; j < OriginTRow->getWidth(); ++j) {
@@ -3179,29 +3307,29 @@ void SIRMOAOpt::compressDotMatrix(DotMatrix *DM, raw_fd_ostream &Output) {
          << utostr_32(TotalArea) << "]\n";
 
   /// Finish the compress by sum the left-behind bits using ternary CPA.
-  MatrixRow *CPADataA = new MatrixRow();
-  MatrixRow *CPADataB = new MatrixRow();
-  MatrixRow *CPADataC = new MatrixRow();
+  MatrixRow *CPADataA = createMatrixRow();
+  MatrixRow *CPADataB = createMatrixRow();
+  MatrixRow *CPADataC = createMatrixRow();
   
   for (unsigned i = 0; i < TDM->getRowNum(); ++i) {
     MatrixRow *Row = TDM->getRow(i);
 
     if (Row->getWidth() == 0) {
-      CPADataA->addZeroDot();
-      CPADataB->addZeroDot();
-      CPADataC->addZeroDot();
+      addZeroDot(CPADataA);
+      addZeroDot(CPADataB);
+      addZeroDot(CPADataC);
     }
     else if (Row->getWidth() == 1) {
       CPADataA->addDot(Row->getDot(0));
 
-      CPADataB->addZeroDot();
-      CPADataC->addZeroDot();
+      addZeroDot(CPADataB);
+      addZeroDot(CPADataC);
     }
     else if (Row->getWidth() == 2) {
       CPADataA->addDot(Row->getDot(0));
       CPADataB->addDot(Row->getDot(1));
 
-      CPADataC->addZeroDot();
+      addZeroDot(CPADataC);
     }
     else {
       assert(Row->getWidth() == 3 && "Unexpected width!");
@@ -3556,6 +3684,57 @@ void SIRMOAOpt::printCompressComponent(raw_fd_ostream &Output) {
 //     printAddChainModule(i, 32, Output);
 //     printAddChainModule(i, 64, Output);
 //   }
+
+  // Print the PCBCC_LUT module.
+  Output << "module PCBCC_LUT(\n";
+  Output << "\tinput wire[2:0] triple_bit_group,\n";
+  Output << "\tinput wire current_bit,\n";
+  Output << "\tinput wire previous_bit,\n";
+  Output << "\tinput wire operand_bit,\n";
+  Output << "\toutput wire result\n";
+  Output << ");\n\n";
+
+  Output << "\twire booth_sign = triple_bit_group[2];\n";
+  Output << "\twire booth_shift = triple_bit_group[2] ^ triple_bit_group[1];\n";
+  Output << "\twire booth_add = triple_bit_group[1] ^ triple_bit_group[0];\n\n";
+
+  Output << "\twire shift_result = booth_shift ? previous_bit : 1'b0;\n";
+  Output << "\twire add_result = booth_add ? current_bit : shift_result;\n";
+  Output << "\twire current_level_bit = booth_sign ? (~add_result) : add_result;\n\n";
+
+  Output << "\tassign result = current_level_bit ^ operand_bit;\n\n";
+
+  Output << "endmodule\n\n";
+
+  // Print the CARRY4 module.
+  Output << "module CARRY4(\n";
+  Output << "\tinput wire[3:0] DI,\n";
+  Output << "\tinput wire[3:0] S,\n";
+  Output << "\toutput wire[3:0] O,\n";
+  Output << "\toutput wire[3:0] CO,\n";
+  Output << "\tinput wire CYINIT,\n";
+  Output << "\tinput wire CI\n";
+  Output << ");\n\n";
+
+  Output << "\twire CI0 = S[0] ^ DI[0];\n";
+  Output << "\twire CI1 = S[1] ^ DI[1];\n";
+  Output << "\twire CI2 = S[2] ^ DI[2];\n";
+  Output << "\twire CI3 = S[3] ^ DI[3];\n\n";
+
+  Output << "\twire[4:0] temp0 = DI + {CI3, CI2, CI1, CI0} + CYINIT + CI;\n";
+  Output << "\tassign O = temp0[3:0];\n";
+  Output << "\tassign CO[3] = temp0[4];\n\n";
+
+  Output << "\twire[3:0] temp1 = DI[2:0] + {CI2, CI1, CI0} + CYINIT + CI;\n";
+  Output << "\tassign CO[2] = temp1[3];\n\n";
+
+  Output << "\twire[2:0] temp2 = DI[1:0] + {CI1, CI0} + CYINIT + CI;\n";
+  Output << "\tassign CO[1] = temp2[2];\n\n";
+
+  Output << "\twire[1:0] temp3 = DI[0] + CI0 + CYINIT + CI;\n";
+  Output << "\tassign CO[0] = temp3[1];\n\n";
+
+  Output << "endmodule\n\n";
 }
 
 void

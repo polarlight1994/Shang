@@ -764,7 +764,7 @@ private:
 
 public:
   // Construction for ilist node.
-  DFGNode() : Idx(NULL), Name(""), Val(NULL), IntVal(NULL), Ty(InValid), BitWidth(0) {}
+  DFGNode() : Ty(InValid) {}
   // Construction for normal node.
   DFGNode(unsigned Idx, std::string Name, Value *V, uint64_t IntV,
           BasicBlock *BB, NodeType Ty, unsigned BitWidth)
@@ -906,6 +906,11 @@ public:
 
     assert(!hasParentNode(OldParent) && "Failed to replace!");
     assert(hasParentNode(NewParent) && "Failed to replace!");
+  }
+
+  void clear() {
+    Childs.clear();
+    Parents.clear();
   }
 };
 
@@ -1055,6 +1060,20 @@ public:
 
   const_loc_iterator loc_begin() const { return LOC.begin(); }
   const_loc_iterator loc_end() const { return LOC.end(); }
+
+  void clear() {
+    for (node_iterator I = begin(), E = end(); I != E; ++I) {
+      DFGNode *Node = I;
+
+      Node->clear();
+    }
+
+    DFGNodeList.clear();
+    LOC.clear();
+    RootOfLOC.clear();
+    OperationsOfLOC.clear();
+    ReplacedNodes.clear();
+  }
 };
 }
 
@@ -1464,9 +1483,11 @@ public:
   typedef Node2BitMaskMapTy::iterator node2bitmask_iterator;
   typedef Node2BitMaskMapTy::const_iterator const_node2bitmask_iterator;
 
-  typedef std::map<IntrinsicInst *, std::vector<Value *> > Ops2AdderChainTy;
-  typedef Ops2AdderChainTy::iterator ops2adderchain_iterator;
-  typedef Ops2AdderChainTy::const_iterator const_ops2adderchain_iterator;
+  typedef std::pair<std::vector<Value *>,
+                    std::vector<std::pair<Value *, Value *> > > CompressorOpsTy;
+  typedef std::map<IntrinsicInst *, CompressorOpsTy> Ops2CTTy;
+  typedef Ops2CTTy::iterator ops2ct_iterator;
+  typedef Ops2CTTy::const_iterator const_ops2ct_iterator;
 
   typedef DenseMap<Value *, Value *> Val2SeqValMapTy;
   typedef Val2SeqValMapTy::iterator val2valseq_iterator;
@@ -1513,8 +1534,8 @@ private:
   Val2BitMaskMapTy Val2BitMask;
   // The map between DFG node and BitMask.
   Node2BitMaskMapTy Node2BitMask;
-  // The map between ChainRoot and its operands
-  Ops2AdderChainTy Ops2AdderChain;
+  // The map between CompressorTree and its operands
+  Ops2CTTy Ops2CT;
   // The map between SeqVal in SIR and Reg in SIR
   SeqVal2RegMapTy SeqVal2Reg;
   // The map between Reg and SIRSlot
@@ -1547,20 +1568,6 @@ protected:
 
 public:
   SIR(Function *F) : F(F), C(F->getContext()) {}
-  ~SIR() {
-    Ports.clear();
-    Registers.clear();
-    SubModuleBases.clear();
-    DataPathInsts.clear();
-    Slots.clear();
-    SeqOps.clear();
-    MemInst2SeqOps.clear();
-    Val2SeqVal.clear();
-    SeqVal2Reg.clear();
-    Reg2Slot.clear();
-    KeepRegs.clear();
-    BB2SlotMap.clear();
-  }
 
   bool hasKeepReg(SIRRegister *Reg) const { return KeepRegs.count(Reg); }
   void indexKeepReg(SIRRegister *Reg) {
@@ -1572,6 +1579,11 @@ public:
   void indexKeepVal(Value *Val) {
     if (!KeepVals.count(Val))
       KeepVals.insert(Val);
+  }
+  void removeKeepVal(Value *Val) {
+    assert(KeepVals.count(Val) && "Value not existed!");
+
+    KeepVals.erase(Val);
   }
 
   void indexValidTime(Value *Val, float ValidTime) {
@@ -1794,12 +1806,18 @@ public:
     return at->second;
   }
 
-  bool IndexOps2AdderChain(IntrinsicInst *ChainRoot, std::vector<Value *> Ops) {
-    return Ops2AdderChain.insert(std::make_pair(ChainRoot, Ops)).second;
+  bool IndexOps2CT(IntrinsicInst *Root, std::vector<Value *> NormalOps,
+                   std::vector<std::pair<Value *, Value *> > MulOps) {
+    return Ops2CT.insert(std::make_pair(Root,
+                                        std::make_pair(NormalOps, MulOps))).second;
   }
-  std::vector<Value *> lookupOpsOfChain(IntrinsicInst *ChainRoot) const {
-    const_ops2adderchain_iterator at = Ops2AdderChain.find(ChainRoot);
-    return at == Ops2AdderChain.end() ? std::vector<Value *>() : at->second;
+  std::vector<Value *> getNormalOpsOfCT(IntrinsicInst *Root) const {
+    const_ops2ct_iterator at = Ops2CT.find(Root);
+    return at == Ops2CT.end() ? std::vector<Value *>() : at->second.first;
+  }
+  std::vector<std::pair<Value *, Value *> > getMulOpsOfCT(IntrinsicInst *Root) const {
+    const_ops2ct_iterator at = Ops2CT.find(Root);
+    return at == Ops2CT.end() ? std::vector<std::pair<Value *, Value *> >() : at->second.second;
   }
 
   bool IndexVal2SeqVal(Value *Val, Value *SeqVal) {
@@ -1904,6 +1922,25 @@ public:
   // Release the dead objects in SIR.
   bool gcImpl();
   bool gc();
+
+  void clear() {
+    Ports.clear();
+    Registers.clear();
+    SubModuleBases.clear();
+    DataPathInsts.clear();
+    Slots.clear();
+    SeqOps.clear();
+    MemInst2SeqOps.clear();
+    Val2SeqVal.clear();
+    SeqVal2Reg.clear();
+    Reg2Slot.clear();
+    KeepRegs.clear();
+    KeepVals.clear();
+    BB2SlotMap.clear();
+    Ops2CT.clear();
+    Node2BitMask.clear();
+    Val2BitMask.clear();
+  }
 
   // Functions for debug
   void print(raw_ostream &OS);

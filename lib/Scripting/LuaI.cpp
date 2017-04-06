@@ -44,9 +44,16 @@ LuaI::LuaI() : State(lua_open()) {
 }
 
 LuaI::~LuaI() {
-  // FIXME: Release the function unit descriptors and function settings.
-  //for (size_t i = 0, e = array_lengthof(FUSet); i != e; ++i)
-  //  if(VFUDesc *Desc = FUSet[i]) delete Desc;
+  delete[] FUSet[VFUs::AddSub];
+  delete[] FUSet[VFUs::TernaryAdd];
+  delete[] FUSet[VFUs::Shift];
+  delete[] FUSet[VFUs::Mult];
+  delete[] FUSet[VFUs::GT_LT];
+  delete[] FUSet[VFUs::EQ_NE];
+  delete[] FUSet[VFUs::Div];
+  delete[] FUSet[VFUs::RAnd];
+
+  FUSet.clear();
 
   lua_close(State);
 }

@@ -250,6 +250,5 @@ bool SIRSDCScheduler::schedule() {
     repeat = scheduleSUs();
   }
 
-
   return true;
 }
