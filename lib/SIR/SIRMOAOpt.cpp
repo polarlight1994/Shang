@@ -46,7 +46,7 @@ struct MatrixDot {
 
   // Default constructor
   MatrixDot(std::string Name, float ArrivalTime, unsigned Level,
-            bool IsMulDot, std::vector<std::string> BoothCodingElements)
+            bool IsMulDot, std::vector<std::string> BoothCodingElements = std::vector<std::string>())
     : Name(Name), ArrivalTime(ArrivalTime), Level(Level), IsMulDot(IsMulDot),
       BoothCodingElements(BoothCodingElements) {
     if (!IsMulDot)
@@ -547,9 +547,10 @@ struct SIRMOAOpt : public SIRPass {
                   std::vector<std::pair<Value *, Value *> > MulOps,
                   unsigned Width, std::string Name, raw_fd_ostream &Output,
                   raw_fd_ostream &CTOutput);
-  DotMatrix *createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
-                                unsigned Idx, float ArrivalTime, unsigned Width,
-                                raw_fd_ostream &Output);
+  DotMatrix *createMulDotMatrix(BitMask OpAMask, BitMask OpBMask,
+                                unsigned OpAWidth, unsigned OpBWidth,
+                                unsigned Idx, float OpA_AT, float OpB_AT,
+                                unsigned Width, raw_fd_ostream &Output);
 
   void addZeroDot(MatrixRow *Row) {
     MatrixDot *Zero = createNormalMatrixDot("1'b0", 0.0f, 0);
@@ -1064,79 +1065,201 @@ MatrixRow *SIRMOAOpt::createMaskedDMRow(std::string Name, unsigned Width,
   return Row;
 }
 
-DotMatrix *SIRMOAOpt::createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
-                                         unsigned Idx, float ArrivalTime, unsigned Width,
-                                         raw_fd_ostream &Output) {
+DotMatrix *SIRMOAOpt::createMulDotMatrix(BitMask OpAMask, BitMask OpBMask,
+                                         unsigned OpAWidth, unsigned OpBWidth,
+                                         unsigned Idx, float OpA_AT, float OpB_AT,
+                                         unsigned Width, raw_fd_ostream &Output) {
   DotMatrix *MulMatrix = createMatrix();
   std::string OpAName = "mul_operand_" + utostr_32(Idx) + "_a";
   std::string OpBName = "mul_operand_" + utostr_32(Idx) + "_b";
+  float ArrivalTime = std::max(OpA_AT, OpB_AT);
 
   // Decide which operand is multiplicand and which is multiplier.
   unsigned MultiplicandBW = (OpAWidth > OpBWidth) ? OpBWidth : OpAWidth;
   unsigned MultiplierBW = (OpAWidth > OpBWidth) ? OpAWidth : OpBWidth;
   std::string MultiplicandName = (OpAWidth > OpBWidth) ? OpBName : OpAName;
   std::string MultiplierName = (OpAWidth > OpBWidth) ? OpAName : OpBName;
+  BitMask MultiplicandMask = (OpAWidth > OpBWidth) ? OpBMask : OpAMask;
+  BitMask MultiplierMask = (OpAWidth > OpBWidth) ? OpAMask : OpBMask;
+  float MultiplicandAT = (OpAWidth > OpBWidth) ? OpB_AT : OpA_AT;
+  float MultiplierAT = (OpAWidth > OpBWidth) ? OpA_AT : OpB_AT;
 
   // Calculate the height of the mul matrix.
   unsigned RowNum = std::floor(MultiplierBW / 2.0f) + 1;
-
-  // Generate the implementation of sign extension bits.
-  for (unsigned i = 0; i < RowNum; ++i) {
-    if (2 * i + 1 < MultiplicandBW) {
-      Output << "wire s_" + utostr_32(Idx) + "_" + utostr_32(i) << " = ";
-      Output << MultiplierName + "[" << utostr_32(2 * i + 1) << "];\n";
-    }    
-  }
-  Output << "\n";
 
   // Generate the partial products.
   for (unsigned i = 0; i < RowNum; ++i) {
     MatrixRow *Row = createMatrixRow();
 
+    // The booth coding elements for current row.
+    std::vector<std::string> BoothCodingElements;
+
+    // Booth coding bit #1
+    int FirstBitIdx = 2 * i - 1;
+    if (FirstBitIdx < 0) {
+      BoothCodingElements.push_back("1'b0");
+    }
+    else {
+      std::string FirstEleName
+        = MultiplierName + "[" + utostr_32(FirstBitIdx) + "]";
+
+      // If this bit is KnownBit.
+      if (MultiplierMask.isOneKnownAt(FirstBitIdx))
+        FirstEleName = "1'b1";
+      if (MultiplierMask.isZeroKnownAt(FirstBitIdx))
+        FirstEleName = "1'b0";
+
+      BoothCodingElements.push_back(FirstEleName);
+    }
+    // Booth coding bit #2
+    int SecondBitIdx = 2 * i;
+    if (SecondBitIdx < MultiplierBW) {
+      std::string SecondEleName
+        = MultiplierName + "[" + utostr_32(SecondBitIdx) + "]";
+
+      // If this bit is KnownBit.
+      if (MultiplierMask.isOneKnownAt(SecondBitIdx))
+        SecondEleName = "1'b1";
+      if (MultiplierMask.isZeroKnownAt(SecondBitIdx))
+        SecondEleName = "1'b0";
+
+      BoothCodingElements.push_back(SecondEleName);
+    }
+    else {
+      BoothCodingElements.push_back("1'b0");
+    }
+    // Booth coding bit #3
+    int ThirdBitIdx = 2 * i + 1;
+    if (ThirdBitIdx < MultiplierBW) {
+      std::string ThirdEleName
+        = MultiplierName + "[" + utostr_32(ThirdBitIdx) + "]";
+
+      // If this bit is KnownBit.
+      if (MultiplierMask.isOneKnownAt(ThirdBitIdx))
+        ThirdEleName = "1'b1";
+      if (MultiplierMask.isZeroKnownAt(ThirdBitIdx))
+        ThirdEleName = "1'b0";
+
+      BoothCodingElements.push_back(ThirdEleName);
+    }
+    else {
+      BoothCodingElements.push_back("1'b0");
+    }
+
     // The shift bit number for each partial product
     unsigned ShiftBitNum = i * 2;
 
-    for (unsigned j = 0; j < Width; ++j) {
-      // The shift bits should be zero.
-      if (j < ShiftBitNum)
+    /// The shift bits part.
+    for (unsigned j = 0; j < ShiftBitNum; ++j) {
+      if (j < Width)
         addZeroDot(Row);
+    }
 
-      // The +2, +1, 0, -1, -2 multiplicand.
-      else if (j < ShiftBitNum + MultiplicandBW + 1) {
-        std::string MulDotName = "pp_" + utostr_32(Idx) + "_" + utostr_32(i) + "_" + utostr_32(j);
-        unsigned MulDotLevel = 0;
+    /// The partial product part
 
-        std::vector<std::string> BoothCodingElements;
-        // Booth coding bit #1
-        int FirstBitIdx = 2 * i - 1;
-        if (FirstBitIdx < 0) {
-          BoothCodingElements.push_back("1'b0");
+    std::string TripleBits_A = BoothCodingElements[2];
+    std::string TripleBits_B = BoothCodingElements[1];
+    std::string TripleBits_C = BoothCodingElements[0];
+
+
+    // If the triple bit group of booth coding elements are all KnownBits.
+    if (TripleBits_A == "1'b0" && TripleBits_B == "1'b0" && TripleBits_C == "1'b0") {
+      for (unsigned j = ShiftBitNum; j < ShiftBitNum + MultiplicandBW + 1; ++j) {
+        if (j < Width)
+          addZeroDot(Row);
+      }
+    }
+    else if (TripleBits_A == "1'b0" && TripleBits_B == "1'b0" && TripleBits_C == "1'b1") {
+      for (unsigned j = ShiftBitNum; j < ShiftBitNum + MultiplicandBW; ++j) {
+        if (j < Width) {
+          int CurrentBitIdx = j - ShiftBitNum;
+          std::string CurrentBitName = MultiplicandName + "[" + utostr_32(CurrentBitIdx) + "]";
+          MatrixDot *Dot = createNormalMatrixDot(CurrentBitName, MultiplicandAT, 0);
+
+          Row->addDot(Dot);
+        }        
+      }
+
+      if (ShiftBitNum + MultiplicandBW < Width)
+        addZeroDot(Row);
+    }
+    else if (TripleBits_A == "1'b0" && TripleBits_B == "1'b1" && TripleBits_C == "1'b0") {
+      for (unsigned j = ShiftBitNum; j < ShiftBitNum + MultiplicandBW; ++j) {
+        if (j < Width) {
+          int CurrentBitIdx = j - ShiftBitNum;
+          std::string CurrentBitName = MultiplicandName + "[" + utostr_32(CurrentBitIdx) + "]";
+          MatrixDot *Dot = createNormalMatrixDot(CurrentBitName, MultiplicandAT, 0);
+
+          Row->addDot(Dot);
         }
-        else {
-          std::string FirstEleName
-            = MultiplierName + "[" + utostr_32(FirstBitIdx) + "]";
-          BoothCodingElements.push_back(FirstEleName);
+      }
+
+      if (ShiftBitNum + MultiplicandBW < Width)
+        addZeroDot(Row);
+    }
+    else if (TripleBits_A == "1'b0" && TripleBits_B == "1'b1" && TripleBits_C == "1'b1") {
+      addZeroDot(Row);
+
+      for (unsigned j = ShiftBitNum; j < ShiftBitNum + MultiplicandBW; ++j) {
+        if (j + 1 < Width) {
+          int CurrentBitIdx = j - ShiftBitNum;
+          std::string CurrentBitName = MultiplicandName + "[" + utostr_32(CurrentBitIdx) + "]";
+          MatrixDot *Dot = createNormalMatrixDot(CurrentBitName, MultiplicandAT, 0);
+
+          Row->addDot(Dot);
         }
-        // Booth coding bit #2
-        int SecondBitIdx = 2 * i;
-        if (SecondBitIdx < MultiplierBW) {
-          std::string SecondEleName
-            = MultiplierName + "[" + utostr_32(SecondBitIdx) + "]";
-          BoothCodingElements.push_back(SecondEleName);
+      }
+    }
+    else if (TripleBits_A == "1'b1" && TripleBits_B == "1'b0" && TripleBits_C == "1'b0") {
+      addOneDot(Row);
+
+      for (unsigned j = ShiftBitNum; j < ShiftBitNum + MultiplicandBW; ++j) {
+        if (j + 1 < Width) {
+          int CurrentBitIdx = j - ShiftBitNum;
+          std::string CurrentBitName = "~" + MultiplicandName + "[" + utostr_32(CurrentBitIdx) + "]";
+          MatrixDot *Dot = createNormalMatrixDot(CurrentBitName, MultiplicandAT, 0);
+
+          Row->addDot(Dot);
         }
-        else {
-          BoothCodingElements.push_back("1'b0");
+      }
+    }
+    else if (TripleBits_A == "1'b1" && TripleBits_B == "1'b0" && TripleBits_C == "1'b1") {
+      for (unsigned j = ShiftBitNum; j < ShiftBitNum + MultiplicandBW; ++j) {
+        if (j < Width) {
+          int CurrentBitIdx = j - ShiftBitNum;
+          std::string CurrentBitName = "~" + MultiplicandName + "[" + utostr_32(CurrentBitIdx) + "]";
+          MatrixDot *Dot = createNormalMatrixDot(CurrentBitName, MultiplicandAT, 0);
+
+          Row->addDot(Dot);
+        }        
+      }
+
+      if (ShiftBitNum + MultiplicandBW < Width)
+        addOneDot(Row);
+    }
+    else if (TripleBits_A == "1'b1" && TripleBits_B == "1'b1" && TripleBits_C == "1'b0") {
+      for (unsigned j = ShiftBitNum; j < ShiftBitNum + MultiplicandBW; ++j) {
+        if (j < Width) {
+          int CurrentBitIdx = j - ShiftBitNum;
+          std::string CurrentBitName = "~" + MultiplicandName + "[" + utostr_32(CurrentBitIdx) + "]";
+          MatrixDot *Dot = createNormalMatrixDot(CurrentBitName, MultiplicandAT, 0);
+
+          Row->addDot(Dot);
         }
-        // Booth coding bit #3
-        int ThirdBitIdx = 2 * i + 1;
-        if (ThirdBitIdx < MultiplierBW) {
-          std::string ThirdEleName
-            = MultiplierName + "[" + utostr_32(ThirdBitIdx) + "]";
-          BoothCodingElements.push_back(ThirdEleName);
-        }
-        else {
-          BoothCodingElements.push_back("1'b0");
-        }
+      }
+
+      if (ShiftBitNum + MultiplicandBW < Width)
+        addOneDot(Row);
+    }
+    else if (TripleBits_A == "1'b1" && TripleBits_B == "1'b1" && TripleBits_C == "1'b1") {
+      for (unsigned j = ShiftBitNum; j < ShiftBitNum + MultiplicandBW + 1; ++j) {
+        if (j < Width)
+          addOneDot(Row);
+      }
+    }
+    // Else.
+    else {
+      for (unsigned j = ShiftBitNum; j < ShiftBitNum + MultiplicandBW + 1; ++j) {
         // Booth coding bit #4 & #5
         int FFBitIdx = j - ShiftBitNum;
         if (FFBitIdx < MultiplicandBW) {
@@ -1146,7 +1269,7 @@ DotMatrix *SIRMOAOpt::createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
         }
         else {
           BoothCodingElements.push_back("1'b0");
-        }        
+        }
         if (FFBitIdx - 1 < 0) {
           BoothCodingElements.push_back("1'b0");
         }
@@ -1156,20 +1279,29 @@ DotMatrix *SIRMOAOpt::createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
           BoothCodingElements.push_back(FifthEleName);
         }
 
-        // Create the mul partial product dot.
-        MatrixDot *MulDot = createMulMatrixDot(MulDotName, ArrivalTime,
-                                               MulDotLevel, BoothCodingElements);
+        std::string MulDotName = "pp_" + utostr_32(Idx) + "_" +
+                                  utostr_32(i) + "_" + utostr_32(j);
+        unsigned MulDotLevel = 0;
 
-        Row->addDot(MulDot);
+        if (j < Width) {
+          // Create the mul partial product dot.
+          MatrixDot *MulDot
+            = createMulMatrixDot(MulDotName, ArrivalTime, 0, BoothCodingElements);
+
+          Row->addDot(MulDot);
+        }        
+
+        // Pop out the last two booth coding elements.
+        BoothCodingElements.pop_back();
+        BoothCodingElements.pop_back();
       }
+    }
 
-      // The sign extension bits
-      else {
-        std::string SignBitName = "s_" + utostr_32(Idx) + "_" + utostr_32(i);
-        MatrixDot *Dot = createNormalMatrixDot(SignBitName, 0.0f, 0);
+    /// The sign extension bits
+    for (unsigned j = ShiftBitNum + MultiplicandBW + 1; j < Width; ++j) {
+      MatrixDot *Dot = createNormalMatrixDot(TripleBits_A, MultiplierAT, 0);
 
-        Row->addDot(Dot);
-      }
+      Row->addDot(Dot);
     }
 
     MulMatrix->addRow(Row);
@@ -1181,17 +1313,22 @@ DotMatrix *SIRMOAOpt::createMulDotMatrix(unsigned OpAWidth, unsigned OpBWidth,
   for (unsigned i = 0; i < Width; ++i) {
     if (i < UpperBound) {
       if (i % 2 == 0) {
-        unsigned AdditionIdx = i / 2;
-        std::string AdditionBitName = "s_" + utostr_32(Idx) + "_" + utostr_32(AdditionIdx);
-        MatrixDot *Dot = createNormalMatrixDot(AdditionBitName, ArrivalTime, 0);
+        if (MultiplierMask.isOneKnownAt(i + 1))
+          addOneDot(AdditionRow);
+        else if (MultiplierMask.isZeroKnownAt(i + 1))
+          addZeroDot(AdditionRow);
+        else {
+          std::string AdditionBitName = MultiplierName + "[" + utostr_32(i + 1) + "]";
+          MatrixDot *Dot = createNormalMatrixDot(AdditionBitName, MultiplierAT, 0);
 
-        AdditionRow->addDot(Dot);
+          AdditionRow->addDot(Dot);
+        }
+        
         continue;
       }
     }
 
-    MatrixDot *ZeroDot = createNormalMatrixDot("1'b0", 0.0f, 0);
-    AdditionRow->addDot(ZeroDot);
+    addZeroDot(AdditionRow);
   }
   MulMatrix->addRow(AdditionRow);
 
@@ -1301,13 +1438,13 @@ MatrixDot *SIRMOAOpt::createNormalMatrixDot(std::string Name, float ArrivalTime,
 MatrixDot *SIRMOAOpt::createMulMatrixDot(std::string Name, float ArrivalTime,
                                          unsigned Level,
                                          std::vector<std::string> BoothCodingElements) {
-  MatrixDot *MulDot
-    = new MatrixDot(Name, ArrivalTime, Level, true, BoothCodingElements);
+  // The created dot.
+  MatrixDot *Dot = new MatrixDot(Name, ArrivalTime, Level, true, BoothCodingElements);
 
   // Index the created dot.
-  CreatedDots.push_back(MulDot);
+  CreatedDots.push_back(Dot);
 
-  return MulDot;
+  return Dot;
 }
 
 DotMatrix *SIRMOAOpt::createMatrix(std::string Name) {
@@ -1357,15 +1494,38 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
   // Create the MulDM for MulOps.
   for (unsigned i = 0; i < MulOpNum; ++i) {
     std::pair<Value *, Value *> MulOpPair = MulOps[i];
-    unsigned MulOpAWidth = TD->getTypeSizeInBits(MulOpPair.first->getType());
-    unsigned MulOpBWidth = TD->getTypeSizeInBits(MulOpPair.second->getType());
+    Value *MulOpA = MulOpPair.first, *MulOpB = MulOpPair.second;
 
+    // Get bitwidth.
+    unsigned MulOpAWidth = TD->getTypeSizeInBits(MulOpA->getType());
+    unsigned MulOpBWidth = TD->getTypeSizeInBits(MulOpB->getType());
+
+    // Get bitmask.
+    BitMask MulOpA_BitMask, MulOpB_BitMask;
+    if (isa<ConstantInt>(MulOpA)) {
+      MulOpA_BitMask = BitMask::BitMask(MulOpA, MulOpAWidth);
+    }
+    else {
+      DFGNode *MulOpA_OpNode = SM->getDFGNodeOfVal(MulOpPair.first);
+      assert(MulOpA_OpNode && "DFG node not created?");
+      MulOpA_BitMask = SM->getBitMask(MulOpA_OpNode);
+    }
+    if (isa<ConstantInt>(MulOpB)) {
+      MulOpB_BitMask = BitMask::BitMask(MulOpB, MulOpBWidth);
+    }
+    else {
+      DFGNode *MulOpB_OpNode = SM->getDFGNodeOfVal(MulOpPair.second);
+      assert(MulOpB_OpNode && "DFG node not created?");
+      MulOpB_BitMask = SM->getBitMask(MulOpB_OpNode);
+    }
+    
+    // Get arrival time.
     float MulOpA_AT = getOperandArrivalTime(MulOpPair.first) * VFUs::Period;
     float MulOpB_AT = getOperandArrivalTime(MulOpPair.second) * VFUs::Period;
     float ArrivalTime = std::max(MulOpA_AT, MulOpB_AT);
 
-    DotMatrix *MulDM
-      = createMulDotMatrix(MulOpAWidth, MulOpBWidth, i, ArrivalTime, Width, Output);
+    DotMatrix *MulDM = createMulDotMatrix(MulOpA_BitMask, MulOpB_BitMask, MulOpAWidth,
+                                          MulOpBWidth, i, MulOpA_AT, MulOpB_AT, Width, Output);
     MulDM = preHandling(DM, MulDM);
 
     // Merge each the MulDM into the TopMulDM.
@@ -1540,7 +1700,6 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
   // Eliminate the identical operands in add chain.
   Operands = eliminateIdenticalOperands(Operands, MOA, Width);
 
-  unsigned Num = 0;
   std::vector<Value *> NormalOps;
   std::vector<std::pair<Value *, Value *> > MulOps;
   // Extract out the multiplication operands.
@@ -1548,26 +1707,27 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
     Value *Operand = Operands[i];
 
     if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(Operand)) {
-      if (OpII->getIntrinsicID() == Intrinsic::shang_mul/* && Num < 1*/) {
-        // Ignore the mul instruction which are used by several users.
-        unsigned UserNum = 0;
-        typedef Value::use_iterator use_iterator;
-        for (use_iterator UI = OpII->use_begin(), UE = OpII->use_end();
-             UI != UE; ++UI) {
-          Value *UserVal = *UI;
-
-          if (IntrinsicInst *UserInst = dyn_cast<IntrinsicInst>(UserVal))
-            ++UserNum;
-        }
-        if (UserNum >= 2)
-          continue;
+      if (OpII->getIntrinsicID() == Intrinsic::shang_mul) {
+//         // Ignore the mul instruction which are used by several users.
+//         unsigned UserNum = 0;
+//         typedef Value::use_iterator use_iterator;
+//         for (use_iterator UI = OpII->use_begin(), UE = OpII->use_end();
+//              UI != UE; ++UI) {
+//           Value *UserVal = *UI;
+// 
+//           if (IntrinsicInst *UserInst = dyn_cast<IntrinsicInst>(UserVal))
+//             ++UserNum;
+//         }
+//         if (UserNum >= 2) {
+//           NormalOps.push_back(Operand);
+//           continue;
+//         }
 
         Value *OperandA = OpII->getOperand(0);
         Value *OperandB = OpII->getOperand(1);
 
         MulOps.push_back(std::make_pair(OperandA, OperandB));
 
-        ++Num;
         SM->removeKeepVal(OpII);
         continue;
       }
@@ -2232,7 +2392,7 @@ DotMatrix *SIRMOAOpt::preComputingByCarryChain(DotMatrix *DM, DotMatrix *MulDM,
       for (unsigned k = 0; k < TDMRow->getWidth(); ++k) {
         MatrixDot *TDMDot = TDMRow->getDot(k);
 
-        // Ignore the ZeroDot.
+        // Make sure all input dots of carry chain are non-zero dots.
         if (TDMDot->isZero())
           continue;
 
@@ -2244,6 +2404,11 @@ DotMatrix *SIRMOAOpt::preComputingByCarryChain(DotMatrix *DM, DotMatrix *MulDM,
           break;
         }
         else {
+          Continue = false;
+          break;
+        }
+
+        if (k == TDMRow->getWidth() - 1) {
           Continue = false;
           break;
         }
@@ -2259,6 +2424,8 @@ DotMatrix *SIRMOAOpt::preComputingByCarryChain(DotMatrix *DM, DotMatrix *MulDM,
     // Ignore if the length of carry chain is too small.
     if (Length <= 2)
       continue;
+
+    errs() << "Pre-compute the dots by carry-chain!\n";
 
     // Print the implementation of PreComputingByCarryChain.
     printPCBCC(PCBCCOpA, PCBCCOpB, i, Output);
