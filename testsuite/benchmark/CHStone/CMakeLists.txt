@@ -14,7 +14,7 @@ add_subdirectory(adpcm)
 ##################################
 #Add the benchmark of other categories
 
-add_subdirectory(gsm)
+#add_subdirectory(gsm)
 add_subdirectory(mips)
 
 ##################################

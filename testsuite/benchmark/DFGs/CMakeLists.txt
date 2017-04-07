@@ -1,7 +1,7 @@
 ##################################
 #add_subdirectory(aircraft)
 add_subdirectory(arai)
-add_subdirectory(chem)
+#add_subdirectory(chem)
 add_subdirectory(dir)
 add_subdirectory(feig_dct)
 add_subdirectory(honda)
