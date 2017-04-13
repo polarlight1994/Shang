@@ -229,59 +229,59 @@ bool SIRSTGDistance::updateDistance(unsigned Distance, unsigned SrcSlotNum,
 }
 
 bool SIRSTGDistance::runOnSIR(SIR &SM) {
-  this->SM = &SM;
-
-  typedef SIR::slot_iterator slot_iterator;
-  for (slot_iterator I = SM.slot_begin(), E = SM.slot_end(); I != E; ++I) {
-    SIRSlot *Src = I;
-
-    typedef SIRSlot::succ_iterator succ_iterator;
-    for (succ_iterator SI = Src->succ_begin(), SE = Src->succ_end(); SI != SE; ++SI) {
-      SIRSlot *Dst = *SI;
-
-      if (Src == Dst)
-        continue;
-
-      DistanceMatrix[Dst->getSlotNum()][Src->getSlotNum()] = SI->getDistance();
-    }
-  }
-
-  ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> > RPO(SM.slot_begin());
-
-  typedef
-    ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >::rpo_iterator iterator;
-
-  bool changed = true;
-  while (changed) {
-    changed = false;
-
-    // Use the Floyd-Warshal algorithm to compute the shortest path.
-    for (iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
-      SIRSlot *Dst = *I;
-      unsigned DstNum = Dst->getSlotNum();
-
-      typedef SIRSlot::pred_iterator pred_iterator;
-      for (pred_iterator PI = Dst->pred_begin(), PE = Dst->pred_end(); PI != PE; ++PI) {
-        SIRSlot *Thu = *PI;
-        unsigned ThuNum = Thu->getSlotNum();
-
-        unsigned Thu2DstDistance = PI->getDistance();
-
-        std::map<unsigned, unsigned> &Srcs = DistanceMatrix[ThuNum];
-        typedef std::map<unsigned, unsigned>::iterator src_iterator;
-        for (src_iterator SI = Srcs.begin(), SE = Srcs.end(); SI != SE; ++SI) {
-          unsigned SrcNum = SI->first;
-
-          if (SrcNum == DstNum) continue;
-
-          unsigned Src2ThuDistance = SI->second;
-          unsigned Src2DstDistance = Src2ThuDistance + Thu2DstDistance;
-
-          changed |= updateDistance(Src2DstDistance, SrcNum, DstNum);
-        }
-      }
-    }
-  }
+//   this->SM = &SM;
+// 
+//   typedef SIR::slot_iterator slot_iterator;
+//   for (slot_iterator I = SM.slot_begin(), E = SM.slot_end(); I != E; ++I) {
+//     SIRSlot *Src = I;
+// 
+//     typedef SIRSlot::succ_iterator succ_iterator;
+//     for (succ_iterator SI = Src->succ_begin(), SE = Src->succ_end(); SI != SE; ++SI) {
+//       SIRSlot *Dst = *SI;
+// 
+//       if (Src == Dst)
+//         continue;
+// 
+//       DistanceMatrix[Dst->getSlotNum()][Src->getSlotNum()] = SI->getDistance();
+//     }
+//   }
+// 
+//   ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> > RPO(SM.slot_begin());
+// 
+//   typedef
+//     ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >::rpo_iterator iterator;
+// 
+//   bool changed = true;
+//   while (changed) {
+//     changed = false;
+// 
+//     // Use the Floyd-Warshal algorithm to compute the shortest path.
+//     for (iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
+//       SIRSlot *Dst = *I;
+//       unsigned DstNum = Dst->getSlotNum();
+// 
+//       typedef SIRSlot::pred_iterator pred_iterator;
+//       for (pred_iterator PI = Dst->pred_begin(), PE = Dst->pred_end(); PI != PE; ++PI) {
+//         SIRSlot *Thu = *PI;
+//         unsigned ThuNum = Thu->getSlotNum();
+// 
+//         unsigned Thu2DstDistance = PI->getDistance();
+// 
+//         std::map<unsigned, unsigned> &Srcs = DistanceMatrix[ThuNum];
+//         typedef std::map<unsigned, unsigned>::iterator src_iterator;
+//         for (src_iterator SI = Srcs.begin(), SE = Srcs.end(); SI != SE; ++SI) {
+//           unsigned SrcNum = SI->first;
+// 
+//           if (SrcNum == DstNum) continue;
+// 
+//           unsigned Src2ThuDistance = SI->second;
+//           unsigned Src2DstDistance = Src2ThuDistance + Thu2DstDistance;
+// 
+//           changed |= updateDistance(Src2DstDistance, SrcNum, DstNum);
+//         }
+//       }
+//     }
+//   }
 
   return false;
 }
