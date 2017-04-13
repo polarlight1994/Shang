@@ -2067,10 +2067,6 @@ void SIRMOAOpt::collectMOAOps(IntrinsicInst *MOA) {
           // Ignore the adder instruction itself.
           if (AdderSet.count(OperandInst))
             continue;
-
-//           // Identify the MAC.
-//           if (OperandInst->getIntrinsicID() == Intrinsic::shang_mul)
-//             errs() << "MAC found!\n";
         }
 
         Operands.push_back(Operand);
@@ -2695,12 +2691,12 @@ void SIRMOAOpt::printPCBCC(std::vector<MatrixDot *> OpA,
 
     Output << "\t.triple_bit_group({" << MulDMDot->getCodingElements(2) << ", "
            << MulDMDot->getCodingElements(1) << ", "
-           << MulDMDot->getCodingElements(0) << "}),\n";
-    Output << "\t.current_bit(" << MulDMDot->getCodingElements(3) << "),\n";
-    Output << "\t.previous_bit(" << MulDMDot->getCodingElements(4) << "),\n";
-    Output << "\t.operand_bit(" << DMDot->getName() << "),\n";
-    Output << "\t.result(" << LUTResultName << ")\n";
-    Output << ");\n\n";
+           << MulDMDot->getCodingElements(0) << "}), ";
+    Output << ".current_bit(" << MulDMDot->getCodingElements(3) << "), ";
+    Output << ".previous_bit(" << MulDMDot->getCodingElements(4) << "), ";
+    Output << ".operand_bit(" << DMDot->getName() << "), ";
+    Output << ".result(" << LUTResultName << ")";
+    Output << ");\n";
   }
 
   // Print the CarryChain part.
@@ -2725,9 +2721,9 @@ void SIRMOAOpt::printPCBCC(std::vector<MatrixDot *> OpA,
       if (j != (i + 1) * 4 - 1)
         Output << ", ";
     }
-    Output << "}),\n";
+    Output << "}), ";
 
-    Output << "\t.S({";
+    Output << ".S({";
     for (unsigned j = i * 4; j < (i + 1) * 4; ++j) {
       if ((i + 1) * 4 - 1 - j + i * 4 < Length)
         Output << "CC_result_" + utostr_32(Idx) + "_"
@@ -2738,19 +2734,19 @@ void SIRMOAOpt::printPCBCC(std::vector<MatrixDot *> OpA,
       if (j != (i + 1) * 4 - 1)
         Output << ", ";
     }
-    Output << "}),\n";
+    Output << "}), ";
 
-    Output << "\t.O(" << C4SumName << "),\n";
-    Output << "\t.CO(" << C4CarryName << "),\n";
-    Output << "\t.CYINIT(1'b0),\n";
+    Output << ".O(" << C4SumName << "), ";
+    Output << ".CO(" << C4CarryName << "), ";
+    Output << ".CYINIT(1'b0), ";
 
     if (i != 0)
-      Output << "\t.CI(" << "c4_" + utostr_32(Idx)
-             << "_" + utostr_32(i - 1) + "_carry[3])\n";
+      Output << ".CI(" << "c4_" + utostr_32(Idx)
+             << "_" + utostr_32(i - 1) + "_carry[3]) ";
     else
-      Output << "\t.CI(1'b0)\n";
+      Output << ".CI(1'b0) ";
 
-    Output << ");\n\n";
+    Output << ");\n";
   }
 }
 
