@@ -314,13 +314,10 @@ BitMask BitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayout *TD)
 
       BitMask Mask(BitWidth);
 
-      SM->IndexVal2BitMask(Operand, Mask);
-      SM->IndexVal2BitMask(Inst, Mask);
       return Mask;
     }
 
     BitMask OperandMask = SM->getBitMask(Operand);
-    SM->IndexVal2BitMask(Inst, OperandMask);
 
     return OperandMask;
   }
@@ -358,7 +355,6 @@ BitMask BitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayout *TD)
 
         if (SignBits == 1) {
           BitMask Mask = BitMask(~CIAPInt, CIAPInt, CIAPInt.getNullValue(CIAPInt.getBitWidth()));
-          SM->IndexVal2BitMask(Op, Mask);
 
           Masks.push_back(Mask);
         }
@@ -368,7 +364,6 @@ BitMask BitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayout *TD)
           KnownSignBits = KnownSignBits.shl(CIAPInt.getBitWidth() - SignBits);
 
           BitMask Mask = BitMask(~CIAPInt, CIAPInt, KnownSignBits);
-          SM->IndexVal2BitMask(Op, Mask);
 
           Masks.push_back(BitMask(~CIAPInt, CIAPInt,KnownSignBits));
         }
@@ -980,7 +975,6 @@ void BitMaskAnalysis::verifyMaskCorrectness() {
                                                Inst->getType(), Inst, true);
 
       MaskedVals.insert(MaskedVal);
-      SM->IndexVal2BitMask(MaskedVal, Mask);
 
       if (MaskedVal->getType() != Inst->getType()) {
         Type *OriginType = Inst->getType();

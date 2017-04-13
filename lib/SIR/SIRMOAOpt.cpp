@@ -28,6 +28,7 @@ static bool enableBitMaskOpt = true;
 static bool useGPCWithCarryChain = false;
 static bool useSepcialGPC = false;
 static bool sumFirstRowsByAdder = false;
+static bool preComputeByCarryChain = true;
 static unsigned TargetHeight = 3;
 
 namespace {
@@ -477,7 +478,8 @@ struct SIRMOAOpt : public SIRPass {
   std::map<IntrinsicInst *, IntrinsicInst *> MOA2PseudoHybridTreeInst;
   std::map<IntrinsicInst *, std::vector<Value *> > MOA2Ops;
 
-  std::map<Value *, float> ValArrivalTime;  
+  std::map<Value *, BitMask> MasksOfOps;
+  std::map<Value *, float> ATsOfOps;
 
   // The library of compress components.
   std::vector<CompressComponent *> Library;
@@ -515,6 +517,33 @@ struct SIRMOAOpt : public SIRPass {
 
     DFG->clear();
     delete DFG;
+  }
+
+  void indexMaskOfOp(Value *Op, BitMask Mask) {
+    if (MasksOfOps.count(Op)) {
+      assert(getMaskOfOp(Op) == Mask && "Unexpected mask!");
+      return;
+    }
+
+    MasksOfOps.insert(std::make_pair(Op, Mask));
+  }
+  BitMask getMaskOfOp(Value *Op) {
+    assert(MasksOfOps.count(Op) && "Not existed!");
+
+    return MasksOfOps[Op];
+  }
+  void indexATOfOp(Value *Op, float ArrivalTime) {
+    if (ATsOfOps.count(Op)) {
+      assert(getATOfOp(Op) == ArrivalTime && "Unexpected arrival time!");
+      return;
+    }
+
+    ATsOfOps.insert(std::make_pair(Op, ArrivalTime));
+  }
+  float getATOfOp(Value *Op) {
+    assert(ATsOfOps.count(Op) && "Not existed!");
+
+    return ATsOfOps[Op];
   }
 
   // Optimization on operands of MOA.
@@ -839,8 +868,6 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
   if (isa<ConstantInt>(Operand))
     return 0.0f;
 
-  SM->indexKeepVal(Operand);
-
   // Get the corresponding DFG node.
   DFGNode *Node = SM->getDFGNodeOfVal(Operand);
 
@@ -859,7 +886,6 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
   // Initialize a arrival time.
   float ArrivalTime = getCritialPathDelay(Node);
 
-  SM->indexKeepVal(Node->getValue());
   if (Node->getType() == DFGNode::LogicOperationChain) {
 
     std::vector<DFGNode *> Operations = DFG->getOperations(Node);
@@ -924,9 +950,6 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
        AI != AE; ++AI) {
     CritialPathArrivalTime
       = CritialPathArrivalTime > AI->second ? CritialPathArrivalTime : AI->second;
-
-    // Index the arrival time.
-    ValArrivalTime.insert(std::make_pair(Operand, CritialPathArrivalTime));
   }
 
   return CritialPathArrivalTime;
@@ -938,21 +961,32 @@ SIRMOAOpt::eliminateIdenticalOperands(std::vector<Value *> Operands,
   // The operands after elimination
   std::vector<Value *> FinalOperands;
 
+  // Analyze the information of operand, including:
+  // 1) BitMask
+  // 2) Arrival time
+  // 3) occur number
   std::set<Value *> Visited;
   std::vector<std::pair<Value *, unsigned> > OpNums;
   for (unsigned i = 0; i < Operands.size(); ++i) {
     Value *Op = Operands[i];
 
-    // First index the constant integer.
-    if (isa<ConstantInt>(Op)) {
-      SM->indexKeepVal(Op);
-      FinalOperands.push_back(Op);
-      continue;
-    }
+    // Index the mask of operand.
+    BitMask Mask;
+    if (isa<ConstantInt>(Op))
+      Mask = BitMask(Op, TD->getTypeSizeInBits(Op->getType()));
+    else
+      Mask = SM->getBitMask(Op);
+    indexMaskOfOp(Op, Mask);
 
-    // Then index the repeated operand and its numbers.
-    if (!Visited.count(Op))
+    // Index the arrival time of operand.
+    float ArrivalTime = getOperandArrivalTime(Op);
+    indexATOfOp(Op, ArrivalTime);
+
+    // Index the number of operand.
+    if (!Visited.count(Op)) {
       OpNums.push_back(std::make_pair(Op, 1));
+      Visited.insert(Op);
+    }      
     else {
       for (unsigned j = 0; j < OpNums.size(); ++j) {
         Value *SameOp = OpNums[j].first;
@@ -961,6 +995,8 @@ SIRMOAOpt::eliminateIdenticalOperands(std::vector<Value *> Operands,
           OpNums[j].second++;
       }
     }
+
+    SM->indexKeepVal(Op);
   }
 
   // Initial a datapath builder to handle the repeated operand.
@@ -970,15 +1006,24 @@ SIRMOAOpt::eliminateIdenticalOperands(std::vector<Value *> Operands,
   for (iterator I = OpNums.begin(), E = OpNums.end(); I != E; ++I) {
     Value *Op = I->first;
 
-    unsigned OpBitWidth = Builder.getBitWidth(Op);
-    unsigned Num = I->second;
+    /// Handle the trivial case: constant integer operand.
 
-    if (Num == 1) {
-      SM->indexKeepVal(Op);
+    if (isa<ConstantInt>(Op)) {      
       FinalOperands.push_back(Op);
       continue;
     }
 
+    /// Handle other operands.
+
+    unsigned OpBitWidth = Builder.getBitWidth(Op);
+    unsigned Num = I->second;
+    
+    // If the operand only occurs once, index it into the final operand list.
+    if (Num == 1) {
+      FinalOperands.push_back(Op);
+      continue;
+    }
+    // If the operand occurs multi-times, optimize them by shift operation.
     if (Num == 2) {
       Value *ExtractResult
         = Builder.createSBitExtractInst(Op, OpBitWidth - 1, 0,
@@ -988,11 +1033,16 @@ SIRMOAOpt::eliminateIdenticalOperands(std::vector<Value *> Operands,
         = Builder.createSBitCatInst(ExtractResult, Builder.createIntegerValue(1, 0),
                                     Op->getType(), MOA, true);
 
-      BitMask OpMask = SM->getBitMask(Op);
+      BitMask OpMask = getMaskOfOp(Op);
       OpMask = OpMask.shl(1);
+      indexMaskOfOp(ShiftResult, OpMask);
 
-      SM->IndexVal2BitMask(ShiftResult, OpMask);
+      float ArrivalTime = getATOfOp(Op);
+      indexATOfOp(ShiftResult, ArrivalTime);
+
+      SM->indexKeepVal(ExtractResult);
       SM->indexKeepVal(ShiftResult);
+
       FinalOperands.push_back(ShiftResult);
     }
     else {
@@ -1503,15 +1553,17 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
     // Get bitmask.
     BitMask MulOpA_BitMask, MulOpB_BitMask;
     if (isa<ConstantInt>(MulOpA)) {
-      MulOpA_BitMask = BitMask::BitMask(MulOpA, MulOpAWidth);
+      MulOpA_BitMask = BitMask(MulOpA, MulOpAWidth);
     }
     else {
+      MulOpA_BitMask = SM->getBitMask(MulOpA);
+
       DFGNode *MulOpA_OpNode = SM->getDFGNodeOfVal(MulOpPair.first);
       assert(MulOpA_OpNode && "DFG node not created?");
       MulOpA_BitMask = SM->getBitMask(MulOpA_OpNode);
     }
     if (isa<ConstantInt>(MulOpB)) {
-      MulOpB_BitMask = BitMask::BitMask(MulOpB, MulOpBWidth);
+      MulOpB_BitMask = BitMask(MulOpB, MulOpBWidth);
     }
     else {
       DFGNode *MulOpB_OpNode = SM->getDFGNodeOfVal(MulOpPair.second);
@@ -1537,7 +1589,7 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
   std::vector<std::pair<unsigned, float> > SortedOps;
   for (unsigned i = 0; i < NormalOps.size(); ++i) {
     Value *NormalOp = NormalOps[i];
-    float ArrivalTime = getOperandArrivalTime(NormalOp) * VFUs::Period;
+    float ArrivalTime = getATOfOp(NormalOp) * VFUs::Period;
 
     SortedOps.push_back(std::make_pair(i, ArrivalTime));
   }
@@ -1577,9 +1629,7 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
     // Or the dots will be the form like operand[0], operand[1]...
     else {
       // Get the bit mask of the dots.
-      DFGNode *OpNode = SM->getDFGNodeOfVal(NormalOp);
-      assert(OpNode && "DFG node not created?");
-      BitMask Mask = SM->getBitMask(OpNode);
+      BitMask Mask = getMaskOfOp(NormalOp);
 
       errs() << "Operand_" + utostr_32(i) << ": ArrivalTime[ "
              << float2String(ArrivalTime) << "], ";
@@ -1636,57 +1686,141 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
   }
 
   // Output all the bitmask information of operands for debug.
-  for (unsigned i = 0; i < NormalOps.size(); ++i) {
-    Value *Operand = NormalOps[i];
-    unsigned Width = TD->getTypeSizeInBits(Operand->getType());
-    std::string OperandName = "operand_" + utostr_32(i);
+  CTOutput << "Masks of operands for compressor " << Name << ":\n";
+  for (unsigned i = 0; i < SortedOps.size(); ++i) {
+    unsigned NormalOpIdx = SortedOps[i].first;
+    Value *NormalOp = NormalOps[NormalOpIdx];
+    unsigned Width = TD->getTypeSizeInBits(NormalOp->getType());
+    std::string OperandName = "operand_" + utostr_32(NormalOpIdx);
 
-    if (ConstantInt *CI = dyn_cast<ConstantInt>(Operand)) {
-      CTOutput << ";\n";
-      continue;
+    BitMask Mask = getMaskOfOp(NormalOp);
+
+    unsigned LeadingSigns = Mask.countLeadingSigns();
+    if (LeadingSigns == Width) {
+      CTOutput << "{" << LeadingSigns << "{" << OperandName << "[" + utostr_32(Width - 1) + "]" << "}}";
     }
-    else {
-      DFGNode *OpNode = SM->getDFGNodeOfVal(Operand);
-      assert(OpNode && "DFG node not created?");
-      BitMask Mask = SM->getBitMask(OpNode);
+    else if (LeadingSigns != 0 && LeadingSigns != Width) {
+      CTOutput << "{" << LeadingSigns << "{" << OperandName << "[" + utostr_32(Width - 1) + "]" << "}";
+      CTOutput << ", " << OperandName << "[" + utostr_32(Width - 1 - LeadingSigns) + ":0]}";
+    }
+    else
+      CTOutput << OperandName;
 
-      unsigned LeadingSigns = Mask.countLeadingSigns();
-      if (LeadingSigns == Width) {
-        CTOutput << "{" << LeadingSigns << "{" << OperandName << "[" + utostr_32(Width - 1) + "]" << "}}";
-      }
-      else if (LeadingSigns != 0 && LeadingSigns != Width) {
-        CTOutput << "{" << LeadingSigns << "{" << OperandName << "[" + utostr_32(Width - 1) + "]" << "}";
-        CTOutput << ", " << OperandName << "[" + utostr_32(Width - 1 - LeadingSigns) + ":0]}";
+    CTOutput << " & ";
+
+    CTOutput << utostr_32(Width) << "\'b";
+    for (unsigned j = 0; j < Width; ++j) {
+      if (Mask.isZeroKnownAt(Width - 1 - j)) {
+        CTOutput << "0";
       }
       else
-        CTOutput << OperandName;
-
-      CTOutput << " & ";
-
-      CTOutput << utostr_32(Width) << "\'b";
-      for (unsigned j = 0; j < Width; ++j) {
-        if (Mask.isZeroKnownAt(Width - 1 - j)) {
-          CTOutput << "0";
-        }
-        else
-          CTOutput << "1";
-      }
-
-      CTOutput << " | ";
-
-      CTOutput << utostr_32(Width) << "\'b";
-      for (unsigned j = 0; j < Width; ++j) {
-        if (Mask.isOneKnownAt(Width - 1 - j)) {
-          CTOutput << "1";
-        }
-        else
-          CTOutput << "0";
-      }
+        CTOutput << "1";
     }
 
-    CTOutput << ";\n";
+    CTOutput << " | ";
+
+    CTOutput << utostr_32(Width) << "\'b";
+    for (unsigned j = 0; j < Width; ++j) {
+      if (Mask.isOneKnownAt(Width - 1 - j)) {
+        CTOutput << "1";
+      }
+      else
+        CTOutput << "0";
+    }
+
+    CTOutput << ";\n\n";
   }
-  CTOutput << "\n\n";
+  for (unsigned i = 0; i < MulOps.size(); ++i) {
+    std::pair<Value *, Value *> MulOpPair = MulOps[i];
+    Value *MulOpA = MulOpPair.first, *MulOpB = MulOpPair.second;
+
+    // Print the bitmask of multi-operand-a.
+    unsigned MulOpAWidth = TD->getTypeSizeInBits(MulOpA->getType());
+    std::string MulOpAName = "mul_operand_" + utostr_32(i) + "_a";
+
+    BitMask MulOpAMask = getMaskOfOp(MulOpA);
+
+    unsigned MulOpALeadingSigns = MulOpAMask.countLeadingSigns();
+    if (MulOpALeadingSigns == MulOpAWidth) {
+      CTOutput << "{" << MulOpALeadingSigns << "{" << MulOpAName
+        << "[" + utostr_32(MulOpAWidth - 1) + "]" << "}}";
+    }
+    else if (MulOpALeadingSigns != 0 && MulOpALeadingSigns != MulOpAWidth) {
+      CTOutput << "{" << MulOpALeadingSigns << "{" << MulOpAName
+        << "[" + utostr_32(MulOpAWidth - 1) + "]" << "}";
+      CTOutput << ", " << MulOpAName << "[" + utostr_32(Width - 1 - MulOpALeadingSigns)
+        << ":0]}";
+    }
+    else
+      CTOutput << MulOpAName;
+
+    CTOutput << " & ";
+
+    CTOutput << utostr_32(MulOpAWidth) << "\'b";
+    for (unsigned j = 0; j < MulOpAWidth; ++j) {
+      if (MulOpAMask.isZeroKnownAt(Width - 1 - j)) {
+        CTOutput << "0";
+      }
+      else
+        CTOutput << "1";
+    }
+
+    CTOutput << " | ";
+
+    CTOutput << utostr_32(MulOpAWidth) << "\'b";
+    for (unsigned j = 0; j < MulOpAWidth; ++j) {
+      if (MulOpAMask.isOneKnownAt(MulOpAWidth - 1 - j)) {
+        CTOutput << "1";
+      }
+      else
+        CTOutput << "0";
+    }
+    CTOutput << "\n";
+
+    // Print the bitmask of multi-operand-b.
+    unsigned MulOpBWidth = TD->getTypeSizeInBits(MulOpB->getType());
+    std::string MulOpBName = "mul_operand_" + utostr_32(i) + "_b";
+
+    BitMask MulOpBMask = getMaskOfOp(MulOpB);
+
+    unsigned MulOpBLeadingSigns = MulOpBMask.countLeadingSigns();
+    if (MulOpBLeadingSigns == MulOpBWidth) {
+      CTOutput << "{" << MulOpBLeadingSigns << "{" << MulOpBName
+        << "[" + utostr_32(MulOpBWidth - 1) + "]" << "}}";
+    }
+    else if (MulOpBLeadingSigns != 0 && MulOpBLeadingSigns != MulOpBWidth) {
+      CTOutput << "{" << MulOpBLeadingSigns << "{" << MulOpBName
+        << "[" + utostr_32(MulOpBWidth - 1) + "]" << "}";
+      CTOutput << ", " << MulOpBName << "[" + utostr_32(MulOpBWidth - 1 - MulOpBLeadingSigns)
+        << ":0]}";
+    }
+    else
+      CTOutput << MulOpBName;
+
+    CTOutput << " & ";
+
+    CTOutput << utostr_32(MulOpBWidth) << "\'b";
+    for (unsigned j = 0; j < MulOpBWidth; ++j) {
+      if (MulOpBMask.isZeroKnownAt(MulOpBWidth - 1 - j)) {
+        CTOutput << "0";
+      }
+      else
+        CTOutput << "1";
+    }
+
+    CTOutput << " | ";
+
+    CTOutput << utostr_32(MulOpBWidth) << "\'b";
+    for (unsigned j = 0; j < MulOpBWidth; ++j) {
+      if (MulOpBMask.isOneKnownAt(MulOpBWidth - 1 - j)) {
+        CTOutput << "1";
+      }
+      else
+        CTOutput << "0";
+    }
+
+    CTOutput << "\n\n";
+  }
 
   return std::make_pair(DM, TopMulDM);
 }
@@ -1698,38 +1832,39 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
   std::vector<Value *> Operands = MOA2Ops[MOA];
 
   // Eliminate the identical operands in add chain.
-  Operands = eliminateIdenticalOperands(Operands, MOA, Width);
+  std::vector<Value *> FinalOperands = eliminateIdenticalOperands(Operands, MOA, Width);
 
   std::vector<Value *> NormalOps;
   std::vector<std::pair<Value *, Value *> > MulOps;
   // Extract out the multiplication operands.
-  for (unsigned i = 0; i < Operands.size(); ++i) {
-    Value *Operand = Operands[i];
+  for (unsigned i = 0; i < FinalOperands.size(); ++i) {
+    Value *Operand = FinalOperands[i];
 
-    if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(Operand)) {
-      if (OpII->getIntrinsicID() == Intrinsic::shang_mul) {
-//         // Ignore the mul instruction which are used by several users.
-//         unsigned UserNum = 0;
-//         typedef Value::use_iterator use_iterator;
-//         for (use_iterator UI = OpII->use_begin(), UE = OpII->use_end();
-//              UI != UE; ++UI) {
-//           Value *UserVal = *UI;
-// 
-//           if (IntrinsicInst *UserInst = dyn_cast<IntrinsicInst>(UserVal))
-//             ++UserNum;
-//         }
-//         if (UserNum >= 2) {
-//           NormalOps.push_back(Operand);
-//           continue;
-//         }
+    if (preComputeByCarryChain) {
+      if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(Operand)) {
+        if (OpII->getIntrinsicID() == Intrinsic::shang_mul) {
+          Value *OperandA = OpII->getOperand(0);
+          Value *OperandB = OpII->getOperand(1);
 
-        Value *OperandA = OpII->getOperand(0);
-        Value *OperandB = OpII->getOperand(1);
+          MulOps.push_back(std::make_pair(OperandA, OperandB));
 
-        MulOps.push_back(std::make_pair(OperandA, OperandB));
+          BitMask OpAMask;
+          if (isa<ConstantInt>(OperandA))
+            OpAMask = BitMask(OperandA, TD->getTypeSizeInBits(OperandA->getType()));
+          else
+            OpAMask = SM->getBitMask(OperandA);
+          BitMask OpBMask;
+          if (isa<ConstantInt>(OperandB))
+            OpBMask = BitMask(OperandB, TD->getTypeSizeInBits(OperandB->getType()));
+          else
+            OpBMask = SM->getBitMask(OperandB);
 
-        SM->removeKeepVal(OpII);
-        continue;
+          indexMaskOfOp(OperandA, OpAMask);
+          indexMaskOfOp(OperandB, OpBMask);
+
+          SM->removeKeepVal(OpII);
+          continue;
+        }
       }
     }
 
@@ -2392,6 +2527,9 @@ DotMatrix *SIRMOAOpt::preComputingByCarryChain(DotMatrix *DM, DotMatrix *MulDM,
       for (unsigned k = 0; k < TDMRow->getWidth(); ++k) {
         MatrixDot *TDMDot = TDMRow->getDot(k);
 
+        // Reset
+        Continue = false;
+
         // Make sure all input dots of carry chain are non-zero dots.
         if (TDMDot->isZero())
           continue;
@@ -2401,17 +2539,12 @@ DotMatrix *SIRMOAOpt::preComputingByCarryChain(DotMatrix *DM, DotMatrix *MulDM,
         if (TDMDotAT <= TimeLimit) {
           PCBCCOpA.push_back(MulDMDot);
           PCBCCOpB.push_back(TDMDot);
-          break;
-        }
-        else {
-          Continue = false;
-          break;
-        }
 
-        if (k == TDMRow->getWidth() - 1) {
-          Continue = false;
+          Continue = true;
           break;
         }
+        else
+          break;
       }
 
       if (!Continue)

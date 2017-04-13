@@ -374,6 +374,12 @@ public:
     return LeadingSigns;
   }
 
+  bool operator==(BitMask Mask) {
+    return this->KnownOnes == Mask.KnownOnes &&
+           this->KnownZeros == Mask.KnownZeros &&
+           this->KnownSames == Mask.KnownSames;
+  }
+
   void print(raw_ostream &Output) {
     unsigned BitWidth = getMaskWidth();
     for (unsigned i = 0; i < BitWidth; ++i) {
@@ -1475,10 +1481,6 @@ public:
   typedef MemInst2SeqOpsMapTy::iterator meminst2seqops_iterator;
   typedef MemInst2SeqOpsMapTy::const_iterator const_meminst2seqops_iterator;
 
-  typedef std::map<Value *, BitMask> Val2BitMaskMapTy;
-  typedef Val2BitMaskMapTy::iterator val2bitmask_iterator;
-  typedef Val2BitMaskMapTy::const_iterator const_val2bitmask_iterator;
-
   typedef std::map<DFGNode *, BitMask> Node2BitMaskMapTy;
   typedef Node2BitMaskMapTy::iterator node2bitmask_iterator;
   typedef Node2BitMaskMapTy::const_iterator const_node2bitmask_iterator;
@@ -1530,8 +1532,6 @@ private:
   MemInst2SeqOpsMapTy MemInst2SeqOps;
   // The map between Value in LLVM IR and SeqVal in SIR
   Val2SeqValMapTy Val2SeqVal;
-  // The map between Value in SIR and BitMask.
-  Val2BitMaskMapTy Val2BitMask;
   // The map between DFG node and BitMask.
   Node2BitMaskMapTy Node2BitMask;
   // The map between CompressorTree and its operands
@@ -1762,26 +1762,15 @@ public:
     return at->second;
   }
 
-  bool IndexVal2BitMask(Value *Val, BitMask Mask) {
-    Mask.verify();
+  bool hasBitMask(Value *Val) {
+    DFGNode *Node = getDFGNodeOfVal(Val);
 
-    if (hasBitMask(Val)) {
-      Val2BitMask[Val] = Mask;
-
-      return true;
-    }
-
-    return Val2BitMask.insert(std::make_pair(Val, Mask)).second;
+    return hasBitMask(Node);
   }
-  bool hasBitMask(Value *Val) const {
-    const_val2bitmask_iterator at = Val2BitMask.find(Val);
-    return at != Val2BitMask.end();
-  }
-  BitMask getBitMask(Value *Val) const {
-    assert(hasBitMask(Val) && "Mask not created yet?");
+  BitMask getBitMask(Value *Val) {
+    DFGNode *Node = getDFGNodeOfVal(Val);
 
-    const_val2bitmask_iterator at = Val2BitMask.find(Val);
-    return at->second;
+    return getBitMask(Node);
   }
 
   bool IndexNode2BitMask(DFGNode *Node, BitMask Mask) {
@@ -1939,7 +1928,6 @@ public:
     BB2SlotMap.clear();
     Ops2CT.clear();
     Node2BitMask.clear();
-    Val2BitMask.clear();
   }
 
   // Functions for debug
