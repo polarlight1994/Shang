@@ -91,8 +91,8 @@ macro(add_synthesis_test test_name)
 		"${TEST_BINARY_ROOT}/test_config_main.lua"
 	)
 	configure_file(
-		"${SIR_SOURCE_ROOT}/XC7K70TFBV676.lua"
-		"${TEST_BINARY_ROOT}/XC7K70TFBV676.lua"
+		"${SIR_SOURCE_ROOT}/EP4S40G2F40C2ES1.lua"
+		"${TEST_BINARY_ROOT}/EP4S40G2F40C2ES1.lua"
 	)
 	configure_file(
 		"${SIR_SOURCE_ROOT}/verilog_synthesis_altera.tcl.in"
@@ -190,8 +190,8 @@ macro(add_cosimulation_test test_name)
 		"${TEST_BINARY_ROOT}/${TEST}_test_config.lua"
 	)
 	configure_file(
-		"${SIR_SOURCE_ROOT}/XC7K70TFBV676.lua"
-		"${TEST_BINARY_ROOT}/XC7K70TFBV676.lua"
+		"${SIR_SOURCE_ROOT}/EP4S40G2F40C2ES1.lua"
+		"${TEST_BINARY_ROOT}/EP4S40G2F40C2ES1.lua"
 	)
 
 	#Compile the source file to IR.
@@ -337,8 +337,8 @@ macro(add_high_level_synthesis test_name)
 		"${TEST_BINARY_ROOT}/test_config_main.lua"
 	)
 	configure_file(
-		"${SIR_SOURCE_ROOT}/XC7K70TFBV676.lua"
-		"${TEST_BINARY_ROOT}/XC7K70TFBV676.lua"
+		"${SIR_SOURCE_ROOT}/EP4S40G2F40C2ES1.lua"
+		"${TEST_BINARY_ROOT}/EP4S40G2F40C2ES1.lua"
 	)
 	configure_file(
 		"${SIR_SOURCE_ROOT}/verilog_synthesis_altera.tcl.in"

@@ -1485,9 +1485,9 @@ public:
   typedef Node2BitMaskMapTy::iterator node2bitmask_iterator;
   typedef Node2BitMaskMapTy::const_iterator const_node2bitmask_iterator;
 
-  typedef std::pair<std::vector<Value *>,
-                    std::vector<std::pair<Value *, Value *> > > CompressorOpsTy;
-  typedef std::map<IntrinsicInst *, CompressorOpsTy> Ops2CTTy;
+  typedef std::pair<Value *, std::pair<Value *, Value *> > MulOpTy;
+  typedef std::pair<std::vector<Value *>, std::vector<MulOpTy> > CompressorOpsTy;
+  typedef std::map<Value *, CompressorOpsTy> Ops2CTTy;
   typedef Ops2CTTy::iterator ops2ct_iterator;
   typedef Ops2CTTy::const_iterator const_ops2ct_iterator;
 
@@ -1795,18 +1795,18 @@ public:
     return at->second;
   }
 
-  bool IndexOps2CT(IntrinsicInst *Root, std::vector<Value *> NormalOps,
-                   std::vector<std::pair<Value *, Value *> > MulOps) {
-    return Ops2CT.insert(std::make_pair(Root,
-                                        std::make_pair(NormalOps, MulOps))).second;
+  bool IndexOps2CT(Value *Root, std::vector<Value *> NormalOps,
+                   std::vector<MulOpTy> MulOps) {
+    CompressorOpsTy Ops = std::make_pair(NormalOps, MulOps);
+    return Ops2CT.insert(std::make_pair(Root, Ops)).second;
   }
-  std::vector<Value *> getNormalOpsOfCT(IntrinsicInst *Root) const {
+  std::vector<Value *> getNormalOpsOfCT(Value *Root) const {
     const_ops2ct_iterator at = Ops2CT.find(Root);
     return at == Ops2CT.end() ? std::vector<Value *>() : at->second.first;
   }
-  std::vector<std::pair<Value *, Value *> > getMulOpsOfCT(IntrinsicInst *Root) const {
+  std::vector<MulOpTy> getMulOpsOfCT(Value *Root) const {
     const_ops2ct_iterator at = Ops2CT.find(Root);
-    return at == Ops2CT.end() ? std::vector<std::pair<Value *, Value *> >() : at->second.second;
+    return at == Ops2CT.end() ? std::vector<MulOpTy>() : at->second.second;
   }
 
   bool IndexVal2SeqVal(Value *Val, Value *SeqVal) {

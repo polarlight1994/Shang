@@ -915,10 +915,11 @@ bool SIRDatapathPrinter::printCompressor(IntrinsicInst &I) {
     }
   }
   // The mul operands of CompressorTrees.
-  std::vector<std::pair<Value *, Value *> > MulOps = SM->getMulOpsOfCT(&I);
+  std::vector<std::pair<Value *, std::pair<Value *, Value *> > >
+    MulOps = SM->getMulOpsOfCT(&I);
   for (unsigned i = 0; i < MulOps.size(); ++i) {
-    Value *MulOpA = MulOps[i].first;
-    Value *MulOpB = MulOps[i].second;
+    Value *MulOpA = MulOps[i].second.first;
+    Value *MulOpB = MulOps[i].second.second;
     std::string OpAName = MulOpA->getName();
     std::string OpBName = MulOpB->getName();
 

@@ -23,13 +23,18 @@ typedef std::pair<std::string, std::pair<float, unsigned> > DotType;
 
 
 static unsigned GPCNum = 0;
+static bool collectOpsAMAP = true;
 static bool sortMatrixByArrivalTime = false;
 static bool enableBitMaskOpt = true;
 static bool useGPCWithCarryChain = false;
 static bool useSepcialGPC = false;
-static bool sumFirstRowsByAdder = false;
-static bool preComputeByCarryChain = true;
+static bool sumFirstRowsByAdder = true;
+static bool includeMultiplication = false;
+static bool decompuseMultiply = false;
+static bool preComputeByCarryChain = false;
+static bool printGPCs = false;
 static unsigned TargetHeight = 3;
+static unsigned enableIH = false;
 
 namespace {
 // The dot in DotMatrix which represents the multi-operand adder
@@ -261,33 +266,6 @@ struct MatrixRow {
 
     return true;
   }
-
-  // Sort the dots in row according to the algorithm settings.
-  static bool dotCompare(const MatrixDot *DotA, const MatrixDot *DotB) {
-    unsigned DotAStage = DotA->getLevel();
-    unsigned DotBStage = DotB->getLevel();
-    float DotADelay = DotA->getArrivalTime();
-    float DotBDelay = DotB->getArrivalTime();
-
-    if (sortMatrixByArrivalTime) {
-      if (DotAStage < DotBStage)
-        return true;
-      else if (DotAStage > DotBStage)
-        return false;
-      else {
-        if (DotADelay < DotBDelay)
-          return true;
-        else
-          return false;
-      }
-    }
-    else {
-      if (DotAStage < DotBStage)
-        return true;
-      else
-        return false;
-    }
-  }
 };
 
 // The DotMatrix
@@ -391,7 +369,10 @@ typedef std::pair<unsigned,
   std::pair<float, std::pair<unsigned, unsigned> > > MulDMInfoTy;
 
 // Eliminated dot number in current row, compress ratio and delay(negative form) of GPC.
-typedef std::pair<std::pair<unsigned, float>, float> PerfType;
+typedef std::pair<std::pair<unsigned, float>, float> PerfTypeForIH;
+
+// Compress ratio, eliminated dot number in current row,  and delay(negative form) of GPC.
+typedef std::pair<std::pair<float, unsigned>, float> PerfType;
 
 // The compress component
 class CompressComponent {
@@ -461,6 +442,8 @@ struct SIRMOAOpt : public SIRPass {
   DataLayout *TD;
   SIR *SM;
   DataFlowGraph *DFG;
+
+  typedef std::pair<Value *, std::pair<Value *, Value *> > MulOpTy;
 
   std::vector<MatrixDot *> CreatedDots;
   std::vector<MatrixRow *> CreatedRows;
@@ -546,9 +529,9 @@ struct SIRMOAOpt : public SIRPass {
     return ATsOfOps[Op];
   }
 
-  // Optimization on operands of MOA.
-  std::vector<Value *> eliminateIdenticalOperands(std::vector<Value *> Operands,
-                                                  Value *MOA, unsigned BitWidth);
+  // Analyze the operands of MOA.
+  std::vector<Value *> analyzeOperands(std::vector<Value *> Operands,
+                                       Value *MOA, unsigned BitWidth);
 
   void generateHybridTreeForMOA(IntrinsicInst *MOA, raw_fd_ostream &Output,
                                 raw_fd_ostream &CTOutput);
@@ -573,7 +556,7 @@ struct SIRMOAOpt : public SIRPass {
 
   std::pair<DotMatrix *, DotMatrix *>
   createDotMatrix(std::vector<Value *> NormalOps,
-                  std::vector<std::pair<Value *, Value *> > MulOps,
+                  std::vector<MulOpTy> MulOps,
                   unsigned Width, std::string Name, raw_fd_ostream &Output,
                   raw_fd_ostream &CTOutput);
   DotMatrix *createMulDotMatrix(BitMask OpAMask, BitMask OpBMask,
@@ -595,6 +578,9 @@ struct SIRMOAOpt : public SIRPass {
   DotMatrix *preComputing(DotMatrix *DM);
   DotMatrix *preHandling(DotMatrix *DM, DotMatrix *MulDM);
 
+
+  void printMaskedValue(std::string OriginName, std::string MaskedName,
+                        BitMask Mask, unsigned Width, raw_fd_ostream &Output);
   void printPCBCC(std::vector<MatrixDot *> OpA, std::vector<MatrixDot *> OpB,
                   unsigned Idx, raw_fd_ostream &Output);
 
@@ -675,18 +661,43 @@ static bool sortInArrivalTime(std::pair<unsigned, float> RowA,
   return RowA.second < RowB.second;
 }
 
+static bool sortInPeformanceForIH(std::pair<unsigned, PerfTypeForIH> GPCA,
+                                  std::pair<unsigned, PerfTypeForIH> GPCB) {
+  if (GPCA.second.first.first < GPCB.second.first.first)
+    return true;
+  else if (GPCA.second.first.first > GPCB.second.first.first)
+    return false;
+  else {
+    if (GPCA.second.first.second < GPCB.second.first.second)
+      return true;
+    else if (GPCA.second.first.second > GPCB.second.first.second)
+      return false;
+    else {
+      if (GPCA.second.second < GPCB.second.second)
+        return true;
+      else
+        return false;
+    }
+  }
+}
 
 static bool sortInPeformance(std::pair<unsigned, PerfType> GPCA,
                              std::pair<unsigned, PerfType> GPCB) {
-  if (GPCA.second.first < GPCB.second.first)
+  if (GPCA.second.first.first < GPCB.second.first.first)
     return true;
-  else if (GPCA.second.first > GPCB.second.first)
+  else if (GPCA.second.first.first > GPCB.second.first.first)
     return false;
   else {
-    if (GPCA.second.second < GPCB.second.second)
+    if (GPCA.second.first.second < GPCB.second.first.second)
       return true;
-    else
+    else if (GPCA.second.first.second > GPCB.second.first.second)
       return false;
+    else {
+      if (GPCA.second.second < GPCB.second.second)
+        return true;
+      else
+        return false;
+    }
   }
 }
 
@@ -955,9 +966,8 @@ float SIRMOAOpt::getOperandArrivalTime(Value *Operand) {
   return CritialPathArrivalTime;
 }
 
-std::vector<Value *>
-SIRMOAOpt::eliminateIdenticalOperands(std::vector<Value *> Operands,
-                                      Value *MOA, unsigned BitWidth) {
+std::vector<Value *> SIRMOAOpt::analyzeOperands(std::vector<Value *> Operands,
+                                                Value *MOA, unsigned BitWidth) {
   // The operands after elimination
   std::vector<Value *> FinalOperands;
 
@@ -1005,18 +1015,20 @@ SIRMOAOpt::eliminateIdenticalOperands(std::vector<Value *> Operands,
   typedef std::vector<std::pair<Value *, unsigned> >::iterator iterator;
   for (iterator I = OpNums.begin(), E = OpNums.end(); I != E; ++I) {
     Value *Op = I->first;
+    unsigned Num = I->second;
 
     /// Handle the trivial case: constant integer operand.
 
-    if (isa<ConstantInt>(Op)) {      
-      FinalOperands.push_back(Op);
+    if (isa<ConstantInt>(Op)) {
+      for (unsigned i = 0; i < Num; ++i)
+        FinalOperands.push_back(Op);
+
       continue;
     }
 
     /// Handle other operands.
 
     unsigned OpBitWidth = Builder.getBitWidth(Op);
-    unsigned Num = I->second;
     
     // If the operand only occurs once, index it into the final operand list.
     if (Num == 1) {
@@ -1508,42 +1520,18 @@ DotMatrix *SIRMOAOpt::createMatrix(std::string Name) {
 
 std::pair<DotMatrix *, DotMatrix *>
 SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
-                           std::vector<std::pair<Value *, Value *> > MulOps,
+                           std::vector<MulOpTy> MulOps,
                            unsigned Width, std::string Name,
                            raw_fd_ostream &Output, raw_fd_ostream &CTOutput) {
   unsigned NormalOpNum = NormalOps.size();
   unsigned MulOpNum = MulOps.size();
-
-  // Print the declaration of the module.  
-  Output << "module " << "compressor_" << Name << "(\n";
-  for (unsigned i = 0; i < NormalOpNum; ++i) {
-    Value *NormalOp = NormalOps[i];
-    std::string NormalOpName = "operand_" + utostr_32(i);
-    unsigned NormalOpWidth = TD->getTypeSizeInBits(NormalOp->getType());
-
-    Output << "\tinput wire[" << utostr_32(NormalOpWidth - 1) << ":0] "
-           << NormalOpName << ", \n";
-  }
-  for (unsigned i = 0; i < MulOpNum; ++i) {
-    std::pair<Value *, Value *> MulOpPair = MulOps[i];
-    std::string MulOpName = "mul_operand_" + utostr_32(i);
-    unsigned MulOpAWidth = TD->getTypeSizeInBits(MulOpPair.first->getType());
-    unsigned MulOpBWidth = TD->getTypeSizeInBits(MulOpPair.second->getType());
-
-    Output << "\tinput wire[" << utostr_32(MulOpAWidth - 1) << ":0] "
-           << MulOpName + "_a" << ", \n";
-    Output << "\tinput wire[" << utostr_32(MulOpBWidth - 1) << ":0] "
-           << MulOpName + "_b" << ", \n";
-  }
-  Output << "\toutput wire[";
-  Output << utostr_32(Width - 1) << ":0] result\n);\n\n";
 
   DotMatrix *DM = createMatrix(Name);
   DotMatrix *TopMulDM = createMatrix(Name + "_MulDM");
 
   // Create the MulDM for MulOps.
   for (unsigned i = 0; i < MulOpNum; ++i) {
-    std::pair<Value *, Value *> MulOpPair = MulOps[i];
+    std::pair<Value *, Value *> MulOpPair = MulOps[i].second;
     Value *MulOpA = MulOpPair.first, *MulOpB = MulOpPair.second;
 
     // Get bitwidth.
@@ -1602,7 +1590,7 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
     unsigned OpWidth = TD->getTypeSizeInBits(NormalOp->getType());
 
     /// Create MatrixRow for normal operands.
-    std::string RowName = "operand_" + utostr_32(NormalOpIdx);
+    std::string RowName = "masked_operand_" + utostr_32(NormalOpIdx);
     MatrixRow *Row = createMatrixRow(RowName);
     // If the operand is a constant integer, then the dots will be
     // its binary representation.
@@ -1631,7 +1619,7 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
       // Get the bit mask of the dots.
       BitMask Mask = getMaskOfOp(NormalOp);
 
-      errs() << "Operand_" + utostr_32(i) << ": ArrivalTime[ "
+      errs() << "Operand_" + utostr_32(NormalOpIdx) << ": ArrivalTime[ "
              << float2String(ArrivalTime) << "], ";
       errs() << "BitMask[";
       Mask.print(errs());
@@ -1731,7 +1719,7 @@ SIRMOAOpt::createDotMatrix(std::vector<Value *> NormalOps,
     CTOutput << ";\n\n";
   }
   for (unsigned i = 0; i < MulOps.size(); ++i) {
-    std::pair<Value *, Value *> MulOpPair = MulOps[i];
+    std::pair<Value *, Value *> MulOpPair = MulOps[i].second;
     Value *MulOpA = MulOpPair.first, *MulOpB = MulOpPair.second;
 
     // Print the bitmask of multi-operand-a.
@@ -1832,21 +1820,22 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
   std::vector<Value *> Operands = MOA2Ops[MOA];
 
   // Eliminate the identical operands in add chain.
-  std::vector<Value *> FinalOperands = eliminateIdenticalOperands(Operands, MOA, Width);
+  std::vector<Value *> FinalOperands = analyzeOperands(Operands, MOA, Width);
 
   std::vector<Value *> NormalOps;
-  std::vector<std::pair<Value *, Value *> > MulOps;
+  std::vector<std::pair<Value *, std::pair<Value *, Value *> > > MulOps;
   // Extract out the multiplication operands.
   for (unsigned i = 0; i < FinalOperands.size(); ++i) {
     Value *Operand = FinalOperands[i];
 
-    if (preComputeByCarryChain) {
+    if (includeMultiplication) {
       if (IntrinsicInst *OpII = dyn_cast<IntrinsicInst>(Operand)) {
         if (OpII->getIntrinsicID() == Intrinsic::shang_mul) {
+          errs() << "multiplication as multi-input addition operand\n";
           Value *OperandA = OpII->getOperand(0);
           Value *OperandB = OpII->getOperand(1);
 
-          MulOps.push_back(std::make_pair(OperandA, OperandB));
+          MulOps.push_back(std::make_pair(OpII, std::make_pair(OperandA, OperandB)));
 
           BitMask OpAMask;
           if (isa<ConstantInt>(OperandA))
@@ -1881,15 +1870,105 @@ void SIRMOAOpt::generateHybridTreeForMOA(IntrinsicInst *MOA,
 
   errs() << "Synthesize compressor tree for " << MatrixName << "......\n";
 
-  std::pair<DotMatrix *, DotMatrix *> DMPair
-    = createDotMatrix(NormalOps, MulOps, MatrixWidth, MatrixName, Output, CTOutput);
+  // Print the declaration of the module.  
+  Output << "module " << "compressor_" << MatrixName << "(\n";
+  for (unsigned i = 0; i < NormalOps.size(); ++i) {
+    Value *NormalOp = NormalOps[i];
+    std::string NormalOpName = "operand_" + utostr_32(i);
+    unsigned NormalOpWidth = TD->getTypeSizeInBits(NormalOp->getType());
 
-  DotMatrix *DM = preComputingByCarryChain(DMPair.first, DMPair.second, Output);
+    Output << "\tinput wire[" << utostr_32(NormalOpWidth - 1) << ":0] "
+      << NormalOpName << ", \n";
+  }
+  for (unsigned i = 0; i < MulOps.size(); ++i) {
+    std::pair<Value *, Value *> MulOpPair = MulOps[i].second;
+    std::string MulOpName = "mul_operand_" + utostr_32(i);
+    unsigned MulOpAWidth = TD->getTypeSizeInBits(MulOpPair.first->getType());
+    unsigned MulOpBWidth = TD->getTypeSizeInBits(MulOpPair.second->getType());
 
-  DebugOutput << "---------- Matrix for " << MatrixName << " ------------\n";
-  printDotMatrixForDebug(DM);
+    Output << "\tinput wire[" << utostr_32(MulOpAWidth - 1) << ":0] "
+      << MulOpName + "_a" << ", \n";
+    Output << "\tinput wire[" << utostr_32(MulOpBWidth - 1) << ":0] "
+      << MulOpName + "_b" << ", \n";
+  }
+  Output << "\toutput wire[";
+  Output << utostr_32(Width - 1) << ":0] result\n);\n\n";
 
-  hybridTreeCodegen(DM, Output);
+  // Mask the operands according to the BitMask Analysis result.
+  for (unsigned i = 0; i < NormalOps.size(); ++i) {
+    Value *NormalOp = NormalOps[i];
+    BitMask Mask = getMaskOfOp(NormalOp);
+    std::string NormalOpName = "operand_" + utostr_32(i);
+    unsigned NormalOpWidth = TD->getTypeSizeInBits(NormalOp->getType());
+
+    printMaskedValue(NormalOpName, "masked_" + NormalOpName,
+                     Mask, NormalOpWidth, Output);
+  }
+  for (unsigned i = 0; i < MulOps.size(); ++i) {
+    std::pair<Value *, Value *> MulOpPair = MulOps[i].second;
+    Value *MulOpA = MulOpPair.first;
+    Value *MulOpB = MulOpPair.second;
+    BitMask MulOpAMask = getMaskOfOp(MulOpA);
+    BitMask MulOpBMask = getMaskOfOp(MulOpB);
+    std::string MulOpName = "mul_operand_" + utostr_32(i);
+    unsigned MulOpAWidth = TD->getTypeSizeInBits(MulOpA->getType());
+    unsigned MulOpBWidth = TD->getTypeSizeInBits(MulOpB->getType());
+
+    printMaskedValue(MulOpName + "_a", "masked_" + MulOpName + "_a",
+                     MulOpAMask, MulOpAWidth, Output);
+    printMaskedValue(MulOpName + "_b", "masked_" + MulOpName + "_b",
+                     MulOpBMask, MulOpBWidth, Output);
+  }
+
+  if (!decompuseMultiply) {
+    std::vector<MatrixRow *> MulOpRows;
+    for (unsigned i = 0; i < MulOps.size(); ++i) {
+      Value *MulOp = MulOps[i].first;
+      std::pair<Value *, Value *> MulOpPair = MulOps[i].second;
+      std::string MulName = "mul_" + utostr_32(i);
+      std::string MulOpAName = "masked_mul_operand_" + utostr_32(i) + "_a";
+      std::string MulOpBName = "masked_mul_operand_" + utostr_32(i) + "_b";
+      unsigned MulOpWidth = TD->getTypeSizeInBits(MulOp->getType());
+      unsigned MulOpAWidth = TD->getTypeSizeInBits(MulOpPair.first->getType());
+      unsigned MulOpBWidth = TD->getTypeSizeInBits(MulOpPair.second->getType());
+
+      Output << "wire[" << utostr_32(Width - 1) << ":0] "
+             << MulName << " = " << MulOpAName << " * " << MulOpBName << ";\n";
+
+      // The result of multiplication should be insert into DM as normal operands.
+      MatrixRow *MulOpRow = createMaskedDMRow(MulName, MulOpWidth, getATOfOp(MulOp),
+                                              0, getMaskOfOp(MulOp));
+
+      MulOpRows.push_back(MulOpRow);
+    }
+
+    Output << "\n";
+
+    std::pair<DotMatrix *, DotMatrix *> DMPair
+      = createDotMatrix(NormalOps, std::vector<MulOpTy>(), MatrixWidth,
+                        MatrixName, Output, CTOutput);
+
+    DotMatrix *DM = DMPair.first;
+    for (unsigned i = 0; i < MulOpRows.size(); ++i) {
+      DM->addRow(MulOpRows[i]);
+    }
+
+    DebugOutput << "---------- Matrix for " << MatrixName << " ------------\n";
+    printDotMatrixForDebug(DM);
+
+    hybridTreeCodegen(DM, Output);
+  }
+  else {
+    std::pair<DotMatrix *, DotMatrix *> DMPair
+      = createDotMatrix(NormalOps, MulOps, MatrixWidth, MatrixName, Output, CTOutput);
+
+    DotMatrix *DM = preComputingByCarryChain(DMPair.first, DMPair.second, Output);
+
+    DebugOutput << "---------- Matrix for " << MatrixName << " ------------\n";
+    printDotMatrixForDebug(DM);
+
+    hybridTreeCodegen(DM, Output);
+  }  
 }
 
 void SIRMOAOpt::generateHybridTrees() {
@@ -1930,7 +2009,8 @@ void SIRMOAOpt::generateHybridTrees() {
   }
 
   // Print the compress component modules.
-  printCompressComponent(Output);
+  if (printGPCs)  
+    printCompressComponent(Output);
 
   Output.flush();
   CTOutput.flush();
@@ -2547,6 +2627,9 @@ DotMatrix *SIRMOAOpt::preComputingByCarryChain(DotMatrix *DM, DotMatrix *MulDM,
         break;
     }
 
+    if (!preComputeByCarryChain)
+      continue;
+
     assert(PCBCCOpA.size() == PCBCCOpB.size() && "Unexpected different size!");
     unsigned Length = PCBCCOpA.size();
 
@@ -2671,6 +2754,49 @@ DotMatrix *SIRMOAOpt::preComputingByCarryChain(DotMatrix *DM, DotMatrix *MulDM,
   DM = transportDotMatrix(TDM);
 
   return DM;
+}
+
+void SIRMOAOpt::printMaskedValue(std::string OriginName, std::string MaskedName,
+                                 BitMask Mask, unsigned Width, raw_fd_ostream &Output) {
+  Output << "wire[" << utostr_32(Width - 1) << ":0] " << MaskedName << " = ";
+
+  unsigned LeadingSigns = Mask.countLeadingSigns();
+  if (LeadingSigns == Width) {
+    Output << "{" << LeadingSigns << "{" << OriginName
+      << "[" + utostr_32(Width - LeadingSigns) + "]" << "}}";
+  }
+  else if (LeadingSigns != 0 && LeadingSigns != Width) {
+    Output << "{{" << LeadingSigns << "{" << OriginName
+      << "[" + utostr_32(Width - LeadingSigns) + "]" << "}}";
+    Output << ", " << OriginName << "[" + utostr_32(Width - 1 - LeadingSigns)
+      << ":0]}";
+  }
+  else
+    Output << OriginName;
+
+  Output << " & ";
+
+  Output << utostr_32(Width) << "\'b";
+  for (unsigned j = 0; j < Width; ++j) {
+    if (Mask.isZeroKnownAt(Width - 1 - j)) {
+      Output << "0";
+    }
+    else
+      Output << "1";
+  }
+
+  Output << " | ";
+
+  Output << utostr_32(Width) << "\'b";
+  for (unsigned j = 0; j < Width; ++j) {
+    if (Mask.isOneKnownAt(Width - 1 - j)) {
+      Output << "1";
+    }
+    else
+      Output << "0";
+  }
+
+  Output << ";\n";
 }
 
 void SIRMOAOpt::printPCBCC(std::vector<MatrixDot *> OpA,
@@ -3444,6 +3570,7 @@ unsigned SIRMOAOpt::getHighestPriorityGPC(DotMatrix *TDM, unsigned RowNo,
   }
 
   // Try all library and evaluate its priority.
+  std::vector<std::pair<unsigned, PerfTypeForIH> > PerformanceListForIH;
   std::vector<std::pair<unsigned, PerfType> > PerformanceList;
   for (unsigned i = 0; i < Library.size(); ++i) {
     CompressComponent *GPC = Library[i];
@@ -3467,11 +3594,13 @@ unsigned SIRMOAOpt::getHighestPriorityGPC(DotMatrix *TDM, unsigned RowNo,
     /// Ignore the invalid GPC which satisfy following conditions:
     bool GPCInValid = false;
 
-    // 1) eliminate dots more than what we need.
-    if (InputDotNums[0] - 1 > ExcessDotNumList[RowNo])
-      GPCInValid = true;
+    //if (enableIH) {
+    // eliminate dots more than what we need.
+      if (InputDotNums[0] - 1 > ExcessDotNumList[RowNo])
+        GPCInValid = true;
+    //}    
 
-    // 2) Inputs can not be fulfilled.
+    // Inputs can not be fulfilled.
     if (RowNo + InputDotNums.size() > TDM->getRowNum())
       GPCInValid = true;
     else {
@@ -3483,7 +3612,7 @@ unsigned SIRMOAOpt::getHighestPriorityGPC(DotMatrix *TDM, unsigned RowNo,
       }
     }      
 
-    // 3) No available 1'b1 if the GPC is special GPC.
+    // No available 1'b1 if the GPC is special GPC.
     if (SpecialGPC *SpGPC = dyn_cast<SpecialGPC>(GPC)) {
       unsigned ExtraOneRank = SpGPC->getRankOfExtraOne();
 
@@ -3495,20 +3624,32 @@ unsigned SIRMOAOpt::getHighestPriorityGPC(DotMatrix *TDM, unsigned RowNo,
     if (GPCInValid)
       continue;
 
-    // Evaluate the performance.
-    
-    //float Performance = ((float) (CompressedDotNum * CompressedDotNum)) / (RealDelay * Area);
-    //float Performance = ((float)CompressedDotNum) / RealDelay;
-    float CompressRatio = ((float)InputDotNum) / OutputDotNum;
-    float NegativeDelay = 0.0f - CriticalDelay;
-    PerfType Perf
-      = std::make_pair(std::make_pair(InputDotNums[0], CompressRatio), NegativeDelay);
-    PerformanceList.push_back(std::make_pair(i, Perf));
+    // Evaluate the performance.    
+    if (enableIH) {
+      float CompressRatio = ((float)InputDotNum) / OutputDotNum;
+      float NegativeDelay = 0.0f - CriticalDelay;
+      PerfTypeForIH Perf
+        = std::make_pair(std::make_pair(InputDotNums[0], CompressRatio), NegativeDelay);
+      PerformanceListForIH.push_back(std::make_pair(i, Perf));
+    }
+    else {
+      float CompressRatio = ((float)CompressedDotNum) / Area;
+      float NegativeDelay = 0.0f - CriticalDelay;
+      PerfType Perf
+        = std::make_pair(std::make_pair(CompressRatio, InputDotNums[0]), NegativeDelay);
+      PerformanceList.push_back(std::make_pair(i, Perf));
+    }    
   }
 
-  assert(!PerformanceList.empty() && "No feasible GPC!");
+  if (enableIH)
+    assert(!PerformanceListForIH.empty() && "No feasible GPC!");
+  else {
+    if (PerformanceList.empty())
+      return UINT32_MAX;
+  }
 
   // Sort the PriorityList and get the highest one.
+  std::sort(PerformanceListForIH.begin(), PerformanceListForIH.end(), sortInPeformanceForIH);
   std::sort(PerformanceList.begin(), PerformanceList.end(), sortInPeformance);
 
 //   // Debug
@@ -3521,8 +3662,10 @@ unsigned SIRMOAOpt::getHighestPriorityGPC(DotMatrix *TDM, unsigned RowNo,
 //     errs() << Component->getName() << "--" << PriorityList[i].second.first << "\n";
 //   }
 
-
-  return PerformanceList.back().first;
+  if (enableIH)
+    return PerformanceListForIH.back().first;
+  else
+    return PerformanceList.back().first;  
 }
 
 DotMatrix *SIRMOAOpt::compressTDMInLevel(DotMatrix *TDM, unsigned IH, unsigned Level,
@@ -3538,6 +3681,12 @@ DotMatrix *SIRMOAOpt::compressTDMInLevel(DotMatrix *TDM, unsigned IH, unsigned L
     while (NZDotNumList[i] > IH) {
       unsigned GPCIdx
         = getHighestPriorityGPC(TDM, i, Level, IH);
+
+      // If we are not in the IH mode, then when there is no feasible GPC,
+      // we should move to next column and leave current column to be
+      // compressed in next level.
+      if (!enableIH && GPCIdx == UINT32_MAX)
+        break;
 
       TDM = compressTDMUsingGPC(TDM, GPCIdx, i, Level, TotalLevels, Output);
 
@@ -3573,7 +3722,9 @@ void SIRMOAOpt::compressDotMatrix(DotMatrix *DM, raw_fd_ostream &Output) {
 
   /// Calculate the ideal intermediate height(IH).
 
-  std::vector<unsigned> IHs = calculateIHs(TDM);
+  //std::vector<unsigned> IHs = calculateIHs(TDM);
+  std::vector<unsigned> IHs;
+  IHs.push_back(3);
 
   /// Start to compress the TDM
   unsigned TotalLevels = 0;
@@ -3591,10 +3742,13 @@ void SIRMOAOpt::compressDotMatrix(DotMatrix *DM, raw_fd_ostream &Output) {
       // Determine if we need to continue compressing.
       std::vector<unsigned> NZDotNumList = TDM->getNonZeroDotNumList();
       Continue = false;
-      for (unsigned i = 0; i < NZDotNumList.size(); ++i) {
-        if (NZDotNumList[i] > IH)
+      for (unsigned j = 0; j < NZDotNumList.size(); ++j) {
+        if (NZDotNumList[j] > IH)
           Continue = true;
       }
+
+      if (!enableIH)
+        ++i;
     }
   }
 
